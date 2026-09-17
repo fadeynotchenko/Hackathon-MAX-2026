@@ -1,0 +1,187 @@
+# Dev-стенд: исходники смонтированы, всё перезапускается на лету.
+#
+#   cp .env.example .env            # заполнить MAX_BOT_TOKEN, JWT_SECRET, пароли
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Адреса (порты свои, чтобы не пересекаться с другими проектами на этой машине;
+# переопределяются в .env, группа «Порты на хосте» в .env.example):
+#   мини-апп  http://localhost:3090            (vite с HMR; /api/ проксируется в api)
+#   API       http://localhost:3090/api/v1     Swagger http://localhost:3090/api/v1/docs
+#   напрямую  API 127.0.0.1:8091, Postgres 127.0.0.1:5490, Redis 127.0.0.1:6490
+# gateway (nginx) в dev не поднимается: он нужен только проду (TLS, единый вход).
+# Бот в dev ходит в MAX polling'ом — публичный адрес не нужен.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "10"
+
+x-core: &core-service
+  build:
+    context: ./core
+    target: runtime
+  image: maxapp-core:dev
+  env_file: .env
+  environment: &python-env
+    ENV: dev
+    # Dev-вход только на dev-стенде; в production валидатор его отвергает.
+    DEV_LOGIN_ENABLED: "true"
+    DB_HOST: db
+    REDIS_HOST: redis
+    LOG_FORMAT: pretty
+    LOG_DIR: /app/app_logs
+  volumes:
+    # Исходники поверх образа: пакет core установлен editable из /app/src.
+    - ./core/src:/app/src
+    - ./app_logs/api:/app/app_logs
+  logging: *default-logging
+  restart: unless-stopped
+  networks: [maxapp]
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: maxapp_db
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5490}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [maxapp]
+
+  redis:
+    image: redis:7-alpine
+    container_name: maxapp_redis
+    logging: *default-logging
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    ports:
+      - "127.0.0.1:${DEV_REDIS_PORT:-6490}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    restart: unless-stopped
+    networks: [maxapp]
+
+  api:
+    <<: *core-service
+    container_name: maxapp_api
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    command:
+      [
+        "uvicorn",
+        "core.api.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+        "--reload-dir",
+        "/app/src",
+      ]
+    ports:
+      - "127.0.0.1:${DEV_API_PORT:-8091}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Одна установка зависимостей на оба Node-сервиса: параллельный pnpm install из
+  # bot и web в одни и те же тома ломал .pnpm на первом запуске.
+  deps:
+    image: node:24-alpine
+    container_name: maxapp_deps
+    working_dir: /repo
+    volumes:
+      - ./:/repo
+      - node_modules_root:/repo/node_modules
+      - node_modules_bot:/repo/bot/node_modules
+      - node_modules_web:/repo/web/node_modules
+    command: sh -c "npm install -g pnpm@12.4.2 --silent && pnpm install --frozen-lockfile"
+    restart: "no"
+    networks: [maxapp]
+
+  bot:
+    image: node:24-alpine
+    container_name: maxapp_bot
+    logging: *default-logging
+    working_dir: /repo/bot
+    env_file: .env
+    environment:
+      ENV: dev
+      BOT_MODE: polling
+      REDIS_HOST: redis
+      LOG_FORMAT: pretty
+      LOG_DIR: /repo/app_logs/bot
+      # Корень Минцифры для platform-api2.max.ru (bot/certs/README.md).
+      NODE_EXTRA_CA_CERTS: /repo/bot/certs/russian_trusted_root_ca.pem
+    volumes:
+      - ./:/repo
+      - node_modules_root:/repo/node_modules
+      - node_modules_bot:/repo/bot/node_modules
+      - node_modules_web:/repo/web/node_modules
+    command: sh -c "npm install -g pnpm@12.4.2 --silent && pnpm --filter @maxapp/bot dev"
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [maxapp]
+
+  web:
+    image: node:24-alpine
+    container_name: maxapp_web
+    logging: *default-logging
+    working_dir: /repo/web
+    env_file: .env
+    environment:
+      VITE_PROXY_TARGET: http://api:8000
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./:/repo
+      - node_modules_root:/repo/node_modules
+      - node_modules_bot:/repo/bot/node_modules
+      - node_modules_web:/repo/web/node_modules
+    command: sh -c "npm install -g pnpm@12.4.2 --silent && pnpm --filter @maxapp/web dev"
+    ports:
+      - "127.0.0.1:${DEV_WEB_PORT:-3090}:3000"
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [maxapp]
+
+networks:
+  maxapp:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  node_modules_root:
+  node_modules_bot:
+  node_modules_web:

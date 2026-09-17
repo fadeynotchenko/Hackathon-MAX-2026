@@ -1,0 +1,108 @@
+@import './tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--max-bg);
+  color: var(--max-text);
+  -webkit-font-smoothing: antialiased;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+.page {
+  padding: var(--space-4);
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.page h1 {
+  font-size: 22px;
+  margin: 0 0 var(--space-3);
+}
+
+.card {
+  background: var(--max-bg-secondary);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.hint {
+  color: var(--max-hint);
+  font-size: 14px;
+}
+
+.button {
+  display: inline-block;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  background: var(--max-button);
+  color: var(--max-button-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.button--secondary {
+  background: transparent;
+  color: var(--max-link);
+}
+
+.field {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--max-hint);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  font: inherit;
+  background: var(--max-bg);
+  color: var(--max-text);
+  margin-bottom: var(--space-3);
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.nav a {
+  color: var(--max-link);
+  text-decoration: none;
+  padding: var(--space-3);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius);
+}
+
+.nav a.active {
+  background: var(--max-bg-secondary);
+}
+
+.status {
+  font-size: 14px;
+  margin-top: var(--space-2);
+}
+
+.status--error {
+  color: #ff453a;
+}

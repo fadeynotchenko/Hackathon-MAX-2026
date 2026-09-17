@@ -1,0 +1,27 @@
+/* Дизайн-токены. Значения с префиксом --max- перекрываются темой клиента
+   (max/webapp.ts → applyTheme); дефолты ниже — светлая тема вне MAX. */
+:root {
+  --max-bg: #ffffff;
+  --max-bg-secondary: #f2f3f5;
+  --max-text: #1c1c1e;
+  --max-hint: #6e6e73;
+  --max-link: #0a84ff;
+  --max-button: #0a84ff;
+  --max-button-text: #ffffff;
+
+  --radius: 12px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root[data-color-scheme='dark'] {
+  --max-bg: #000000;
+  --max-bg-secondary: #1c1c1e;
+  --max-text: #ffffff;
+  --max-hint: #98989d;
+}

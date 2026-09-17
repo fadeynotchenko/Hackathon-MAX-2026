@@ -1,0 +1,120 @@
+# Gateway стенда. Рендерится envsubst при старте контейнера (см. gateway/Dockerfile):
+# ${DOMAIN} и ${BOT_WEBHOOK_PATH} берутся из окружения контейнера.
+#
+# Схема:
+#   /                → статика мини-аппа (SPA, index.html без кеша, ассеты с кешем)
+#   /api/            → api:8000 (FastAPI)
+#   ${BOT_WEBHOOK_PATH} → bot:8080 (вебхук MAX, только POST)
+#   /nginx-health    → 200 для healthcheck контейнера
+#
+# TLS терминируется здесь: сертификаты монтируются в /etc/nginx/ssl
+# (docs/DEPLOY.md). Порт 80 только редиректит на https.
+
+# Rate limits по IP. api_general покрывает обычного пользователя мини-аппа с
+# запасом; api_auth защищает вход от перебора initData.
+limit_req_zone $binary_remote_addr zone=api_general:10m rate=50r/s;
+# Вход выполняется при каждом открытии мини-аппа, а за одним NAT (офис, зал
+# хакатона) сидят десятки людей: лимит считается на IP, поэтому щедрый.
+limit_req_zone $binary_remote_addr zone=api_auth:10m rate=2r/s;
+limit_conn_zone $binary_remote_addr zone=conn_per_ip:10m;
+# 429, а не дефолтный 503: клиент (web/src/api/client.ts) отличает лимит от аварии.
+limit_req_status 429;
+limit_conn_status 429;
+
+server_tokens off;
+
+# Доказательная база: посуточный access-лог помимо stdout. Ротация docker по
+# объёму не даёт глубины по времени; файлы с датой в имени — даёт.
+log_format maxapp_evidence
+    '$time_iso8601 ip=$remote_addr method=$request_method host=$host uri="$request_uri" '
+    'status=$status bytes=$body_bytes_sent rt=$request_time urt="$upstream_response_time" '
+    'ua="$http_user_agent" rid=$request_id';
+map $time_iso8601 $evidence_log_date {
+    default                       'undated';
+    '~^(?<ymd>\d{4}-\d{2}-\d{2})'  $ymd;
+}
+open_log_file_cache max=16 inactive=2m valid=1m min_uses=2;
+access_log /var/log/nginx/evidence/access-$evidence_log_date.log maxapp_evidence;
+root /usr/share/nginx/html;
+
+server {
+    listen 80 default_server;
+    server_name _;
+
+    # Healthcheck контейнера и ACME http-01 обслуживаются по http.
+    location = /nginx-health { access_log off; return 200 "ok\n"; }
+    location ^~ /.well-known/acme-challenge/ { root /var/www/acme; }
+
+    location / { return 301 https://${DOMAIN}$request_uri; }
+}
+
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    # Mozilla intermediate: только PFS-наборы, без CBC и RSA key exchange.
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    # Адреса апстримов в переменных: резолв при запросе, а не на старте, поэтому
+    # nginx поднимается и переживает пересоздание контейнеров api/bot без рестарта.
+    set $api_upstream http://api:8000;
+    set $bot_upstream http://bot:8080;
+
+    # Мусорные запросы: не светим наличие файлов, отвечаем сразу.
+    location ~* \.(php|phtml|phar)(/|$) { return 404; }
+    location ~* /\.(?!well-known) { return 404; }
+    location ~* \.(sql|bak|env|yaml|yml|toml|ini|conf|cfg|log)$ { return 404; }
+
+    # Вход по initData — отдельная зона: перебор подписи должен упираться в лимит.
+    location = /api/v1/auth/max {
+        limit_req zone=api_auth burst=20 nodelay;
+        limit_conn conn_per_ip 10;
+        include /etc/nginx/snippets/security_headers.conf;
+        client_max_body_size 64k;
+        proxy_pass $api_upstream;
+        include /etc/nginx/snippets/proxy_common.conf;
+    }
+
+    # ^~: regex-локации выше (.php, /., .log) не должны перехватывать пути API.
+    location ^~ /api/ {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn conn_per_ip 50;
+        include /etc/nginx/snippets/security_headers.conf;
+        client_max_body_size 5m;
+        proxy_pass $api_upstream;
+        include /etc/nginx/snippets/proxy_common.conf;
+    }
+
+    # Вебхук MAX → бот. Подпись проверяет сам бот (x-max-bot-api-secret);
+    # здесь только отсекаем всё, кроме POST, и держим тело маленьким.
+    location = ${BOT_WEBHOOK_PATH} {
+        limit_req zone=api_general burst=100 nodelay;
+        if ($request_method != POST) { return 405; }
+        client_max_body_size 1m;
+        proxy_pass $bot_upstream;
+        include /etc/nginx/snippets/proxy_common.conf;
+    }
+
+    # Ассеты Vite имеют хеш в имени: кешировать можно навсегда.
+    location ^~ /assets/ {
+        include /etc/nginx/snippets/security_headers.conf;
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    # SPA: любой путь → index.html; сам index.html без кеша, чтобы деплой подхватывался сразу.
+    location / {
+        include /etc/nginx/snippets/security_headers.conf;
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;
+    }
+}

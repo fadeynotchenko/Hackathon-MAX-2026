@@ -1,0 +1,154 @@
+{
+  "$comment": "Сгенерировано core/src/core/scripts/export_event_schemas.py из core.events.contracts. Руками не править.",
+  "envelope": {
+    "properties": {
+      "id": {
+        "description": "UUID события (hex, 32 символа)",
+        "type": "string"
+      },
+      "payload": {
+        "description": "JSON-объект, форма — events[type]",
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "ts": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "type": {
+        "type": "string"
+      },
+      "v": {
+        "description": "Версия конверта, число в строке (поля стрима — строки)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "v",
+      "type",
+      "payload",
+      "ts",
+      "source"
+    ],
+    "type": "object"
+  },
+  "envelope_version": 1,
+  "events": {
+    "bot.user_started": {
+      "additionalProperties": false,
+      "description": "Бот → ядро: пользователь нажал «Начать» (update bot_started).",
+      "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "integer"
+        },
+        "first_name": {
+          "default": "",
+          "title": "First Name",
+          "type": "string"
+        },
+        "language_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language Code"
+        },
+        "last_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Name"
+        },
+        "max_user_id": {
+          "exclusiveMinimum": 0,
+          "title": "Max User Id",
+          "type": "integer"
+        },
+        "start_payload": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Payload"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        }
+      },
+      "required": [
+        "max_user_id",
+        "chat_id"
+      ],
+      "title": "BotUserStarted",
+      "type": "object"
+    },
+    "notify.user": {
+      "additionalProperties": false,
+      "description": "Ядро → бот: отправить пользователю сообщение в MAX.",
+      "properties": {
+        "format": {
+          "anyOf": [
+            {
+              "enum": [
+                "markdown",
+                "html"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Format"
+        },
+        "max_user_id": {
+          "exclusiveMinimum": 0,
+          "title": "Max User Id",
+          "type": "integer"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_user_id",
+        "text"
+      ],
+      "title": "NotifyUser",
+      "type": "object"
+    }
+  }
+}

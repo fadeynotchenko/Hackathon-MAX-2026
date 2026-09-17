@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+uv.lock
+app_logs
+backups
+.cache
+.venv
+web/src/api/schema.d.ts
+contracts/openapi.json
+contracts/events.schema.json
+core/src/core/db/migrations/versions
+*.py
+core/.venv

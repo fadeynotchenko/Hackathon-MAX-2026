@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Node
+node_modules/
+web/dist/
+bot/dist/
+*.tsbuildinfo
+.vite/
+
+# Окружение: настоящие секреты живут только в .env, в истории им не место.
+# .env.example генерируется из реестра shared/config/env_spec.py и коммитится.
+.env
+.env.*
+!.env.example
+
+# Логи и дампы — рантайм-артефакты прод/дев-стендов (bind-mount из compose).
+app_logs/
+*.log
+backups/
+*.dump
+
+# TLS-материалы и ACME-челленджи кладутся на сервер руками (см. docs/DEPLOY.md).
+gateway/ssl/*
+!gateway/ssl/README.md
+gateway/acme/*
+!gateway/acme/.gitkeep
+
+# Кеши инструментов сведены в один .cache/, чтобы корень не обрастал
+# служебными каталогами (.pytest_cache, .ruff_cache, .import_linter_cache).
+.cache/
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+.grimp_cache/
+.coverage
+htmlcov/
+coverage/
+
+# IDE и ОС
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Конфликтные копии облачной синхронизации («main 2.py», «Dockerfile 3»):
+# это устаревшие снимки, а не код. pytest и vitest подбирают их как тесты.
+* [0-9].*
+* [0-9][0-9].*
+* [0-9]
+
+# Worktrees Claude Code
+.claude/worktrees/
+.claude/settings.local.json
+
+# Локальный store pnpm (появляется при установке через npx pnpm)
+.pnpm-store/

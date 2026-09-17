@@ -1,0 +1,21 @@
+# Контекст сборки bot/Dockerfile и gateway/Dockerfile (корень репозитория:
+# нужен общий pnpm-lock). Сервис core собирается из своего каталога.
+.git/
+.claude/
+.cache/
+core/
+docs/
+node_modules/
+**/node_modules/
+web/dist/
+bot/dist/
+app_logs/
+backups/
+.env
+.env.*
+!.env.example
+gateway/ssl/
+gateway/acme/
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,33 @@
+# Маркеры сгенерированного текста, которых в коде и документации быть не должно.
+# Одна строка — один шаблон (регулярное выражение, без учёта регистра).
+# Тест tests/meta/test_no_ai_markers.py сканирует репозиторий и падает на совпадении.
+as an ai
+as a language model
+i hope this helps
+here'?s (the|a|an) (updated|complete|full|improved|refactored) (code|version|file)
+here is (the|a|an) (updated|complete|full|improved|refactored) (code|version|file)
+let me know if
+feel free to
+happy coding
+certainly[!,]
+of course[!,]
+great question
+in this (file|module|function),? we
+this (file|module|function) (is responsible for|handles|contains|implements|provides)
+note that this is
+please note that
+it'?s worth noting
+remember to (replace|update|change) this
+placeholder
+lorem ipsum
+your[_ ]token[_ ]here
+insert .* here
+TODO: implement
+your code here
+^\s*(#|//)\s*(step|шаг) \d+[:.]
+^\s*(#|//)\s*(import|imports|импорты)\s*$
+^\s*(#|//)\s*(constants|константы)\s*$
+^\s*(#|//)\s*(main|основной код|entry point)\s*$
+^\s*(#|//)\s*(helper|helpers|вспомогательные функции)\s*$
+^\s*(#|//)\s*end of (file|function|class)
+🚀|✨|🎉|🔥|💡|✅|❌|⚠️|📝|🛠|🤖

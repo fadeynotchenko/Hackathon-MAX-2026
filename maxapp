@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# maxapp — консоль управления стендом. Работает и локально (dev-compose), и на
+# сервере (prod-compose): стенд выбирается флагом или переменной MAXAPP_ENV.
+#
+#   ./maxapp                    # интерактивный режим: /logs, /ps, /health, ...
+#   ./maxapp logs api           # разовая команда (слеш можно опускать)
+#   ./maxapp --prod ps          # то же для прод-стенда (или MAXAPP_ENV=prod)
+#   ./maxapp install            # symlink в /usr/local/bin, чтобы звать отовсюду
+set -uo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  link_dir="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in /*) ;; *) SOURCE="$link_dir/$SOURCE" ;; esac
+done
+ROOT_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+cd "$ROOT_DIR"
+
+MAXAPP_ENV="${MAXAPP_ENV:-dev}"
+if [ "${1:-}" = "--prod" ]; then MAXAPP_ENV=prod; shift; fi
+if [ "${1:-}" = "--dev" ]; then MAXAPP_ENV=dev; shift; fi
+COMPOSE_FILE="docker-compose.${MAXAPP_ENV}.yml"
+LOGS_TAIL=300
+
+if [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
+  C_RESET="$(tput sgr0)"; C_BOLD="$(tput bold)"; C_RED="$(tput setaf 1)"
+  C_GREEN="$(tput setaf 2)"; C_CYAN="$(tput setaf 6)"; C_DIM="$(tput dim)"
+else
+  C_RESET=""; C_BOLD=""; C_RED=""; C_GREEN=""; C_CYAN=""; C_DIM=""
+fi
+
+dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
+
+show_help() {
+  printf '%sСтенд: %s (%s)%s\n' "$C_BOLD" "$MAXAPP_ENV" "$COMPOSE_FILE" "$C_RESET"
+  printf '  %s/up%s           поднять стенд (dev: --build)\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/down%s         остановить стенд\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/logs%s [svc]   live-логи (все или сервиса), Ctrl-C — назад\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/ps%s           статус контейнеров\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/health%s       health API и бота изнутри контейнеров\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/restart%s [s]  перезапустить сервис(ы)\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/migrate%s      alembic upgrade head вручную (api делает это сам при старте)\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/shell%s [svc]  shell в контейнере (по умолчанию api)\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/psql%s         psql к базе стенда\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/redis%s        redis-cli к Redis стенда\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/deploy%s       ./deploy.sh (только prod)\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/check%s        локальные проверки: ruff, lint-imports, pytest, eslint, tsc, depcruise, vitest\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/install%s      сделать команду maxapp глобальной (нужен root)\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/help%s, %s/quit%s\n' "$C_GREEN" "$C_RESET" "$C_GREEN" "$C_RESET"
+}
+
+do_health() {
+  printf '%sAPI:%s ' "$C_DIM" "$C_RESET"
+  if dc exec -T api curl -fsS http://127.0.0.1:8000/api/v1/health 2>/dev/null; then
+    printf '  %s✓%s\n' "$C_GREEN" "$C_RESET"
+  else
+    printf '%s✗ API не отвечает%s\n' "$C_RED" "$C_RESET"
+  fi
+  printf '%sБот:%s ' "$C_DIM" "$C_RESET"
+  if dc exec -T bot wget -qO- http://127.0.0.1:8081/health 2>/dev/null; then
+    printf '  %s✓%s\n' "$C_GREEN" "$C_RESET"
+  else
+    printf '%s✗ бот не отвечает%s\n' "$C_RED" "$C_RESET"
+  fi
+}
+
+do_check() {
+  local rc=0
+  run() { printf '%s→ %s%s\n' "$C_CYAN" "$*" "$C_RESET"; "$@" || rc=1; }
+  run_in() { local dir="$1"; shift; printf '%s→ (%s) %s%s\n' "$C_CYAN" "$dir" "$*" "$C_RESET"; (cd "$dir" && "$@") || rc=1; }
+  # core: Python-сервис со своим окружением uv.
+  run_in core uv run ruff check .
+  run_in core uv run ruff format --check .
+  run_in core uv run lint-imports --cache-dir .cache/import-linter
+  run_in core uv run pytest -q
+  # bot и web: pnpm-воркспейсы из корня.
+  run npx -y pnpm@12.4.2 lint
+  run npx -y pnpm@12.4.2 typecheck
+  run npx -y pnpm@12.4.2 depcruise
+  run npx -y pnpm@12.4.2 test
+  if [ "$rc" -eq 0 ]; then printf '%s✓ всё зелёное%s\n' "$C_GREEN" "$C_RESET"; else printf '%s✗ есть красное%s\n' "$C_RED" "$C_RESET"; fi
+  return "$rc"
+}
+
+env_value() { grep -E "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2- | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"; }
+
+dispatch() {
+  local cmd="${1:-}"; shift || true
+  case "$cmd" in
+    ""|help|h)   show_help ;;
+    up)          if [ "$MAXAPP_ENV" = dev ]; then dc up -d --build "$@"; else dc up -d "$@"; fi ;;
+    down)        dc down "$@" ;;
+    logs|l)      printf '%s→ логи %s (Ctrl-C — назад)%s\n' "$C_CYAN" "${*:-всех сервисов}" "$C_RESET"; dc logs -f --tail="$LOGS_TAIL" "$@" ;;
+    ps)          dc ps ;;
+    health)      do_health ;;
+    restart)     dc restart "$@" ;;
+    migrate)     dc exec api alembic upgrade head ;;
+    shell)       dc exec "${1:-api}" sh ;;
+    psql)        dc exec db psql -U "$(env_value DB_USER)" -d "$(env_value DB_NAME)" ;;
+    # Пароль через переменную окружения, а не аргумент: аргументы видны в ps.
+    redis)       dc exec -e REDISCLI_AUTH="$(env_value REDIS_PASSWORD)" redis redis-cli ;;
+    deploy)
+      if [ "$MAXAPP_ENV" = prod ]; then ./deploy.sh; else printf '%sdeploy только для --prod%s\n' "$C_RED" "$C_RESET"; fi ;;
+    check)       do_check ;;
+    install)
+      if ln -sf "$ROOT_DIR/maxapp" /usr/local/bin/maxapp 2>/dev/null; then
+        printf '%s✓ команда maxapp доступна из любой папки%s\n' "$C_GREEN" "$C_RESET"
+      else
+        printf '%s✗ нет прав на /usr/local/bin (нужен root)%s\n' "$C_RED" "$C_RESET"
+      fi ;;
+    *) printf '%sнеизвестная команда: %s%s (см. /help)\n' "$C_RED" "$cmd" "$C_RESET" ;;
+  esac
+}
+
+if [ "$#" -gt 0 ]; then
+  first="${1#/}"; shift
+  dispatch "$first" "$@"
+  exit
+fi
+
+printf '%smaxapp console%s — стенд %s, /help для списка, /quit для выхода\n' "$C_BOLD$C_CYAN" "$C_RESET" "$MAXAPP_ENV"
+while true; do
+  trap ':' INT
+  read -e -r -p "maxapp($MAXAPP_ENV) › " line; rc=$?
+  if [ "$rc" -gt 128 ]; then printf '\n'; continue; fi
+  if [ "$rc" -ne 0 ]; then echo; break; fi
+  [ -z "${line// /}" ] && continue
+  history -s "$line"
+  line="${line#/}"
+  # shellcheck disable=SC2086
+  set -- $line
+  case "$1" in
+    quit|q|exit) break ;;
+    *) dispatch "$@" ;;
+  esac
+done

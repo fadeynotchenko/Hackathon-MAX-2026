@@ -1,0 +1,65 @@
+# Pre-commit: те же проверки, что в ./maxapp check и хуках Claude Code.
+#   cd core && uv run pre-commit install --config ../.pre-commit-config.yaml
+#   cd core && uv run pre-commit run --all-files --config ../.pre-commit-config.yaml
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-yaml
+        exclude: ^pnpm-lock\.yaml$
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        exclude: \.md$
+
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (lint + format)
+        entry: uv run --frozen --project core ruff check --fix --force-exclude
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --frozen --project core ruff format --force-exclude
+        language: system
+        types: [python]
+      - id: lint-imports
+        name: import-linter (слои core)
+        entry: bash -c 'cd core && uv run --frozen lint-imports --cache-dir .cache/import-linter'
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: env-example
+        name: .env.example в синхроне с реестром
+        entry: bash -c 'cd core && uv run --frozen python -m core.scripts.gen_env_example --check'
+        language: system
+        pass_filenames: false
+        files: ^(core/src/core/config/env_spec\.py|\.env\.example)$
+      - id: event-schemas
+        name: contracts/events.schema.json в синхроне с core.events.contracts
+        entry: bash -c 'cd core && uv run --frozen python -m core.scripts.export_event_schemas --check'
+        language: system
+        pass_filenames: false
+        files: ^(core/src/core/events/contracts\.py|contracts/events\.schema\.json)$
+      - id: prettier
+        name: prettier
+        entry: node_modules/.bin/prettier --write --log-level warn
+        language: system
+        types_or: [ts, tsx, javascript, json, yaml, css, markdown]
+        exclude: ^(pnpm-lock\.yaml|core/uv\.lock|contracts/.*\.json|web/src/api/schema\.d\.ts)$
+      - id: eslint
+        name: eslint
+        entry: node_modules/.bin/eslint --fix
+        language: system
+        types_or: [ts, tsx]
+      - id: depcruise
+        name: dependency-cruiser (контракты TS)
+        entry: node_modules/.bin/depcruise bot/src web/src --config .dependency-cruiser.cjs
+        language: system
+        pass_filenames: false
+        types_or: [ts, tsx]

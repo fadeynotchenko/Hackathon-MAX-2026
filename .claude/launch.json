@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "pnpm@12.4.2", "--filter", "@maxapp/web", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "core",
+        "uvicorn",
+        "core.api.main:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    }
+  ]
+}
