@@ -2,20 +2,24 @@ from .bus import Event, EventBus, EventDecodeError, EventHandler, consume_stream
 from .config import EventsConfig, get_events_config
 from .contracts import (
     BOT_USER_STARTED,
+    DOCUMENT_READY,
     ENVELOPE_VERSION,
     EVENT_PAYLOADS,
     NOTIFY_USER,
     BotUserStarted,
+    DocumentReady,
     EventPayload,
     NotifyUser,
 )
 
 __all__ = [
     "BOT_USER_STARTED",
+    "DOCUMENT_READY",
     "ENVELOPE_VERSION",
     "EVENT_PAYLOADS",
     "NOTIFY_USER",
     "BotUserStarted",
+    "DocumentReady",
     "Event",
     "EventBus",
     "EventDecodeError",

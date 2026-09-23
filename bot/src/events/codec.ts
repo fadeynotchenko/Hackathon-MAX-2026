@@ -11,6 +11,7 @@ import { z } from 'zod';
 export const ENVELOPE_VERSION = 1;
 
 export const NOTIFY_USER = 'notify.user';
+export const DOCUMENT_READY = 'document.ready';
 export const BOT_USER_STARTED = 'bot.user_started';
 
 // Ядро → бот: отправить пользователю сообщение в MAX.
@@ -20,6 +21,19 @@ export const NotifyUser = z.strictObject({
   format: z.enum(['markdown', 'html']).nullable().default(null),
 });
 export type NotifyUser = z.infer<typeof NotifyUser>;
+
+// Ядро → бот: отдать пользователю готовый файл документа.
+export const DocumentReady = z.strictObject({
+  max_user_id: z.number().int().positive(),
+  document_id: z.number().int().positive(),
+  title: z.string().min(1).max(255),
+  filename: z.string().min(1).max(255),
+  format: z.enum(['docx', 'pdf']),
+  size: z.number().int().positive(),
+  download_token: z.string().min(16).max(128),
+  text: z.string().min(1).max(4000),
+});
+export type DocumentReady = z.infer<typeof DocumentReady>;
 
 // Бот → ядро: пользователь нажал «Начать».
 export const BotUserStarted = z.strictObject({
@@ -35,6 +49,7 @@ export type BotUserStarted = z.infer<typeof BotUserStarted>;
 
 export const EVENT_PAYLOADS = {
   [NOTIFY_USER]: NotifyUser,
+  [DOCUMENT_READY]: DocumentReady,
   [BOT_USER_STARTED]: BotUserStarted,
 } as const;
 

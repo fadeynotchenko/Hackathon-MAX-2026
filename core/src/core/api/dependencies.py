@@ -6,9 +6,11 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends, Request
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.api.state import ApiState, api_state
+from core.db import get_redis
 from core.db.base import get_session
 from core.domain.exceptions import ForbiddenError, UnauthorizedError
 from core.logs import bind_context
@@ -25,6 +27,13 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 
 
 SessionDep = Annotated[AsyncSession, Depends(db_session)]
+
+
+def redis_client() -> Redis:
+    return get_redis()
+
+
+RedisDep = Annotated[Redis, Depends(redis_client)]
 
 
 def _bearer_token(request: Request) -> str | None:

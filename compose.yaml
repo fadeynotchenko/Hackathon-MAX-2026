@@ -1,7 +1,7 @@
 # Dev-стенд: исходники смонтированы, всё перезапускается на лету.
 #
 #   cp .env.example .env            # заполнить MAX_BOT_TOKEN, JWT_SECRET, пароли
-#   docker compose -f docker-compose.dev.yml up --build
+#   docker compose up --build
 #
 # Адреса (порты свои, чтобы не пересекаться с другими проектами на этой машине;
 # переопределяются в .env, группа «Порты на хосте» в .env.example):
@@ -20,6 +20,9 @@ x-core: &core-service
   build:
     context: ./core
     target: runtime
+    args:
+      # PDF локально по желанию: WITH_PDF=true в .env добавляет LibreOffice в образ.
+      WITH_PDF: "${WITH_PDF:-false}"
   image: maxapp-core:dev
   env_file: .env
   environment: &python-env
@@ -30,10 +33,13 @@ x-core: &core-service
     REDIS_HOST: redis
     LOG_FORMAT: pretty
     LOG_DIR: /app/app_logs
+    DOCUMENTS_DIR: /app/app_data/documents
   volumes:
     # Исходники поверх образа: пакет core установлен editable из /app/src.
     - ./core/src:/app/src
     - ./app_logs/api:/app/app_logs
+    # Готовые файлы документов переживают пересборку контейнера.
+    - ./app_data/api:/app/app_data
   logging: *default-logging
   restart: unless-stopped
   networks: [maxapp]

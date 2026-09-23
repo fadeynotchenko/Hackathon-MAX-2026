@@ -53,6 +53,8 @@ log "каталоги логов и бэкапов с владельцами к�
 # и воркер nginx (uid 101) пишут в него непривилегированно. Без этого api падает
 # на первой же записи в файл лога.
 install -d -m 0750 -o 10001 -g 10001 ./app_logs/api
+# Файлы документов пишет тот же uid, что и логи api; 0750 — чужие в них не ходят.
+install -d -m 0750 -o 10001 -g 10001 ./app_data/api
 install -d -m 0750 -o 1000 -g 1000 ./app_logs/bot
 install -d -m 0750 -o 101 -g 101 ./app_logs/nginx
 install -d -m 0700 ./backups

@@ -21,6 +21,7 @@ ENVELOPE_VERSION = 1
 
 # Имена событий: <источник>.<что_случилось>.
 NOTIFY_USER = "notify.user"
+DOCUMENT_READY = "document.ready"
 BOT_USER_STARTED = "bot.user_started"
 
 
@@ -38,6 +39,23 @@ class NotifyUser(EventPayload):
     format: Literal["markdown", "html"] | None = None
 
 
+class DocumentReady(EventPayload):
+    """Ядро → бот: отдать пользователю готовый файл документа.
+
+    Байты в событие не кладутся: стрим — не файловое хранилище. Вместо них
+    одноразовый ``download_token``, по которому бот забирает файл у ядра.
+    """
+
+    max_user_id: int = Field(gt=0)
+    document_id: int = Field(gt=0)
+    title: str = Field(min_length=1, max_length=255)
+    filename: str = Field(min_length=1, max_length=255)
+    format: Literal["docx", "pdf"]
+    size: int = Field(gt=0)
+    download_token: str = Field(min_length=16, max_length=128)
+    text: str = Field(min_length=1, max_length=4000)
+
+
 class BotUserStarted(EventPayload):
     """Бот → ядро: пользователь нажал «Начать» (update bot_started)."""
 
@@ -53,5 +71,6 @@ class BotUserStarted(EventPayload):
 # Реестр: имя события → модель payload. Используется экспортом схем и тестами.
 EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     NOTIFY_USER: NotifyUser,
+    DOCUMENT_READY: DocumentReady,
     BOT_USER_STARTED: BotUserStarted,
 }

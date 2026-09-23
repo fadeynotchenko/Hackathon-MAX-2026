@@ -12,6 +12,7 @@ from fastapi import Request
 
 from core.config.app_config import AppConfig
 from core.events import EventBus
+from core.files import FilesConfig
 from core.usecases.auth.config import AuthConfig
 
 
@@ -20,6 +21,7 @@ class ApiState:
     app_config: AppConfig
     auth_config: AuthConfig
     event_bus: EventBus
+    files_config: FilesConfig
 
 
 def api_state(request: Request) -> ApiState:

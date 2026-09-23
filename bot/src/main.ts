@@ -12,20 +12,10 @@ import { EventPublisher } from './events/publisher.js';
 import { registerHandlers } from './handlers/index.js';
 import { startHealthServer } from './health.js';
 import { createLogger } from './logger.js';
+import { createFetchWithTimeout } from './max-fetch.js';
 import { loggingMiddleware } from './middlewares/logging.js';
 import { createRedis } from './redis.js';
 import { RedisSessionStore } from './session/redis-store.js';
-
-// Клиент SDK — голый fetch без таймаута: зависший вызов Bot API остановил бы
-// и потребитель событий (обрабатывает последовательно), и polling.
-const MAX_API_TIMEOUT_MS = 15_000;
-const fetchWithTimeout: typeof fetch = (input, init) =>
-  fetch(input, {
-    ...init,
-    signal: init?.signal
-      ? AbortSignal.any([init.signal, AbortSignal.timeout(MAX_API_TIMEOUT_MS)])
-      : AbortSignal.timeout(MAX_API_TIMEOUT_MS),
-  });
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -36,7 +26,7 @@ async function main(): Promise<void> {
   await redis.connect();
 
   const bot = new Bot<BotContext>(config.MAX_BOT_TOKEN, {
-    clientOptions: { fetch: fetchWithTimeout },
+    clientOptions: { fetch: createFetchWithTimeout() },
   });
   bot.use(
     session<BotSession, BotContext>({
@@ -70,7 +60,7 @@ async function main(): Promise<void> {
     stream: config.EVENTS_STREAM_TO_BOT,
     group: 'bot',
     consumer: `${hostname()}-${process.pid}`,
-    handlers: coreEventHandlers(bot, consumerRedis, log),
+    handlers: coreEventHandlers(bot, consumerRedis, log, { coreApiUrl: config.CORE_INTERNAL_URL }),
   });
   await consumer.start();
 

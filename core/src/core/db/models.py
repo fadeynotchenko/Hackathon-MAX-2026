@@ -5,10 +5,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String, Text, func
+from sqlalchemy import JSON, BigInteger, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from core.db.types import BigIntPK, UtcDateTime
+
+# Значения полей и спецификации шаблона — документы переменной формы: колонка
+# вместо таблицы «поле-значение». В PostgreSQL это JSONB (индексируемый),
+# в SQLite тестов — обычный JSON.
+JsonDict = JSON().with_variant(JSONB, "postgresql")
 
 
 class Base(DeclarativeBase):
@@ -63,3 +69,117 @@ class RefreshToken(Base):
     replaced_by_hash: Mapped[str | None] = mapped_column(String(64))
 
     user: Mapped[User] = relationship(back_populates="refresh_tokens")
+
+
+class CompanyProfile(Base):
+    """Реквизиты самого пользователя: то, что в документе стоит со стороны продавца."""
+
+    __tablename__ = "company_profiles"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), default="")
+    # Ключ → значение в каноническом виде домена (inn, kpp, bic, account, address...).
+    values: Mapped[dict[str, str]] = mapped_column(JsonDict, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Counterparty(Base):
+    """Карточка контрагента: заполняется один раз, дальше подставляется в документы."""
+
+    __tablename__ = "counterparties"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    inn: Mapped[str | None] = mapped_column(String(12), index=True)
+    values: Mapped[dict[str, str]] = mapped_column(JsonDict, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Template(Base):
+    """Шаблон документа: спецификация полей плюс тело для подстановки.
+
+    ``owner_user_id`` пуст у встроенных шаблонов. Слуг уникален глобально:
+    шаблон компании получит слуг с префиксом владельца, поэтому частичный
+    индекс «уникально среди системных» не нужен.
+    """
+
+    __tablename__ = "templates"
+    __table_args__ = (UniqueConstraint("slug", name="uq_templates_slug"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    owner_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    slug: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str] = mapped_column(Text, default="")
+    fields: Mapped[list[dict[str, object]]] = mapped_column(JsonDict, default=list)
+    body: Mapped[str] = mapped_column(Text, default="")
+    body_format: Mapped[str] = mapped_column(String(16), default="text")
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Document(Base):
+    """Заполняемый документ: шаблон плюс значения полей с их источниками."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("templates.id", ondelete="RESTRICT"))
+    counterparty_id: Mapped[int | None] = mapped_column(
+        ForeignKey("counterparties.id", ondelete="SET NULL")
+    )
+    title: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+    # Ключ → {value, source, confidence, confirmed}: источник нужен предпросмотру,
+    # подтверждение — правилу «распознанное утверждает человек».
+    values: Mapped[dict[str, dict[str, object]]] = mapped_column(JsonDict, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    template: Mapped[Template] = relationship()
+    counterparty: Mapped[Counterparty | None] = relationship()
+
+
+class DocumentFile(Base):
+    """Собранный файл документа: один актуальный на формат.
+
+    Сам файл лежит на диске (``core.files.storage``), в базе — путь, размер и
+    хеш: по хешу видно, что документ не пересобирали после правки полей.
+    """
+
+    __tablename__ = "document_files"
+    __table_args__ = (UniqueConstraint("document_id", "format", name="uq_document_files_format"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    format: Mapped[str] = mapped_column(String(8))
+    filename: Mapped[str] = mapped_column(String(255))
+    path: Mapped[str] = mapped_column(String(512))
+    size: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
+    # Хеш текста, из которого собран файл: по нему видно, что документ правили после сборки.
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, server_default=func.now(), onupdate=func.now()
+    )

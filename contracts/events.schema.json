@@ -111,6 +111,71 @@
       "title": "BotUserStarted",
       "type": "object"
     },
+    "document.ready": {
+      "additionalProperties": false,
+      "description": "Ядро → бот: отдать пользователю готовый файл документа.\n\nБайты в событие не кладутся: стрим — не файловое хранилище. Вместо них\nодноразовый ``download_token``, по которому бот забирает файл у ядра.",
+      "properties": {
+        "document_id": {
+          "exclusiveMinimum": 0,
+          "title": "Document Id",
+          "type": "integer"
+        },
+        "download_token": {
+          "maxLength": 128,
+          "minLength": 16,
+          "title": "Download Token",
+          "type": "string"
+        },
+        "filename": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Filename",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "docx",
+            "pdf"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "max_user_id": {
+          "exclusiveMinimum": 0,
+          "title": "Max User Id",
+          "type": "integer"
+        },
+        "size": {
+          "exclusiveMinimum": 0,
+          "title": "Size",
+          "type": "integer"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_user_id",
+        "document_id",
+        "title",
+        "filename",
+        "format",
+        "size",
+        "download_token",
+        "text"
+      ],
+      "title": "DocumentReady",
+      "type": "object"
+    },
     "notify.user": {
       "additionalProperties": false,
       "description": "Ядро → бот: отправить пользователю сообщение в MAX.",

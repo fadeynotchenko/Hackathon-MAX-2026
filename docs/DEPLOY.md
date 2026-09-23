@@ -77,7 +77,7 @@ entrypoint'ы и `no-new-privileges`; `db_backup` получает только 
 
 ## Dev-стенд
 
-`docker compose -f docker-compose.dev.yml up --build`: пять контейнеров (`db`,
+`docker compose up --build`: пять контейнеров (`db`,
 `redis`, `api`, `bot`, `web`), исходники смонтированы, core с `--reload`, бот через
 `tsx watch`, мини-апп через vite с HMR на `:3090` (порты задаются в `.env`, группа
 «Порты на хосте»). Gateway в dev не поднимается: vite сам проксирует `/api/`. Зависимости Node ставит

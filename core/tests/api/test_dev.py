@@ -34,7 +34,7 @@ async def test_dev_init_data_custom_user(client: AsyncClient) -> None:
 
 
 async def test_dev_route_is_absent_in_production(
-    db: None, redis, app_config: AppConfig, auth_config
+    db: None, redis, app_config: AppConfig, auth_config, files_config
 ) -> None:
     prod = AppConfig(
         env="production",
@@ -50,6 +50,7 @@ async def test_dev_route_is_absent_in_production(
         app_config=prod,
         auth_config=auth_config,
         event_bus=EventBus(redis, stream_to_bot="t", source="test", maxlen=10),
+        files_config=files_config,
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         assert (await c.get("/api/v1/dev/init-data")).status_code == 404, (

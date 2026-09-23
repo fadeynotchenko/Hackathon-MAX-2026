@@ -20,6 +20,7 @@ dependencies = [
     "redis>=5.2",
     "PyJWT>=2.10",
     "python-dotenv>=1.0",
+    "python-docx>=1.2.0",
 ]
 
 [dependency-groups]
@@ -50,12 +51,12 @@ packages = ["src/core"]
 root_package = "core"
 
 [[tool.importlinter.contracts]]
-name = "layers: api -> usecases -> events/db -> logs -> config/domain"
+name = "layers: api -> usecases -> events/db/files -> logs -> config/domain"
 type = "layers"
 layers = [
     "core.api",
     "core.usecases",
-    "core.events | core.db",
+    "core.events | core.db | core.files",
     "core.logs",
     "core.config | core.domain",
 ]

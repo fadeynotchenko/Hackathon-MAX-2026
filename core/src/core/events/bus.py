@@ -30,7 +30,14 @@ from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
 from core.domain.exceptions import AppError
-from core.events.contracts import ENVELOPE_VERSION, NOTIFY_USER, EventPayload, NotifyUser
+from core.events.contracts import (
+    DOCUMENT_READY,
+    ENVELOPE_VERSION,
+    NOTIFY_USER,
+    DocumentReady,
+    EventPayload,
+    NotifyUser,
+)
 from core.logs import biz_error, biz_info, biz_warn
 
 logger = logging.getLogger(__name__)
@@ -122,6 +129,18 @@ class EventBus:
         self._stream_to_bot = stream_to_bot
         self._source = source
         self._maxlen = maxlen
+
+    async def document_ready(self, payload: DocumentReady) -> str:
+        """Событие о готовом файле; байты бот забирает по одноразовому токену."""
+        event = await publish_event(
+            self._redis,
+            self._stream_to_bot,
+            DOCUMENT_READY,
+            payload,
+            source=self._source,
+            maxlen=self._maxlen,
+        )
+        return event.id
 
     async def notify_user(self, max_user_id: int, text: str, *, fmt: str | None = None) -> str:
         """Вернуть UUID события — тот же ``event_id``, что в логах ядра и бота."""

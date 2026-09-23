@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { silentLogger } from '../logger.js';
-import { NOTIFY_USER } from './codec.js';
+import { DOCUMENT_READY, NOTIFY_USER } from './codec.js';
 import { HandlerRejected } from './consumer.js';
 import { coreEventHandlers } from './handlers.js';
 
@@ -12,6 +12,7 @@ function setup(sendImpl: () => Promise<unknown>, markerSet = 'OK') {
     { api: { sendMessageToUser } } as never,
     redis as never,
     silentLogger(),
+    { coreApiUrl: 'http://api:8000' },
   );
   const event = {
     id: 'evt-1',
@@ -57,5 +58,100 @@ describe('notify.user handler', () => {
     const { handler, event, redis } = setup(() => Promise.reject(new Error('timeout')));
     await expect(handler(event)).rejects.toThrow('timeout');
     expect(redis.del).toHaveBeenCalledTimes(1);
+  });
+});
+
+function documentSetup(options: {
+  fetchImpl: typeof fetch;
+  uploadImpl?: () => Promise<{ toJson: () => object }>;
+  sendImpl?: () => Promise<unknown>;
+  markerSet?: string | null;
+}) {
+  const uploadFile = vi
+    .fn()
+    .mockImplementation(
+      options.uploadImpl ?? (() => Promise.resolve({ toJson: () => ({ type: 'file' }) })),
+    );
+  const sendMessageToUser = vi
+    .fn()
+    .mockImplementation(options.sendImpl ?? (() => Promise.resolve({})));
+  const redis = {
+    set: vi.fn().mockResolvedValue(options.markerSet === undefined ? 'OK' : options.markerSet),
+    del: vi.fn().mockResolvedValue(1),
+  };
+  vi.stubGlobal('fetch', options.fetchImpl);
+  const handlers = coreEventHandlers(
+    { api: { uploadFile, sendMessageToUser } } as never,
+    redis as never,
+    silentLogger(),
+    { coreApiUrl: 'http://api:8000' },
+  );
+  const event = {
+    id: 'evt-doc-1',
+    v: 1,
+    type: DOCUMENT_READY,
+    payload: {
+      max_user_id: 5,
+      document_id: 42,
+      title: 'КП для Клиента',
+      filename: 'КП для Клиента.docx',
+      format: 'docx',
+      size: 1024,
+      download_token: 'a'.repeat(32),
+      text: 'файл во вложении',
+    },
+    ts: '',
+    source: 'api',
+    streamId: '1-0',
+  };
+  return { uploadFile, sendMessageToUser, redis, handler: handlers[DOCUMENT_READY]!, event };
+}
+
+describe('document.ready handler', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('downloads by token, uploads under the real filename and sends it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([0x50, 0x4b])));
+    const { handler, event, uploadFile, sendMessageToUser } = documentSetup({
+      fetchImpl: fetchMock as never,
+    });
+
+    await handler(event);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `http://api:8000/api/v1/documents/download/${'a'.repeat(32)}`,
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    const source = (uploadFile.mock.calls[0]?.[0] as { source: string }).source;
+    expect(source.endsWith('КП для Клиента.docx')).toBe(true);
+    expect(sendMessageToUser).toHaveBeenCalledWith(5, 'файл во вложении', {
+      attachments: [{ type: 'file' }],
+    });
+  });
+
+  it('gives up on a burnt token instead of retrying forever', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('no', { status: 404 }));
+    const { handler, event, uploadFile } = documentSetup({ fetchImpl: fetchMock as never });
+
+    await expect(handler(event)).rejects.toBeInstanceOf(HandlerRejected);
+    expect(uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('retries when core is unreachable', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    const { handler, event, redis } = documentSetup({ fetchImpl: fetchMock as never });
+
+    await expect(handler(event)).rejects.toThrow('ECONNREFUSED');
+    expect(redis.del).toHaveBeenCalledWith('events:delivered:evt-doc-1');
+  });
+
+  it('skips a redelivered document event', async () => {
+    const fetchMock = vi.fn();
+    const { handler, event } = documentSetup({ fetchImpl: fetchMock as never, markerSet: null });
+
+    await handler(event);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

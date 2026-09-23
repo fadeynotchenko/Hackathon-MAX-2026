@@ -1,0 +1,220 @@
+# DATA-API 1.0 — сценарий обязательных HTTP-проверок сервиса подготовки документов.
+# Секретов здесь нет: доступы тестовой учётной записи передаются отдельным каналом.
+# Файл сверяется с contracts/openapi.json, который генерируется из кода
+# (cd core && uv run python -m core.scripts.export_openapi).
+
+schemaVersion: "1.0"
+
+solution:
+  name: "Документы для бизнеса в MAX"
+  teamId: "409"
+
+api:
+  baseUrl: "https://project-documents-max.ru"
+  openapi: "./contracts/openapi.json"
+  defaultHeaders:
+    Accept: "application/json"
+
+checks:
+  - id: "health"
+    name: "Сервис отвечает"
+    description: "Проверка БД, Redis и фонового потребителя событий"
+    method: "GET"
+    path: "/api/v1/health"
+    role: "public"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields:
+        - "status"
+        - "checks"
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "invoice-template"
+    name: "Шаблон счёта доступен"
+    description: "Библиотека шаблонов отдаёт описание полей документа"
+    method: "GET"
+    path: "/api/v1/templates"
+    role: "user"
+    request:
+      query:
+        slug: "invoice"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+    timeoutMs: 5000
+    repeatable: true
+    extract:
+      templateId: "$[0].id"
+
+  - id: "create-counterparty"
+    name: "Карточка контрагента создаётся"
+    description: "Реквизиты клиента сохраняются с проверкой ИНН"
+    method: "POST"
+    path: "/api/v1/counterparties"
+    role: "user"
+    dependsOn:
+      - "invoice-template"
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        name: "ООО «Проверка»"
+        values:
+          inn: "500100732259"
+    expected:
+      statusCodes: [201]
+      contentType: "application/json"
+      requiredFields:
+        - "id"
+        - "name"
+    timeoutMs: 5000
+    repeatable: false
+    extract:
+      counterpartyId: "$.id"
+
+  - id: "create-document"
+    name: "Документ создаётся из шаблона"
+    description: "Реквизиты контрагента подставляются в поля документа"
+    method: "POST"
+    path: "/api/v1/documents"
+    role: "user"
+    dependsOn:
+      - "create-counterparty"
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        template_id: "${templateId}"
+        counterparty_id: "${counterpartyId}"
+        title: "Счёт для технической проверки"
+    expected:
+      statusCodes: [201]
+      contentType: "application/json"
+      requiredFields:
+        - "id"
+        - "status"
+        - "values"
+        - "preview"
+    timeoutMs: 5000
+    repeatable: false
+    extract:
+      documentId: "$.id"
+
+  - id: "fill-document"
+    name: "Поля документа заполняются и проверяются"
+    description: "Суммы, даты и банковские реквизиты приводятся к каноническому виду"
+    method: "PATCH"
+    path: "/api/v1/documents/{document_id}/fields"
+    role: "user"
+    dependsOn:
+      - "create-document"
+    request:
+      path:
+        document_id: "${documentId}"
+      headers:
+        Content-Type: "application/json"
+      body:
+        values:
+          number:
+            value: "1"
+          date:
+            value: "24.09.2026"
+          seller_name:
+            value: "ООО «Ромашка»"
+          seller_inn:
+            value: "7707083893"
+          seller_bank:
+            value: "ПАО Сбербанк"
+          seller_bic:
+            value: "044525225"
+          seller_account:
+            value: "40702810438000123459"
+          item:
+            value: "Услуги по подготовке документов"
+          total:
+            value: "120 000"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields:
+        - "ready"
+        - "preview"
+        - "errors"
+      bodySchema:
+        type: "object"
+        required: ["ready"]
+        properties:
+          ready:
+            const: true
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "render-document"
+    name: "Файл документа собирается"
+    description: "Готовый документ превращается в DOCX"
+    method: "POST"
+    path: "/api/v1/documents/{document_id}/render"
+    role: "user"
+    dependsOn:
+      - "fill-document"
+    request:
+      path:
+        document_id: "${documentId}"
+      headers:
+        Content-Type: "application/json"
+      body:
+        format: "docx"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields:
+        - "format"
+        - "filename"
+        - "size"
+    timeoutMs: 15000
+    repeatable: true
+
+  - id: "read-document"
+    name: "Документ читается из истории"
+    method: "GET"
+    path: "/api/v1/documents/{document_id}"
+    role: "user"
+    dependsOn:
+      - "render-document"
+    request:
+      path:
+        document_id: "${documentId}"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields:
+        - "id"
+        - "title"
+        - "status"
+    timeoutMs: 5000
+    repeatable: true
+
+cleanup:
+  - id: "delete-document"
+    method: "DELETE"
+    path: "/api/v1/documents/{document_id}"
+    role: "user"
+    request:
+      path:
+        document_id: "${documentId}"
+    expected:
+      statusCodes: [200, 404]
+    timeoutMs: 5000
+
+  - id: "delete-counterparty"
+    method: "DELETE"
+    path: "/api/v1/counterparties/{counterparty_id}"
+    role: "user"
+    request:
+      path:
+        counterparty_id: "${counterpartyId}"
+    expected:
+      statusCodes: [200, 404]
+    timeoutMs: 5000

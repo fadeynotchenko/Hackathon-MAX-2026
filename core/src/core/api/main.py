@@ -19,17 +19,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.api.error_handlers import register_exception_handlers
 from core.api.events_worker import run_events_worker
 from core.api.middlewares import RequestContextMiddleware, TimeoutMiddleware
-from core.api.routers import admin, auth, dev, health, me
+from core.api.routers import admin, auth, counterparties, dev, documents, health, me, templates
 from core.api.state import ApiState
 from core.config.app_config import AppConfig, get_app_config
 from core.config.env_spec import validate_env_or_raise
-from core.db import close_db, close_redis, init_db, init_redis, new_client
+from core.db import close_db, close_redis, get_session, init_db, init_redis, new_client
 from core.db.config import DatabaseConfig
 from core.db.migrate import upgrade_to_head
 from core.db.redis import RedisConfig
 from core.events import EventBus, get_events_config
+from core.files import FilesConfig
 from core.logs import biz_error, biz_info, biz_warn, setup_logging
 from core.usecases.auth.config import get_auth_config
+from core.usecases.documents import ensure_builtin_templates
 
 API_V1_PREFIX = "/api/v1"
 logger = logging.getLogger("api")
@@ -65,12 +67,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # на недомигрированной базе. Несколько воркеров сериализует advisory-lock.
     await upgrade_to_head()
     await init_db(db_config)
+    # Библиотека шаблонов должна существовать до первого запроса: три встроенных
+    # шаблона дешевле засеять здесь, чем заводить ради них контейнер-сеятель.
+    async with get_session() as session:
+        seeded = await ensure_builtin_templates(session)
+    biz_info(logger, "templates.seeded", count=seeded)
     redis = await init_redis(RedisConfig.from_env())
 
     events = get_events_config()
     app.state.api = ApiState(
         app_config=app_config,
         auth_config=get_auth_config(),
+        files_config=FilesConfig.from_env(),
         event_bus=EventBus(
             redis, stream_to_bot=events.stream_to_bot, source="api", maxlen=events.maxlen
         ),
@@ -151,7 +159,15 @@ def create_app(
             expose_headers=["X-Request-ID"],
         )
 
-    for router in (health.router, auth.router, me.router, admin.router):
+    for router in (
+        health.router,
+        auth.router,
+        me.router,
+        admin.router,
+        templates.router,
+        documents.router,
+        counterparties.router,
+    ):
         app.include_router(router, prefix=API_V1_PREFIX)
     # Dev-вход — явный opt-in (DEV_LOGIN_ENABLED) и никогда в production: в проде
     # пути нет вовсе, а не «закрыт». «Не production» само по себе ничего не включает.

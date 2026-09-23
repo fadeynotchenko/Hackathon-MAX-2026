@@ -22,6 +22,12 @@ bot/dist/
 
 # Логи и дампы — рантайм-артефакты прод/дев-стендов (bind-mount из compose).
 app_logs/
+app_data/
+
+# Инструкции и конфигурация ИИ-агентов: рабочие файлы разработчика, не часть решения.
+AGENTS.md
+CLAUDE.md
+.claude/
 *.log
 backups/
 *.dump

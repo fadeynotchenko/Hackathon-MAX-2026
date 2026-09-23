@@ -40,6 +40,8 @@ const schema = z
     REDIS_PORT: z.coerce.number().int().positive().default(6379),
     REDIS_PASSWORD: z.string().default(''),
     REDIS_DB: z.coerce.number().int().min(0).default(0),
+    // Адрес ядра внутри стека: бот забирает файлы документов по одноразовому токену.
+    CORE_INTERNAL_URL: z.string().url().default('http://api:8000'),
     EVENTS_STREAM_TO_BOT: z.string().default('maxapp:to_bot'),
     EVENTS_STREAM_TO_CORE: z.string().default('maxapp:to_core'),
     EVENTS_STREAM_MAXLEN: z.coerce.number().int().positive().default(10000),

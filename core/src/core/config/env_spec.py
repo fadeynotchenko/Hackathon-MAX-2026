@@ -75,6 +75,7 @@ GROUP_ORDER: tuple[str, ...] = (
     "auth",
     "api",
     "events",
+    "documents",
     "backup",
     "ports",
     "web",
@@ -89,6 +90,7 @@ GROUP_TITLES: dict[str, str] = {
     "auth": "Аутентификация мини-аппа",
     "api": "API",
     "events": "Шина событий (Redis Streams)",
+    "documents": "Документы: файлы и конвертация",
     "backup": "Бэкапы и деплой",
     "ports": "Порты на хосте (compose)",
     "web": "Мини-апп (build-time, Vite)",
@@ -149,8 +151,9 @@ ENV_SPEC: list[EnvVar] = [
         ),
         EnvVar(
             "MAX_MINI_APP_NAME",
-            "Имя мини-приложения для кнопки open_app. Пусто ⇒ мини-апп бота по умолчанию.",
+            "Имя мини-приложения для кнопки open_app; у бота совпадает с его username.",
             owner="bot/src/config.ts",
+            notes="Пусто ⇒ кнопка не показывается: MAX отвечает 400 «Field 'webApp' cannot be null» и теряет всё сообщение.",
         ),
         EnvVar(
             "ADMIN_MAX_IDS",
@@ -163,6 +166,13 @@ ENV_SPEC: list[EnvVar] = [
     ),
     *_grouped(
         "bot",
+        EnvVar(
+            "CORE_INTERNAL_URL",
+            "Адрес API ядра внутри стека: бот забирает по нему файлы документов.",
+            type=T_URL,
+            default="http://api:8000",
+            owner="bot/src/config.ts",
+        ),
         EnvVar(
             "BOT_MODE",
             "polling (dev) | webhook (прод за nginx).",
@@ -407,6 +417,37 @@ ENV_SPEC: list[EnvVar] = [
         ),
     ),
     *_grouped(
+        "documents",
+        EnvVar(
+            "DOCUMENTS_DIR",
+            "Каталог готовых файлов документов (том контейнера).",
+            default="app_data/documents",
+            owner="core.files.config",
+        ),
+        EnvVar(
+            "LIBREOFFICE_BIN",
+            "Команда LibreOffice для конвертации DOCX → PDF.",
+            default="soffice",
+            owner="core.files.pdf",
+            notes="Нет в PATH ⇒ PDF отдаётся ошибкой render.pdf_unavailable, DOCX продолжает работать.",
+        ),
+        EnvVar(
+            "WITH_PDF",
+            "Собирать образ core с LibreOffice (конвертация DOCX → PDF) на локальном стенде.",
+            type=T_BOOL,
+            default="false",
+            owner="compose.yaml (build arg)",
+            notes="Прод собирается с WITH_PDF=true всегда; локально false держит сборку быстрой.",
+        ),
+        EnvVar(
+            "PDF_TIMEOUT_SECONDS",
+            "Таймаут одной конвертации в PDF.",
+            type=T_INT,
+            default="60",
+            owner="core.files.pdf",
+        ),
+    ),
+    *_grouped(
         "backup",
         EnvVar(
             "DB_BACKUP_HOUR_UTC",
@@ -459,28 +500,28 @@ ENV_SPEC: list[EnvVar] = [
             "Порт API на хосте в dev (мини-апп ходит через vite-proxy, это прямой доступ).",
             type=T_INT,
             default="8091",
-            owner="docker-compose.dev.yml (api)",
+            owner="compose.yaml (api)",
         ),
         EnvVar(
             "DEV_WEB_PORT",
             "Порт мини-аппа (vite dev-server) на хосте в dev: http://localhost:<порт>.",
             type=T_INT,
             default="3090",
-            owner="docker-compose.dev.yml (web)",
+            owner="compose.yaml (web)",
         ),
         EnvVar(
             "DEV_DB_PORT",
             "Порт PostgreSQL на хосте в dev.",
             type=T_INT,
             default="5490",
-            owner="docker-compose.dev.yml (db)",
+            owner="compose.yaml (db)",
         ),
         EnvVar(
             "DEV_REDIS_PORT",
             "Порт Redis на хосте в dev.",
             type=T_INT,
             default="6490",
-            owner="docker-compose.dev.yml (redis)",
+            owner="compose.yaml (redis)",
         ),
     ),
     *_grouped(

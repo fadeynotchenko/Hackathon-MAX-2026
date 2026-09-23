@@ -25,7 +25,7 @@ def prod() -> str:
 
 @pytest.fixture(scope="module")
 def dev() -> str:
-    return _read("docker-compose.dev.yml")
+    return _read("compose.yaml")
 
 
 @pytest.fixture(scope="module")
@@ -120,4 +120,4 @@ def test_bot_image_trusts_russian_root_ca() -> None:
     assert (REPO_ROOT / "bot" / "certs" / "russian_trusted_root_ca.pem").exists()
     dockerfile = _read("bot/Dockerfile")
     assert "NODE_EXTRA_CA_CERTS" in dockerfile and "russian_trusted_root_ca.pem" in dockerfile
-    assert "NODE_EXTRA_CA_CERTS" in _read("docker-compose.dev.yml")
+    assert "NODE_EXTRA_CA_CERTS" in _read("compose.yaml")

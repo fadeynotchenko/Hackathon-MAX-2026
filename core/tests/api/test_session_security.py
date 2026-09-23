@@ -55,7 +55,9 @@ async def test_cross_site_requests_to_cookie_routes_are_rejected(
     ).status_code == 200
 
 
-async def test_production_cookie_attributes(db: None, redis, auth_config, make_init_data) -> None:
+async def test_production_cookie_attributes(
+    db: None, redis, auth_config, make_init_data, files_config
+) -> None:
     prod = AppConfig(
         env="production",
         log_level="INFO",
@@ -70,6 +72,7 @@ async def test_production_cookie_attributes(db: None, redis, auth_config, make_i
         app_config=prod,
         auth_config=auth_config,
         event_bus=EventBus(redis, stream_to_bot="t", source="test", maxlen=10),
+        files_config=files_config,
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as c:
         login = await c.post("/api/v1/auth/max", json={"init_data": make_init_data(34)})

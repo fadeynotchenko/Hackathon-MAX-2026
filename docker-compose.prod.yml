@@ -27,6 +27,9 @@ x-core: &core-service
   build:
     context: ./core
     target: runtime
+    args:
+      # На проде PDF нужен всегда: время сборки там не ограничено.
+      WITH_PDF: "true"
   image: maxapp-core:latest
   env_file: .env
   environment: &python-env
@@ -35,9 +38,12 @@ x-core: &core-service
     REDIS_HOST: redis
     LOG_FORMAT: json
     LOG_DIR: /app/app_logs
+    DOCUMENTS_DIR: /app/app_data/documents
   volumes:
     # Свой подкаталог под uid контейнера (deploy.sh выставляет владельцев).
     - ./app_logs/api:/app/app_logs
+    # Готовые DOCX и PDF: том переживает пересборку образа.
+    - ./app_data/api:/app/app_data
   logging: *default-logging
   restart: unless-stopped
   networks: [maxapp]

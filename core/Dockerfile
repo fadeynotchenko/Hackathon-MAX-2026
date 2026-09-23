@@ -20,12 +20,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY pyproject.toml uv.lock ./
 
 FROM base AS runtime
+# LibreOffice без GUI — конвертер DOCX → PDF (core.files.pdf). Он тянет ~250 МБ
+# пакетов и минуты сборки, поэтому включается флагом: локальный стенд должен
+# собираться быстро (требование хакатона — не дольше 5 минут), а прод-образ
+# собирается с WITH_PDF=true. Без него API отдаёт DOCX, а на PDF отвечает
+# 503 render.pdf_unavailable. Шрифты DejaVu дают кириллицу, без них квадраты.
+ARG WITH_PDF=false
+RUN if [ "$WITH_PDF" = "true" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        libreoffice-writer-nogui fonts-dejavu \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 RUN uv sync --frozen --no-dev --no-install-project
 COPY alembic.ini ./
 COPY src/ src/
 RUN uv sync --frozen --no-dev
 # Непривилегированный пользователь; каталог логов отдаём ему (bind-mount в проде).
-RUN useradd --system --uid 10001 --create-home app && mkdir -p /app/app_logs && chown -R app:app /app
+RUN useradd --system --uid 10001 --create-home app \
+    && mkdir -p /app/app_logs /app/app_data/documents \
+    && chown -R app:app /app
 USER app
 # HEALTHCHECK задаётся в compose рядом с портами и таймингами сервиса.
 CMD ["uvicorn", "core.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

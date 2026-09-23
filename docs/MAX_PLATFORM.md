@@ -18,7 +18,10 @@ SDK `@maxhub/max-bot-api`. Здесь только то, на что опира�
   Уведомления из core доставляет именно бот (событие `notify.user`), у core нет
   прямого клиента Bot API.
 - Inline-клавиатура: до 30 рядов; типы кнопок `callback`, `link`, `open_app`
-  (`web_app` — имя мини-аппа, пусто = мини-апп бота), `request_contact`,
+  (`web_app` — имя мини-аппа; обязателен: без него API отвечает
+  `400 Field 'webApp' cannot be null` и не доставляет сообщение целиком, поэтому
+  `mainKeyboard` без `MAX_MINI_APP_NAME` кнопку не рисует. У нашего бота имя
+  мини-аппа совпадает с username — `t409_hakaton_max_bot`), `request_contact`,
   `request_geo_location`, `message`, `clipboard`. Сборка — `Keyboard.inlineKeyboard`
   в `bot/src/keyboards/main.ts`.
 

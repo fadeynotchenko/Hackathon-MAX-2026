@@ -1,84 +1,223 @@
-# MAX mini app
+# Документы для бизнеса в MAX
 
-Фундамент мини-приложения для мессенджера MAX. Репозиторий один, сервисов
-четыре, и каждая папка в корне — отдельная деплой-единица со своим рантаймом:
+Мини-приложение и бот мессенджера MAX, которые готовят типовые документы малого
+бизнеса: счёт на оплату, коммерческое предложение, договор оказания услуг.
+Владелец выбирает шаблон, отдаёт данные формой или сообщением, проверяет
+предпросмотр и получает готовый файл в чат — без возврата к компьютеру и ручной
+замены реквизитов. Продукт целиком, бэклог и нерешённые вопросы —
+[docs/PRODUCT.md](docs/PRODUCT.md).
 
-```
-core/       Python: API мини-аппа, миграции, потребитель событий бота; владелец PostgreSQL
-bot/        Node: бот MAX (@maxhub/max-bot-api), доставка уведомлений
-web/        React + Vite: мини-апп, вход через window.WebApp.initData
-gateway/    nginx (только прод): TLS, /api/ → core, /bot/webhook → bot, статика web
-contracts/  OpenAPI core и схема событий — единственное общее между сервисами
-docs/       архитектура, деплой, логи, платформа MAX
-```
+Бот: [@t409_hakaton_max_bot](https://max.ru/t409_hakaton_max_bot).
 
-Сейчас всё едет одним compose-стеком; вынос любого сервиса на свой хост —
-перенос его блока в другой compose. Правила и карта модулей —
-[AGENTS.md](AGENTS.md); архитектура — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
-деплой — [docs/DEPLOY.md](docs/DEPLOY.md); логи — [docs/LOGGING.md](docs/LOGGING.md);
-платформа MAX — [docs/MAX_PLATFORM.md](docs/MAX_PLATFORM.md).
+## Основной пользовательский сценарий
 
-## Быстрый старт
+1. Пользователь открывает мини-приложение из чата с ботом.
+2. Один раз заполняет реквизиты своей компании и карточку контрагента; ИНН,
+   ОГРН, БИК и расчётный счёт проверяются контрольными суммами.
+3. Выбирает шаблон: реквизиты обеих сторон подставляются автоматически, видно,
+   откуда взято каждое значение.
+4. Заполняет оставшиеся поля (сумма, предмет, сроки) и смотрит предпросмотр:
+   незаполненное видно прочерками, ошибки — текстом рядом с полем.
+5. Нажимает «отправить»: бот присылает в чат готовый DOCX или PDF с
+   сопроводительным текстом, документ остаётся в истории.
 
-Нужны Docker с compose, `uv` и Node 24 (pnpm ставится через `npx`).
+## Запуск одной командой
 
-```bash
-cp .env.example .env      # MAX_BOT_TOKEN от MasterBot, JWT_SECRET, DB_PASSWORD, REDIS_PASSWORD
-docker compose -f docker-compose.dev.yml up --build
-```
-
-| Адрес                               | Что                                              |
-| ----------------------------------- | ------------------------------------------------ |
-| http://localhost:3090               | мини-апп (vite с HMR; /api/ проксируется в core) |
-| http://localhost:3090/api/v1/docs   | Swagger API                                      |
-| http://localhost:3090/api/v1/health | health core (БД, Redis, воркер событий)          |
-
-Dev-стенд — пять контейнеров: `db`, `redis`, `api`, `bot`, `web` (плюс одноразовый
-`deps` для установки Node-зависимостей). Мини-апп в браузере входит сам тестовым
-пользователем: ручка `/api/v1/dev/init-data` включается `DEV_LOGIN_ENABLED=true`
-(dev-compose ставит сам, в production запрещена). Бот работает через polling, публичный адрес не нужен,
-но нужен настоящий `MAX_BOT_TOKEN`: с плейсхолдером он получает 401 от MAX.
-Для production-сборки в браузере — подписанный dev-initData:
+Нужны Docker с compose. Токены и пароли — в `.env`, он не входит в репозиторий.
 
 ```bash
-cd core && uv run python -m core.scripts.dev_init_data --user-id 1 --first-name Dev   # → VITE_DEV_INIT_DATA для .env
+cp .env.example .env      # заполнить MAX_BOT_TOKEN, JWT_SECRET, DB_PASSWORD, REDIS_PASSWORD
+docker compose up --build
 ```
 
-Локально без Docker (нужны Postgres и Redis рядом):
+Локальный стек описан в `compose.yaml` и поднимает пять контейнеров: `db`,
+`redis`, `api`, `bot`, `web` (плюс одноразовый `deps`, ставящий Node-зависимости).
+Чистая сборка занимает около 20 секунд.
+
+| Адрес                               | Что                                                |
+| ----------------------------------- | -------------------------------------------------- |
+| http://localhost:3090               | мини-апп (vite с HMR; `/api/` проксируется в core) |
+| http://localhost:3090/api/v1/docs   | Swagger API                                        |
+| http://localhost:3090/api/v1/health | состояние БД, Redis и потребителя событий          |
+
+Бот в локальном стенде работает через long polling, публичный адрес не нужен, но
+нужен настоящий `MAX_BOT_TOKEN`: с плейсхолдером MAX отвечает 401.
+
+## Состав и архитектура
+
+Репозиторий один, сервисов четыре; каждая папка в корне — отдельная деплой-единица
+со своим рантаймом и образом.
+
+```
+core/       Python 3.14, FastAPI: API мини-аппа, миграции при старте, потребитель событий бота, владелец PostgreSQL
+bot/        Node 24, @maxhub/max-bot-api: приветствие, кнопка мини-аппа, доставка готовых файлов в чат
+web/        React 19 + Vite: мини-апп, вход по подписи initData
+gateway/    nginx (прод): TLS, /api/ → core, вебхук бота, статика web, лимиты, CSP
+contracts/  OpenAPI ядра и JSON Schema событий — единственное общее между сервисами
+docs/       продукт, архитектура, деплой, логи, платформа MAX
+```
+
+Сервисы не импортируют друг друга: общее — только `contracts/` и инфраструктура
+(PostgreSQL, Redis). Шов core ↔ bot — Redis Streams с типизированным контрактом:
+ядро публикует `document.ready`, бот забирает файл по одноразовому токену и
+отправляет вложением. Подробно, вместе с картой модулей и правилами, —
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Порты
+
+| Порт   | Сервис                | Переменная                                |
+| ------ | --------------------- | ----------------------------------------- |
+| 3090   | мини-апп (vite)       | `DEV_WEB_PORT`                            |
+| 8091   | API ядра              | `DEV_API_PORT`                            |
+| 5490   | PostgreSQL            | `DEV_DB_PORT`                             |
+| 6490   | Redis                 | `DEV_REDIS_PORT`                          |
+| 80/443 | gateway (только прод) | `GATEWAY_HTTP_PORT`, `GATEWAY_HTTPS_PORT` |
+
+Порты нестандартные намеренно: стенд не должен конфликтовать с другими проектами
+на той же машине.
+
+## Переменные окружения
+
+Все переменные стека описаны в одном реестре `core.config.env_spec`; корневой
+`.env.example` генерируется из него и содержит описание, тип и значение по
+умолчанию каждой. Обязательный минимум для запуска:
+
+| Переменная       | Зачем                                                       |
+| ---------------- | ----------------------------------------------------------- |
+| `MAX_BOT_TOKEN`  | токен бота из MasterBot; им же проверяется подпись initData |
+| `JWT_SECRET`     | подпись access-токенов, 32+ случайных символа               |
+| `DB_PASSWORD`    | пароль PostgreSQL                                           |
+| `REDIS_PASSWORD` | пароль Redis                                                |
+| `ADMIN_MAX_IDS`  | JSON-массив MAX-id администраторов                          |
+
+Полезные необязательные: `MAX_MINI_APP_NAME` (имя мини-аппа для кнопки
+`open_app`; без него кнопка не рисуется), `DEV_LOGIN_ENABLED` (вход тестовым
+пользователем вне production), `WITH_PDF=true` (собрать образ ядра с LibreOffice
+и включить выдачу PDF локально), `PUBLIC_BASE_URL` (нужен боту в режиме webhook).
+
+## Зависимости
+
+Версии зафиксированы локами: `core/uv.lock` (Python, менеджер `uv`) и
+`pnpm-lock.yaml` (Node-воркспейсы `bot` и `web`). Основное: FastAPI, SQLAlchemy 2
+async, Alembic, redis.asyncio, PyJWT, python-docx; TypeScript 5.9,
+`@maxhub/max-bot-api`, ioredis, pino, zod, React 19, Vite 8. Инфраструктура:
+PostgreSQL 17, Redis 7, nginx 1.27. Сборка PDF использует LibreOffice, который
+ставится в образ ядра при `WITH_PDF=true`.
+
+## Внешние сервисы и интеграции
+
+- **MAX Bot API** (`https://platform-api2.max.ru`) — получение апдейтов, отправка
+  сообщений и загрузка файлов. Сертификат подписан корнем НУЦ Минцифры, он лежит
+  в `bot/certs/` и подключается через `NODE_EXTRA_CA_CERTS`.
+- **MAX Bridge** (`https://st.max.ru/js/max-web-app.js`) — мост мини-аппа,
+  источник подписанного `initData`.
+- Других внешних систем нет: 1С и Госуслуги описаны в планах, но не подключены.
+  Данные в стенде реальные пользовательские, заранее смоделированных наборов нет.
+
+## Работа с данными
+
+- **PostgreSQL** (владелец — только `core`): пользователи, refresh-токены,
+  шаблоны, реквизиты компании, карточки контрагентов, документы и метаданные
+  собранных файлов. Схемой владеют миграции Alembic, применяются при старте API.
+- **Redis**: сессии бота, потоки событий между ядром и ботом, одноразовые токены
+  на скачивание файла (живут час, сгорают при первом использовании).
+- **Диск**: готовые DOCX и PDF в томе `app_data/api` (`DOCUMENTS_DIR`); в базе
+  хранится путь, размер и хеш.
+- Значения полей документа хранятся вместе с источником (ручной ввод, профиль,
+  карточка контрагента) — на этом держится подсветка в предпросмотре.
+
+## Тестовые данные и проверка
+
+Вне production ручка `GET /api/v1/dev/init-data` (включается `DEV_LOGIN_ENABLED`)
+выдаёт подписанный initData тестового пользователя, поэтому мини-апп в браузере
+входит сам. Для запросов к API вручную:
 
 ```bash
-cd core && uv sync && uv run alembic upgrade head && uv run uvicorn core.api.main:app --reload
-npx -y pnpm@12.4.2 install
-npx -y pnpm@12.4.2 --filter @maxapp/bot dev      # бот
-npx -y pnpm@12.4.2 --filter @maxapp/web dev      # мини-апп :3000 (проксирует /api/ в :8000)
-# Порты docker-стенда (3090/8091/5490/6490) выбраны так, чтобы не пересекаться с другими проектами; меняются в .env.
+INIT=$(curl -s http://localhost:3090/api/v1/dev/init-data | python3 -c 'import json,sys; print(json.load(sys.stdin)["init_data"])')
+TOKEN=$(curl -s -X POST http://localhost:3090/api/v1/auth/max -H 'Content-Type: application/json' \
+  -d "{\"init_data\": \"$INIT\"}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
 ```
+
+Пошаговый сценарий проверки (тот же, что описан в `DATA-API.yaml`):
+
+```bash
+curl -s localhost:3090/api/v1/health                                    # 1. состояние сервиса
+curl -s -H "Authorization: Bearer $TOKEN" 'localhost:3090/api/v1/templates?slug=invoice'   # 2. шаблон счёта
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"ООО «Клиент»","values":{"inn":"500100732259"}}' \
+  localhost:3090/api/v1/counterparties                                  # 3. карточка контрагента
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"template_id":1,"counterparty_id":1}' localhost:3090/api/v1/documents   # 4. документ из шаблона
+curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"values":{"number":{"value":"1"},"date":{"value":"24.09.2026"},"seller_name":{"value":"ООО «Ромашка»"},"seller_inn":{"value":"7707083893"},"seller_bank":{"value":"ПАО Сбербанк"},"seller_bic":{"value":"044525225"},"seller_account":{"value":"40702810438000123459"},"item":{"value":"Услуги"},"total":{"value":"120 000"}}}' \
+  localhost:3090/api/v1/documents/1/fields                              # 5. заполнение полей
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"format":"docx"}' localhost:3090/api/v1/documents/1/render       # 6. сборка файла
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"format":"docx"}' localhost:3090/api/v1/documents/1/send         # 7. отправка в чат MAX
+```
+
+Реквизиты в примерах — публичные значения из открытых реестров, они проходят
+контрольные суммы; собственные данные подставляются так же.
+
+## Ожидаемое поведение
+
+- Шаг 1 отвечает `{"status":"ok","checks":{"database":"ok","redis":"ok","events_worker":"ok"}}`;
+  при деградации — 503 с тем же телом.
+- Шаг 4 возвращает документ со статусом `draft`, заполненными реквизитами
+  продавца и покупателя и списком незаполненных полей в `missing`.
+- Шаг 5 переводит документ в `ready: true`; сумма приходит как `120000.00`, в
+  предпросмотре печатается «120 000,00».
+- Шаг 6 возвращает имя файла, размер и признак `stale: false`. Попытка собрать
+  неготовый документ — 409 `document.not_ready`.
+- Шаг 7 отвечает 202 и UUID события; бот присылает файл в чат MAX.
+- Ошибочный реквизит не сохраняется: поле остаётся пустым, а в `errors` приходит
+  код вида `field.inn_invalid` с текстом для пользователя.
+
+## Известные ограничения
+
+- Мини-приложение пока показывает вход и профиль: экраны работы с документами в
+  разработке, весь сценарий доступен через API и бота.
+- PDF собирается только в образе с `WITH_PDF=true`; без LibreOffice ручка
+  отвечает 503 `render.pdf_unavailable`, DOCX работает всегда.
+- Шаблоны компании (загрузка своего DOCX), распознавание фотографий и агент в
+  чате не реализованы, см. [docs/PRODUCT.md](docs/PRODUCT.md).
+- Файлы лежат на диске контейнера; объектного хранилища и чистки сирот нет.
+- Сопроводительный текст к документу пока служебный, без генерации.
+
+## Остановка и повторный запуск
+
+```bash
+docker compose stop              # остановить, данные и тома сохраняются
+docker compose up -d             # поднять снова
+docker compose down              # снять стек (тома остаются)
+docker compose down -v           # снять вместе с данными PostgreSQL и Redis
+```
+
+Миграции применяет сам процесс API при старте, отдельного шага нет. Консоль
+стенда — `./maxapp` (логи, состояние, psql, redis, миграции, проверки).
 
 ## Проверки
 
-Одной командой — `./maxapp check` (ruff, import-linter, pytest в `core/`;
-eslint, tsc, dependency-cruiser, vitest в `bot/` и `web/`). По отдельности:
-
 ```bash
-cd core && uv run pytest -q && uv run ruff check . && uv run lint-imports
-npx -y pnpm@12.4.2 lint && npx -y pnpm@12.4.2 typecheck && npx -y pnpm@12.4.2 test
+./maxapp check     # ruff, import-linter, pytest, eslint, tsc, dependency-cruiser, vitest
 ```
 
-Pre-commit: `cd core && uv run pre-commit install --config ../.pre-commit-config.yaml`. Claude Code: хуки в `.claude/` прогоняют линтеры на
-каждую правку и контракты в конце хода.
+По отдельности: `cd core && uv run pytest -q`, `npx -y pnpm@12.4.2 test`.
 
-## Консоль стенда
+## Собственный API
 
-```bash
-./maxapp                 # интерактивно: /logs, /ps, /health, /psql, /redis, /migrate, /check
-./maxapp logs api        # разово
-./maxapp --prod ps       # прод-стенд (docker-compose.prod.yml)
-```
+- Адрес в проде: `https://project-documents-max.ru`, префикс `/api/v1`.
+- OpenAPI 3.1: [contracts/openapi.json](contracts/openapi.json), генерируется из
+  кода (`cd core && uv run python -m core.scripts.export_openapi`).
+- Обязательные проверки для технической оценки: [DATA-API.yaml](DATA-API.yaml).
+- Роли: `public` (только `/health`) и `user` — вход по подписанному initData,
+  дальше Bearer-токен. Учётные данные передаются отдельным каналом, в
+  репозитории их нет.
 
 ## Прод
 
 На сервере: `.env`, сертификаты в `gateway/ssl/`, затем `./deploy.sh` — прогон
-тестов core в образе, снимок БД, `docker compose -f docker-compose.prod.yml up -d --build`.
-Прод-стенд — шесть контейнеров: `db`, `redis`, `api`, `bot`, `gateway`, `db_backup`;
-миграции api применяет сам при старте.
+тестов ядра в образе, снимок БД, подъём `docker-compose.prod.yml`. Прод-стенд —
+шесть контейнеров: `db`, `redis`, `api`, `bot`, `gateway`, `db_backup`.
 Подробности и список обязательных переменных — [docs/DEPLOY.md](docs/DEPLOY.md).

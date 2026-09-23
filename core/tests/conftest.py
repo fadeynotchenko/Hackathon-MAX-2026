@@ -35,6 +35,7 @@ from core.db.models import Base
 from core.db.redis import use_redis
 from core.domain.initdata import build_init_data
 from core.events import EventBus
+from core.files import FilesConfig
 from core.usecases.auth.config import AuthConfig
 
 # Конфликтные копии облачной синхронизации («test_x 2.py») pytest подбирает как тесты.
@@ -71,6 +72,14 @@ def app_config() -> AppConfig:
         cors_allow_origins=(),
         request_timeout_seconds=5,
         dev_login_enabled=True,
+    )
+
+
+@pytest.fixture
+def files_config(tmp_path) -> FilesConfig:
+    """Файлы документов пишутся во временный каталог теста, а не в app_data."""
+    return FilesConfig(
+        documents_dir=tmp_path / "documents", soffice_bin="soffice", pdf_timeout_seconds=10
     )
 
 
@@ -128,7 +137,11 @@ def make_init_data(bot_token: str):
 
 @pytest.fixture
 async def app(
-    db: None, redis: fakeredis_aio.FakeRedis, app_config: AppConfig, auth_config: AuthConfig
+    db: None,
+    redis: fakeredis_aio.FakeRedis,
+    app_config: AppConfig,
+    auth_config: AuthConfig,
+    files_config: FilesConfig,
 ):
     application = create_app(
         app_config=app_config, lifespan_factory=None, request_timeout_seconds=5
@@ -137,6 +150,7 @@ async def app(
         app_config=app_config,
         auth_config=auth_config,
         event_bus=EventBus(redis, stream_to_bot="test:to_bot", source="api-test", maxlen=100),
+        files_config=files_config,
     )
     return application
 

@@ -20,7 +20,9 @@ cd "$ROOT_DIR"
 MAXAPP_ENV="${MAXAPP_ENV:-dev}"
 if [ "${1:-}" = "--prod" ]; then MAXAPP_ENV=prod; shift; fi
 if [ "${1:-}" = "--dev" ]; then MAXAPP_ENV=dev; shift; fi
-COMPOSE_FILE="docker-compose.${MAXAPP_ENV}.yml"
+# Локальный стенд лежит в compose.yaml (имя по умолчанию для docker compose),
+# прод — в docker-compose.prod.yml.
+if [ "$MAXAPP_ENV" = "prod" ]; then COMPOSE_FILE="docker-compose.prod.yml"; else COMPOSE_FILE="compose.yaml"; fi
 LOGS_TAIL=300
 
 if [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then

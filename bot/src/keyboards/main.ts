@@ -1,7 +1,6 @@
 // Клавиатуры бота. Тексты кнопок живут здесь же: у бота нет второго языка,
 // а вынос в i18n без второго языка — каталог «на будущее».
 import { Keyboard } from '@maxhub/max-bot-api';
-import type { OpenAppButton } from '@maxhub/max-bot-api/types';
 
 export const CALLBACKS = {
   help: 'help',
@@ -9,25 +8,24 @@ export const CALLBACKS = {
 } as const;
 
 export interface MainKeyboardOptions {
-  // Имя мини-приложения для кнопки open_app. Пусто — откроется мини-апп бота по умолчанию.
+  // Имя мини-приложения для кнопки open_app; у нашего бота совпадает с его username.
   miniAppName?: string;
 }
 
-// Кнопка open_app: web_app указывается только когда задано имя мини-аппа.
-// Пустая строка от Keyboard.button.openApp ушла бы в API как web_app="" и
-// не открыла бы мини-апп бота по умолчанию.
-export function openAppButton(text: string, miniAppName?: string): OpenAppButton {
-  return miniAppName
-    ? { type: 'open_app', text, web_app: miniAppName }
-    : { type: 'open_app', text };
-}
-
+// Кнопка open_app появляется только с именем мини-аппа: MAX отвечает
+// «400 Field 'webApp' cannot be null» и не доставляет сообщение целиком,
+// если web_app пуст (проверено на боте t409_hakaton_max_bot 2026-09-24).
+// Без имени приветствие уходит без кнопки, а не теряется.
 export function mainKeyboard(options: MainKeyboardOptions = {}) {
-  return Keyboard.inlineKeyboard([
-    [openAppButton('Открыть приложение', options.miniAppName)],
-    [
-      Keyboard.button.callback('Помощь', CALLBACKS.help),
-      Keyboard.button.callback('Профиль', CALLBACKS.profile),
-    ],
+  const rows: Parameters<typeof Keyboard.inlineKeyboard>[0] = [];
+  if (options.miniAppName) {
+    rows.push([
+      { type: 'open_app', text: 'Открыть приложение', web_app: options.miniAppName },
+    ]);
+  }
+  rows.push([
+    Keyboard.button.callback('Помощь', CALLBACKS.help),
+    Keyboard.button.callback('Профиль', CALLBACKS.profile),
   ]);
+  return Keyboard.inlineKeyboard(rows);
 }

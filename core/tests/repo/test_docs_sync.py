@@ -11,10 +11,14 @@ from core.config.env_spec import ENV_SPEC
 
 CORE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = CORE_ROOT.parent
+# Инструкции агента лежат вне репозитория (см. .gitignore): на клоне их нет,
+# и проверки про них пропускаются, а не валят прогон.
+AGENT_DOCS = frozenset({"AGENTS.md", "CLAUDE.md"})
 DOCS = [
     "README.md",
     "AGENTS.md",
     "CLAUDE.md",
+    "docs/PRODUCT.md",
     "docs/ARCHITECTURE.md",
     "docs/DEPLOY.md",
     "docs/LOGGING.md",
@@ -24,6 +28,8 @@ DOCS = [
 
 def _read(path: str) -> str:
     file = ROOT / path
+    if path in AGENT_DOCS and not file.exists():
+        pytest.skip(f"{path} не входит в репозиторий, проверять нечего")
     assert file.exists(), f"нет {path}"
     return file.read_text(encoding="utf-8")
 
@@ -58,7 +64,7 @@ def test_core_build_context_is_isolated() -> None:
     Это и есть граница сервиса на уровне сборки; импорты держат import-linter
     (root_package = core) и dependency-cruiser (bot/web ⊅ core).
     """
-    for compose in ("docker-compose.dev.yml", "docker-compose.prod.yml"):
+    for compose in ("compose.yaml", "docker-compose.prod.yml"):
         text = _read(compose)
         assert "context: ./core" in text, f"{compose}: core должен собираться из ./core"
     dockerfile = (CORE_ROOT / "Dockerfile").read_text(encoding="utf-8")
@@ -86,7 +92,7 @@ def test_architecture_doc_lists_core_layers() -> None:
 def test_readme_run_commands_match_files() -> None:
     text = _read("README.md")
     for needle in (
-        "docker-compose.dev.yml",
+        "compose.yaml",
         "docker-compose.prod.yml",
         "./maxapp",
         "./deploy.sh",
