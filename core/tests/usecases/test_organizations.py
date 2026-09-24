@@ -115,6 +115,52 @@ async def test_copy_of_a_document_from_deleted_organization_goes_from_default(
     assert copy.values["seller_name"].value == "ООО «Ромашка»"
 
 
+async def test_copy_does_not_mix_requisites_of_deleted_and_default_organization(
+    session: AsyncSession,
+) -> None:
+    user_id = await make_user(session)
+    await create_organization(session, user_id=user_id, name="ИП Нотченко", values=IP)
+    romashka = await create_organization(
+        session,
+        user_id=user_id,
+        name="ООО «Ромашка»",
+        values={**ROMASHKA, "kpp": "773601001", "bank": "ПАО Сбербанк"},
+    )
+    source = await create_draft(
+        session,
+        user_id=user_id,
+        template_id=await _invoice(session, user_id),
+        organization_id=romashka.id,
+    )
+    assert source.values["seller_kpp"].value == "773601001"
+    await delete_organization(session, user_id=user_id, organization_id=romashka.id)
+
+    copy = await copy_document(session, user_id=user_id, document_id=source.id)
+    assert copy.values["seller_name"].value == "ИП Нотченко"
+    assert "seller_kpp" not in copy.values, "КПП удалённой организации не едет к ИП"
+    assert "seller_bank" not in copy.values
+
+
+async def test_copy_forgets_requisite_erased_from_organization(session: AsyncSession) -> None:
+    user_id = await make_user(session)
+    values = {**ROMASHKA, "kpp": "773601001"}
+    romashka = await create_organization(
+        session, user_id=user_id, name="ООО «Ромашка»", values=values
+    )
+    source = await create_draft(
+        session, user_id=user_id, template_id=await _invoice(session, user_id)
+    )
+    await update_organization(
+        session,
+        user_id=user_id,
+        organization_id=romashka.id,
+        name="ООО «Ромашка»",
+        values=ROMASHKA,
+    )
+    copy = await copy_document(session, user_id=user_id, document_id=source.id)
+    assert "seller_kpp" not in copy.values, "КПП стёрли в организации — в копии его нет"
+
+
 async def test_chat_picks_the_organization_named_in_the_message(session: AsyncSession) -> None:
     user_id = await make_user(session)
     romashka = await create_organization(
@@ -132,6 +178,19 @@ async def test_chat_picks_the_organization_named_in_the_message(session: AsyncSe
         "слова правовой формы — не имя организации"
     )
     assert named_organization(orgs, "от Ромашки и Нотченко") is None, "двоих не угадываем"
+
+
+async def test_chat_does_not_take_a_similar_word_for_own_organization(
+    session: AsyncSession,
+) -> None:
+    user_id = await make_user(session)
+    await create_organization(session, user_id=user_id, name="ООО «Ромашка»", values=ROMASHKA)
+    await create_organization(session, user_id=user_id, name="ООО «Стройпроект»", values=IP)
+    orgs = await list_organizations(session, user_id=user_id)
+
+    assert named_organization(orgs, "счёт для ООО Ромашка-Сервис") is None, "это клиент"
+    assert named_organization(orgs, "счёт за строительные работы") is None
+    assert named_organization(orgs, "договор от Стройпроекта") is not None, "падеж — то же слово"
 
 
 async def test_new_invoice_is_dated_today_by_the_system(session: AsyncSession) -> None:

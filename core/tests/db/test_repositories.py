@@ -83,3 +83,30 @@ async def test_upsert_survives_concurrent_insert(session: AsyncSession, monkeypa
     )
     assert user.id == existing.id and user.first_name == "Second"
     assert await repo.count() == 1
+
+
+async def test_file_record_survives_concurrent_first_render(session: AsyncSession) -> None:
+    """Две сборки сразу: обе не нашли запись и вставляют — вторая обновляет первую."""
+    from sqlalchemy import func, select
+
+    from core.db.models import DocumentFile
+    from core.db.repositories import DocumentFileRepository
+
+    repo = DocumentFileRepository(session)
+    first = {"filename": "a.docx", "path": "1/a", "size": 1, "sha256": "a", "source_sha256": "a"}
+    await repo.upsert(document_id=1, fmt="docx", **first)
+    real_get = repo.get
+    looked = 0
+
+    async def not_yet_visible(document_id: int, fmt: str) -> DocumentFile | None:
+        nonlocal looked
+        looked += 1
+        return None if looked == 1 else await real_get(document_id, fmt)
+
+    repo.get = not_yet_visible  # type: ignore[method-assign]
+    second = {"filename": "b.docx", "path": "1/b", "size": 2, "sha256": "b", "source_sha256": "b"}
+    record = await repo.upsert(document_id=1, fmt="docx", **second)
+
+    assert record.sha256 == "b"
+    count = select(func.count()).select_from(DocumentFile)
+    assert (await session.execute(count)).scalar_one() == 1

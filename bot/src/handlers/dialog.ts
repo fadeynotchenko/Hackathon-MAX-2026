@@ -66,20 +66,22 @@ export function registerDialog(bot: Bot<BotContext>, deps: DialogDeps): void {
     const payload = ctx.callback?.payload;
     const user = ctx.user;
     if (!payload || !user || ctx.chatId === undefined || ctx.chatId === null) return;
+    // Сначала снимаем кнопки с нажатого сообщения, потом отдаём нажатие ядру:
+    // пока кнопки висят, второе нажатие на «прислать файл» успевает уйти следом.
+    // Остальные дубли отсекает ядро.
+    const original = ctx.message?.body.text;
+    if (original) {
+      try {
+        await ctx.answerOnCallback({ message: { text: original, attachments: [] } });
+      } catch (err) {
+        deps.log.warn({ event: 'dialog.callback_answer_failed', err }, 'callback not answered');
+      }
+    }
     await deps.publisher.callback({
       max_user_id: user.user_id,
       chat_id: ctx.chatId,
       payload,
     });
-    // Снимаем кнопки с нажатого сообщения: второе нажатие на «прислать файл»
-    // собрало бы и отправило документ ещё раз.
-    const original = ctx.message?.body.text;
-    if (!original) return;
-    try {
-      await ctx.answerOnCallback({ message: { text: original, attachments: [] } });
-    } catch (err) {
-      deps.log.warn({ event: 'dialog.callback_answer_failed', err }, 'callback not answered');
-    }
   });
 
   // Последний обработчик: всё, что не команда и не кнопка, — реплика помощнику.

@@ -38,6 +38,7 @@ export function CounterpartiesPage() {
               key={item.id}
               title={item.name}
               subtitle={item.inn ? `ИНН ${item.inn}` : 'ИНН не указан'}
+              innerClassNames={{ title: 'clamp-2' }}
               before={
                 <Avatar.Container size={40}>
                   <Avatar.Text gradient="blue">{initials(item.name)}</Avatar.Text>

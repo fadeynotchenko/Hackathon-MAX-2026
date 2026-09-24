@@ -11,7 +11,7 @@ import { IconCopy, IconEdit, IconSend, IconTrash } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
-import { FACT_LABEL, formatDate, formatDateTime } from '@/lib/format';
+import { FACT_LABEL, documentName, formatDate, formatDateTime } from '@/lib/format';
 import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 
@@ -76,6 +76,9 @@ export function DocumentPage() {
   const ready = doc.ready && doc.unconfirmed.length === 0;
   const banner = statusBanner(doc, history);
   const client = doc.values['client_name']?.value;
+  const subtitle = [doc.title !== doc.template.title ? doc.template.title : null, client]
+    .filter(Boolean)
+    .join(' · ');
 
   const copy = async () => {
     setBusy('copy');
@@ -106,8 +109,8 @@ export function DocumentPage() {
 
   return (
     <Page
-      title={doc.title}
-      subtitle={client ? `${doc.template.title} · ${client}` : doc.template.title}
+      title={documentName(doc.title, doc.values['number']?.value)}
+      subtitle={subtitle || undefined}
       onBack={back}
       footer={
         ready ? (

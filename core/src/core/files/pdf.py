@@ -39,11 +39,22 @@ async def convert_to_pdf(docx_bytes: bytes, *, soffice_bin: str, timeout_seconds
         try:
             _, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
         except TimeoutError as exc:
-            process.kill()
+            await _stop(process)
             raise PdfUnavailableError("конвертация PDF не уложилась в таймаут") from exc
+        except asyncio.CancelledError:
+            # Запрос отменили (таймаут API): LibreOffice не должен работать дальше
+            # в каталоге, который сейчас удалится, и копиться процессами.
+            await _stop(process)
+            raise
 
         result = work / "document.pdf"
         if process.returncode != 0 or not result.exists():
             detail = stderr.decode(errors="replace").strip() or f"код {process.returncode}"
             raise PdfUnavailableError(f"LibreOffice не собрал PDF: {detail}")
         return result.read_bytes()
+
+
+async def _stop(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is None:
+        process.kill()
+        await process.wait()

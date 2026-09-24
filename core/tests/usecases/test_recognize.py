@@ -81,7 +81,7 @@ async def test_photo_fills_empty_fields_and_keeps_confirmed_ones(session: AsyncS
     )
     assert set(result.document.unconfirmed) == {"client_name", "client_inn"}
     assert result.reply.startswith("Во вложении — карточка предприятия. Заполнил:")
-    assert "Оставил как было, хотя во вложении другое: ИНН продавца" in result.reply
+    assert "Не стал менять — во вложении другое: ИНН продавца" in result.reply
 
     kind, messages, schema = llm.calls[0]
     assert kind == "json" and schema is not None
@@ -100,7 +100,8 @@ async def test_misread_requisite_is_rejected_not_stored(session: AsyncSession) -
     )
     assert result.filled == () and "client_inn" not in result.document.values
     assert [e.code for e in result.rejected] == ["field.inn_invalid"]
-    assert "Во вложении не нашёл значений" in result.reply
+    assert "Не записал: «ИНН клиента»" in result.reply
+    assert "не нашёл значений" not in result.reply, "отклонённое — не «ничего не нашёл»"
 
 
 async def test_account_not_matching_bic_is_rejected_once_and_not_stored(
@@ -214,3 +215,30 @@ async def test_photo_is_not_accepted_as_voice() -> None:
     with pytest.raises(AppError) as exc:
         await transcribe(data=PHOTO, llm=FakeLLM(), max_bytes=LIMIT)
     assert exc.value.code == "media.unsupported"
+
+
+async def test_unreadable_voice_is_explained_as_voice() -> None:
+    from core.llm import LLMInputError
+    from core.usecases.agent.recognize import VOICE_UNREADABLE_TEXT
+
+    with pytest.raises(AppError) as rejected:
+        await transcribe(
+            data=VOICE, llm=FakeLLM(error=LLMInputError("fake: формат")), max_bytes=LIMIT
+        )
+    assert rejected.value.public_message == VOICE_UNREADABLE_TEXT, "а не «пришлите фото JPG»"
+    with pytest.raises(AppError) as unknown:
+        await transcribe(data=b"not a voice at all", llm=FakeLLM(), max_bytes=LIMIT)
+    assert unknown.value.public_message == VOICE_UNREADABLE_TEXT
+
+
+async def test_voice_for_foreign_document_is_not_sent_to_the_model(session: AsyncSession) -> None:
+    from core.domain.exceptions import NotFoundError
+    from core.usecases.agent.recognize import fill_from_voice
+
+    user_id = await make_user(session)
+    llm = FakeLLM(json_reply={"text": "Счёт на 5000"})
+    with pytest.raises(NotFoundError):
+        await fill_from_voice(
+            session, user_id=user_id, document_id=424242, data=VOICE, llm=llm, max_bytes=LIMIT
+        )
+    assert llm.calls == [], "голосовое не уходит к провайдеру ради чужого документа"

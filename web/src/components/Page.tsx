@@ -26,12 +26,6 @@ export function Page({ title, subtitle, onBack, tabs, footer, headerAfter, child
     return showBackButton(onBack);
   }, [onBack]);
 
-  const bodyClass = [
-    'screen__body',
-    tabs ? 'screen__body--with-tabs' : '',
-    footer ? 'screen__body--with-footer' : '',
-  ].join(' ');
-
   return (
     <div className="screen">
       <header className="screen__header">
@@ -51,14 +45,14 @@ export function Page({ title, subtitle, onBack, tabs, footer, headerAfter, child
             <h1 className="screen__title">{title}</h1>
           </Typography.Text>
           {subtitle ? (
-            <Typography.Text variant="description" color="secondary">
+            <Typography.Text variant="description" color="secondary" className="clamp-3">
               {subtitle}
             </Typography.Text>
           ) : null}
         </div>
         {headerAfter}
       </header>
-      <main className={bodyClass}>{children}</main>
+      <main className="screen__body">{children}</main>
       {footer ? <div className="screen__footer">{footer}</div> : null}
       {tabs ? <TabBar /> : null}
     </div>

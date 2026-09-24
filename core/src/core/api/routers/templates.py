@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from core.api.dependencies import CurrentUserDep, SessionDep
-from core.api.schemas.common import ErrorResponse
+from core.api.schemas.common import ErrorResponse, IdPath
 from core.api.schemas.documents import TemplateSchema
 from core.usecases.documents import get_template, list_templates
 
@@ -35,6 +35,8 @@ async def get_templates(
     operation_id="get_template",
     summary="Шаблон и описание его полей",
 )
-async def get_one(template_id: int, current: CurrentUserDep, session: SessionDep) -> TemplateSchema:
+async def get_one(
+    template_id: IdPath, current: CurrentUserDep, session: SessionDep
+) -> TemplateSchema:
     template = await get_template(session, user_id=current.id, template_id=template_id)
     return TemplateSchema.model_validate(template)

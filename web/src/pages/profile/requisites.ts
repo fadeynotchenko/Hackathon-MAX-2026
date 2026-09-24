@@ -9,13 +9,15 @@ export interface RequisiteSpec {
   type: FieldType;
   // Пример значения — подсказкой под полем.
   example?: string;
+  maxLength?: number;
 }
 
 export const REQUISITE_GROUPS: Array<{ title: string; fields: RequisiteSpec[] }> = [
   {
     title: 'Юрданные',
     fields: [
-      { key: 'name', label: 'Название', type: 'text', example: 'ООО «Ромашка»' },
+      // Столько же хранит база: длиннее сервер отвечал «Некорректные данные запроса».
+      { key: 'name', label: 'Название', type: 'text', example: 'ООО «Ромашка»', maxLength: 255 },
       { key: 'inn', label: 'ИНН', type: 'inn' },
       { key: 'kpp', label: 'КПП', type: 'kpp' },
       { key: 'ogrn', label: 'ОГРН или ОГРНИП', type: 'ogrn' },

@@ -135,6 +135,28 @@ async def test_bad_value_is_reported_and_not_saved(session: AsyncSession) -> Non
     assert result.values["client_name"].value == "ООО «Клиент»"
 
 
+async def test_rejected_edit_keeps_the_previous_value(session: AsyncSession) -> None:
+    user_id = await make_user(session)
+    await ensure_builtin_templates(session)
+    (offer,) = await list_templates(session, user_id=user_id, slug="offer")
+    document = await create_draft(session, user_id=user_id, template_id=offer.id)
+    await set_fields(
+        session, user_id=user_id, document_id=document.id, values={"total": FieldValue("120000")}
+    )
+
+    edited = await set_fields(
+        session,
+        user_id=user_id,
+        document_id=document.id,
+        values={"total": FieldValue("сто пятьдесят")},
+    )
+
+    assert [e.code for e in edited.errors] == ["field.money_invalid"]
+    assert edited.values["total"].value == "120000.00", "опечатка не стирает прошлую сумму"
+    reloaded = await get_document(session, user_id=user_id, document_id=document.id)
+    assert reloaded.values["total"].value == "120000.00" and reloaded.errors == ()
+
+
 async def test_empty_value_clears_field(session: AsyncSession) -> None:
     user_id = await make_user(session)
     await ensure_builtin_templates(session)
@@ -153,6 +175,22 @@ async def test_empty_value_clears_field(session: AsyncSession) -> None:
     )
     assert "client_name" not in cleared.values
     assert "client_name" in cleared.missing
+
+
+async def test_archive_tells_same_invoices_apart_by_number(session: AsyncSession) -> None:
+    user_id = await make_user(session)
+    await ensure_builtin_templates(session)
+    (invoice,) = await list_templates(session, user_id=user_id, slug="invoice")
+    numbered = await create_draft(session, user_id=user_id, template_id=invoice.id)
+    await set_fields(
+        session, user_id=user_id, document_id=numbered.id, values={"number": FieldValue("17")}
+    )
+    await create_draft(session, user_id=user_id, template_id=invoice.id)
+    numbers = {
+        summary.id: summary.number for summary in await list_documents(session, user_id=user_id)
+    }
+    assert numbers[numbered.id] == "17"
+    assert None in numbers.values(), "у документа без номера номера нет"
 
 
 async def test_documents_and_templates_are_private(session: AsyncSession) -> None:
@@ -184,3 +222,31 @@ async def test_counterparty_requisites_are_validated(session: AsyncSession) -> N
         await create_counterparty(
             session, user_id=user_id, name="Ещё раз", values={"inn": "500100732259"}
         )
+
+
+async def test_counterparty_card_can_be_edited(session: AsyncSession) -> None:
+    from core.usecases.documents import update_counterparty
+
+    user_id = await make_user(session)
+    card = await create_counterparty(session, user_id=user_id, name="Старое", values={})
+    other = await create_counterparty(
+        session, user_id=user_id, name="ООО «Клиент»", values={"inn": "500100732259"}
+    )
+
+    edited = await update_counterparty(
+        session,
+        user_id=user_id,
+        counterparty_id=card.id,
+        name="Новое",
+        values={"inn": "7707083893"},
+    )
+    assert (edited.name, edited.inn) == ("Новое", "7707083893")
+    with pytest.raises(ValidationError) as twin:
+        await update_counterparty(
+            session,
+            user_id=user_id,
+            counterparty_id=card.id,
+            name="Новое",
+            values={"inn": other.inn or ""},
+        )
+    assert twin.value.code == "counterparty.duplicate_inn"

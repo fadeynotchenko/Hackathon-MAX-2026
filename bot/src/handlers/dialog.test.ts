@@ -156,6 +156,10 @@ describe('dialog', () => {
     expect(answerOnCallback).toHaveBeenCalledWith({
       message: { text: 'Счёт на оплату: проверьте значения', attachments: [] },
     });
+    // Кнопки снимаются до публикации: иначе второе нажатие успевает уйти следом.
+    expect(answerOnCallback.mock.invocationCallOrder[0]).toBeLessThan(
+      xadd.mock.invocationCallOrder[0]!,
+    );
   });
 });
 

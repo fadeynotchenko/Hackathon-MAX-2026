@@ -57,6 +57,7 @@ body {
 
 .screen__title {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .screen__body {
@@ -67,18 +68,11 @@ body {
   flex: 1;
 }
 
-.screen__body--with-tabs {
-  padding-bottom: calc(72px + env(safe-area-inset-bottom));
-}
-
-.screen__body--with-footer {
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
-}
-
+/* Футер и таб-бар прилипают к низу экрана (sticky), а не висят поверх него
+   (fixed): при двух-трёх кнопках фиксированный футер закрывал последние пункты,
+   а отступ под него пришлось бы угадывать для каждого экрана. */
 .screen__footer {
-  position: fixed;
-  left: 0;
-  right: 0;
+  position: sticky;
   bottom: 0;
   z-index: 10;
   display: flex;
@@ -128,11 +122,25 @@ body {
   white-space: nowrap;
 }
 
+/* Длинное название клиента — не больше двух строк: в пять строк оно раздувало
+   список и заголовок группы архива. */
+.clamp-2,
+.clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* Подзаголовок экрана с длинным названием клиента — не больше трёх строк. */
+.clamp-3 {
+  -webkit-line-clamp: 3;
+}
+
 /* Таб-бар: «Создать · Архив · Профиль» на корневых экранах. */
 .tabbar {
-  position: fixed;
-  left: 0;
-  right: 0;
+  position: sticky;
   bottom: 0;
   z-index: 10;
   display: grid;
@@ -325,15 +333,20 @@ body {
 .thumb__sign {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  font-size: 0.9em;
   margin-top: auto;
   color: var(--text-tertiary);
 }
 
 .thumb__sign span {
   flex: 1;
+  min-width: 0;
   padding-top: 3px;
   border-top: 1px solid var(--divider-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Поля формы. */

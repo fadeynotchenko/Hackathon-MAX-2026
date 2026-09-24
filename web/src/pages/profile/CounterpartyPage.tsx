@@ -72,6 +72,7 @@ function CounterpartyForm({ initial, counterpartyId, onBack }: CounterpartyFormP
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const save = async () => {
     setError(null);
@@ -107,12 +108,14 @@ function CounterpartyForm({ initial, counterpartyId, onBack }: CounterpartyFormP
       setConfirmDelete(true);
       return;
     }
-    if (counterpartyId === null) return;
+    if (counterpartyId === null || deleting) return;
+    setDeleting(true);
     try {
       await api.deleteCounterparty(counterpartyId);
       void navigate('/profile/counterparties', { replace: true });
     } catch (err) {
       setError(errorText(err, 'Не удалось удалить карточку'));
+      setDeleting(false);
     }
   };
 
@@ -135,7 +138,12 @@ function CounterpartyForm({ initial, counterpartyId, onBack }: CounterpartyFormP
       <RequisitesForm values={values} onChange={setValues} errors={errors} />
       {!isNew ? (
         <CellList mode="island" filled>
-          <CellAction before={<IconTrash />} mode="destructive" onClick={() => void remove()}>
+          <CellAction
+            before={<IconTrash />}
+            mode="destructive"
+            disabled={saving || deleting}
+            onClick={() => void remove()}
+          >
             {confirmDelete ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить карточку'}
           </CellAction>
         </CellList>

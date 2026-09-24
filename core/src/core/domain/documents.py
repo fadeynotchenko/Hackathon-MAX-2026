@@ -103,7 +103,12 @@ class ValidatedFields:
         return not self.errors and not self.missing and not self.unconfirmed
 
 
-_DIGITS = re.compile(r"\D+")
+# Только ASCII-цифры: «٧٧٠٧…» (арабские) \d тоже считает цифрами, и такой ИНН
+# проходил проверку, но не совпадал с тем же ИНН, набранным обычными цифрами.
+_DIGITS = re.compile(r"[^0-9]+")
+_INTEGER = re.compile(r"^\+?([0-9][0-9 ]*?)\s*[а-яёa-z.]*$", re.IGNORECASE)
+_KPP = re.compile(r"^[0-9]{4}[0-9A-Z]{2}[0-9]{3}$")
+_NOT_KPP = re.compile(r"[^0-9A-Z]")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s.]+\.[^@\s]+$")
 _SPACES = re.compile(r"[\s ]+")
 
@@ -147,22 +152,49 @@ def account_key_valid(account: str, bic: str) -> bool:
     return total % 10 == 0
 
 
+# Потолок суммы: триллион с копейками. Дальше — опечатка, а «1e999999» без
+# потолка превращался бы в строку из миллиона цифр в документе и базе.
+MAX_MONEY = Decimal("999999999999.99")
+
+
+# «150 000 рублей», «150 тыс. руб.», «1,5 млн» — так суммы пишут в сообщениях.
+_CURRENCY = re.compile(r"(₽|руб(лей|ля|ль|\.)?|р\.?)$")
+_THOUSANDS = re.compile(r"(тыс(яч[аи]?|\.)?|т\.?|к)$")
+_MILLIONS = re.compile(r"(млн\.?|миллион(а|ов)?)$")
+
+
 def parse_money(raw: str) -> Decimal | None:
     """«120 000,50», «120000.50», «120 000 ₽» — одна и та же сумма."""
-    cleaned = _SPACES.sub("", raw).replace("₽", "").replace("руб.", "").replace(",", ".")
+    cleaned = _CURRENCY.sub("", _SPACES.sub("", raw).lower())
+    factor = 1
+    for unit, multiplier in ((_THOUSANDS, 1000), (_MILLIONS, 1_000_000)):
+        if unit.search(cleaned):
+            cleaned, factor = unit.sub("", cleaned), multiplier
+            break
+    cleaned = cleaned.replace(",", ".")
     if not cleaned:
         return None
     try:
-        amount = Decimal(cleaned)
+        amount = Decimal(cleaned) * factor
     except InvalidOperation:
         return None
-    if amount < 0 or amount.as_tuple().exponent < -2:
+    # «NaN» и «Infinity» Decimal принимает, но сравнивать их нельзя: не сумма.
+    if not amount.is_finite() or amount < 0 or amount > MAX_MONEY:
         return None
-    return amount
+    # «1,555 тыс.» — это 1555 рублей ровно, а не 1555,000 с лишними знаками.
+    if (amount.normalize() if factor > 1 else amount).as_tuple().exponent < -2:
+        return None
+    # «-0» — тот же ноль, без минуса в документе.
+    return abs(amount)
+
+
+# «31.12.2026 г.», «31.12.2026г» — так дату пишут в документах и сообщениях.
+_YEAR_SUFFIX = re.compile(r"\s*(г\.?|года)$", re.IGNORECASE)
+MIN_YEAR, MAX_YEAR = 1900, 2100
 
 
 def parse_date(raw: str) -> date | None:
-    cleaned = raw.strip().replace("/", ".").replace("-", ".")
+    cleaned = _YEAR_SUFFIX.sub("", raw.strip()).replace("/", ".").replace("-", ".")
     parts = cleaned.split(".")
     if len(parts) != 3 or not all(p.isdigit() for p in parts):
         return None
@@ -170,8 +202,12 @@ def parse_date(raw: str) -> date | None:
         year, month, day = parts
     else:
         day, month, year = parts
+    # «01.10.26» — это 2026 год, а не 26-й нашей эры.
+    full_year = int(year) + 2000 if len(year) == 2 else int(year)
+    if not MIN_YEAR <= full_year <= MAX_YEAR:
+        return None
     try:
-        return date(int(year), int(month), int(day))
+        return date(full_year, int(month), int(day))
     except ValueError:
         return None
 
@@ -182,17 +218,31 @@ def format_money(amount: Decimal) -> str:
     return f"{groups},{frac}"
 
 
+# Невидимые символы (пробел нулевой ширины, BOM) превращали пустое поле в
+# «заполненное»; управляющие не принимает PostgreSQL (NUL) и сборка DOCX (XML).
+_INVISIBLE = re.compile("[\u200b-\u200d\u2060\ufeff\u00ad]")
+_CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# Предел длины по типу, если шаблон не задал свой: реквизит или адрес длиннее —
+# вставленный по ошибке текст, а не значение.
+DEFAULT_MAX_LENGTH = {FieldType.MULTILINE: 5000, FieldType.EMAIL: 254}
+TEXT_MAX_LENGTH = 1000
+INTEGER_MAX_DIGITS = 9
+
+
 def normalize(spec: FieldSpec, raw: str) -> tuple[str, FieldError | None]:
     """Привести значение к каноническому виду хранения или объяснить, что не так."""
-    value = raw.strip()
+    value = _INVISIBLE.sub("", raw).strip()
     if not value:
         return "", None
 
     def bad(code: str, message: str) -> tuple[str, FieldError]:
         return "", FieldError(spec.key, code, message)
 
-    if spec.max_length is not None and len(value) > spec.max_length:
-        return bad("field.too_long", f"«{spec.label}»: не длиннее {spec.max_length} символов")
+    if _CONTROL.search(value):
+        return bad("field.control_chars", f"«{spec.label}»: в значении есть служебные символы")
+    limit = spec.max_length or DEFAULT_MAX_LENGTH.get(spec.type, TEXT_MAX_LENGTH)
+    if len(value) > limit:
+        return bad("field.too_long", f"«{spec.label}»: не длиннее {limit} символов")
 
     match spec.type:
         case FieldType.MONEY:
@@ -206,10 +256,11 @@ def normalize(spec: FieldSpec, raw: str) -> tuple[str, FieldError | None]:
                 return bad("field.date_invalid", f"«{spec.label}»: дата в формате 31.12.2026")
             return parsed.isoformat(), None
         case FieldType.INTEGER:
-            digits = _digits(value)
-            if not digits or digits != value.lstrip("+"):
+            # «10 дней» в поле «Срок, дней» — это 10: единица уже в названии поля.
+            match = _INTEGER.match(value)
+            if match is None or len(_digits(match.group(1))) > INTEGER_MAX_DIGITS:
                 return bad("field.integer_invalid", f"«{spec.label}»: только целое число")
-            return digits, None
+            return str(int(_digits(match.group(1)))), None
         case FieldType.EMAIL:
             if not _EMAIL.match(value):
                 return bad("field.email_invalid", f"«{spec.label}»: не похоже на адрес почты")
@@ -227,10 +278,11 @@ def normalize(spec: FieldSpec, raw: str) -> tuple[str, FieldError | None]:
                 return bad("field.inn_invalid", f"«{spec.label}»: ИНН не проходит проверку")
             return digits, None
         case FieldType.KPP:
-            digits = _digits(value)
-            if len(digits) != 9:
+            # В 5–6 знаках КПП бывают латинские буквы (причина постановки на учёт).
+            kpp = _NOT_KPP.sub("", value.upper())
+            if not _KPP.match(kpp):
                 return bad("field.kpp_invalid", f"«{spec.label}»: КПП из 9 цифр")
-            return digits, None
+            return kpp, None
         case FieldType.OGRN:
             digits = _digits(value)
             if not _ogrn_valid(digits):
@@ -240,6 +292,9 @@ def normalize(spec: FieldSpec, raw: str) -> tuple[str, FieldError | None]:
             digits = _digits(value)
             if len(digits) != 9:
                 return bad("field.bic_invalid", f"«{spec.label}»: БИК из 9 цифр")
+            # Первые две цифры — код страны: у российских банков всегда 04.
+            if not digits.startswith("04"):
+                return bad("field.bic_invalid", f"«{spec.label}»: БИК банка начинается с 04")
             return digits, None
         case FieldType.ACCOUNT:
             digits = _digits(value)
@@ -262,7 +317,7 @@ def validate_fields(
     for key, incoming_value in incoming.items():
         spec = known.get(key)
         if spec is None:
-            errors.append(FieldError(key, "field.unknown", f"Поле «{key}» не из этого шаблона"))
+            errors.append(FieldError(key, "field.unknown", f"Неизвестное поле «{key}»"))
             continue
         normalized, error = normalize(spec, incoming_value.value)
         if error is not None:
@@ -286,8 +341,8 @@ def _cross_field_errors(
     for key, spec in known.items():
         if spec.type is not FieldType.ACCOUNT or key not in values:
             continue
-        bic_key = next((b for b in bic_keys if b in values), None)
-        if bic_key is None:
+        bic_key = _bic_for(key, bic_keys)
+        if bic_key is None or bic_key not in values:
             continue
         if not account_key_valid(values[key].value, values[bic_key].value):
             errors.append(
@@ -298,6 +353,24 @@ def _cross_field_errors(
                 )
             )
     return errors
+
+
+def _bic_for(account_key: str, bic_keys: list[str]) -> str | None:
+    """БИК той же стороны: ``seller_account`` сверяется с ``seller_bic``, а не с
+    первым попавшимся БИК шаблона — иначе счёт клиента проверялся бы банком продавца."""
+    side = account_key.rpartition("_")[0]
+    same_side = [key for key in bic_keys if key.rpartition("_")[0] == side]
+    if same_side:
+        return same_side[0]
+    return bic_keys[0] if len(bic_keys) == 1 else None
+
+
+def format_phone(value: str) -> str:
+    """«+79001234567» → «+7 900 123-45-67»: так номер читают в документе."""
+    digits = _digits(value)
+    if len(digits) != 11 or not value.startswith("+7"):
+        return value
+    return f"+7 {digits[1:4]} {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
 
 
 def render_context(
@@ -317,6 +390,8 @@ def render_context(
             case FieldType.DATE:
                 parsed = parse_date(value.value)
                 out[spec.key] = parsed.strftime("%d.%m.%Y") if parsed else value.value
+            case FieldType.PHONE:
+                out[spec.key] = format_phone(value.value)
             case _:
                 out[spec.key] = value.value
     return out

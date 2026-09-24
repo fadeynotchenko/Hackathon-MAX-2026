@@ -107,6 +107,44 @@ describe('document flow', () => {
     expect(setFields).toHaveBeenLastCalledWith(7, { client_inn: '', total: '180 000' });
   });
 
+  it('does not label a rejected value with the source of the kept one', async () => {
+    const fromCard = {
+      value: '7736207543',
+      source: 'counterparty' as const,
+      confirmed: true,
+      fragment: null,
+      confidence: null,
+    };
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument({ values: { client_inn: fromCard } }));
+    vi.spyOn(api, 'setFields').mockResolvedValueOnce(
+      makeDocument({
+        // Сервер отклонил правку и оставил прежний ИНН из карточки.
+        values: { client_inn: fromCard },
+        errors: [
+          {
+            key: 'client_inn',
+            code: 'field.inn_invalid',
+            message: '«ИНН клиента»: ИНН не проходит проверку',
+          },
+        ],
+      }),
+    );
+    renderScreen(<FillPage />, {
+      api,
+      path: '/documents/:documentId/fill',
+      route: '/documents/7/fill',
+    });
+    expect(await screen.findByText('Из карточки клиента')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/ИНН клиента/), { target: { value: '7707083894' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
+
+    expect(await screen.findByText('ИНН не проходит проверку')).toBeInTheDocument();
+    expect(screen.getByLabelText(/ИНН клиента/)).toHaveValue('7707083894');
+    expect(screen.queryByText('Из карточки клиента')).not.toBeInTheDocument();
+  });
+
   it('asks to confirm recognized values before export', async () => {
     const api = mockApi();
     const pending = makeDocument({

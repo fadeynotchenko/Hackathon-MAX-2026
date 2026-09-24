@@ -1,7 +1,7 @@
 // Состояние формы документа: что показать в полях, что изменилось и какие
 // ошибки у каких полей. Чистые функции — их проверяют тесты без React.
-import type { DocumentView, FieldSpec } from '@/api/client';
-import { SOURCE_LABEL, toInputValue } from '@/lib/format';
+import type { DocumentView, FieldSpec, FieldValue } from '@/api/client';
+import { SOURCE_LABEL, documentName, toInputValue } from '@/lib/format';
 
 export type Draft = Record<string, string>;
 
@@ -62,14 +62,32 @@ export function sourceOf(
   };
 }
 
+// Подпись документа под заголовком экрана: «Счёт на оплату № 17 · ООО «Альфа»».
+// Вид шаблона — только если название своё, иначе он повторял бы название.
+export function documentCaption(doc: DocumentView): string {
+  const parts = [documentName(doc.title, doc.values['number']?.value)];
+  if (doc.title !== doc.template.title) parts.push(doc.template.title);
+  const client = doc.values['client_name']?.value;
+  if (client) parts.push(client);
+  return parts.join(' · ');
+}
+
+// Откуда прочитано значение, ждущее подтверждения: с фото — строка оригинала,
+// от помощника — слова из сообщения.
+export function fragmentLabel(source: FieldValue['source'], fragment: string): string {
+  return source === 'agent' ? `В сообщении: «${fragment}»` : `На фото: «${fragment}»`;
+}
+
 export function labelsOf(document: DocumentView, keys: readonly string[]): string[] {
   const labels = new Map(document.template.fields.map((field) => [field.key, field.label]));
   return keys.map((key) => labels.get(key) ?? key);
 }
 
 // Текст к файлу по умолчанию, пока человек не написал свой или не попросил помощника.
+// Название клиента сюда не подставляется: письмо читает сам клиент, а «для ООО
+// Ромашка» без склонения («для Акционерное общество») читалось бы с ошибкой.
 export function defaultCoverText(doc: DocumentView): string {
-  const client = doc.values['client_name']?.value;
-  const what = doc.template.title.toLowerCase();
-  return `Здравствуйте!\n\nНаправляю ${what}${client ? ` для ${client}` : ''}. Если появятся вопросы — напишите, обсудим.`;
+  const number = doc.values['number']?.value;
+  const what = `${doc.template.title.toLowerCase()}${number ? ` № ${number}` : ''}`;
+  return `Здравствуйте!\n\nНаправляю ${what}. Если появятся вопросы — напишите, обсудим.`;
 }

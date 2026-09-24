@@ -1,6 +1,6 @@
 // Мои организации: ООО, ИП — всё, от чьего имени пользователь выставляет документы.
 // Основная стоит первой: от неё документ, если организацию не выбрали.
-import { Avatar, CellAction, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
+import { Avatar, CellAction, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
 import { useNavigate } from 'react-router-dom';
 
 import { IconPlus } from '@/components/icons';
@@ -38,19 +38,17 @@ export function OrganizationsPage() {
             <CellSimple
               key={item.id}
               title={item.name}
-              subtitle={item.inn ? `ИНН ${item.inn}` : 'ИНН не указан'}
-              innerClassNames={{ title: 'ellipsis' }}
+              subtitle={
+                <>
+                  {item.is_default ? <span className="themed">Основная · </span> : null}
+                  {item.inn ? `ИНН ${item.inn}` : 'ИНН не указан'}
+                </>
+              }
+              innerClassNames={{ title: 'clamp-2' }}
               before={
                 <Avatar.Container size={40}>
                   <Avatar.Text gradient="purple">{initials(item.name)}</Avatar.Text>
                 </Avatar.Container>
-              }
-              after={
-                item.is_default ? (
-                  <Typography.Text variant="description" className="themed nowrap">
-                    Основная
-                  </Typography.Text>
-                ) : null
               }
               showChevron
               onClick={() => navigate(`/profile/organizations/${item.id}`)}

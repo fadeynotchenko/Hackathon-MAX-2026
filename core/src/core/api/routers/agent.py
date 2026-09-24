@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Request
 
 from core.api.dependencies import CurrentUserDep, SessionDep, StateDep
-from core.api.schemas.common import ErrorResponse
+from core.api.schemas.common import ErrorResponse, IdPath
 from core.api.schemas.documents import (
     AgentAskRequest,
     AgentFillRequest,
@@ -69,7 +69,7 @@ def _fill_response(result: AgentFillResult) -> AgentFillResponse:
     summary="Заполнить поля документа из сообщения",
 )
 async def fill(
-    document_id: int,
+    document_id: IdPath,
     payload: AgentFillRequest,
     current: CurrentUserDep,
     session: SessionDep,
@@ -96,7 +96,7 @@ async def fill(
     ),
 )
 async def recognize(
-    document_id: int,
+    document_id: IdPath,
     request: Request,
     current: CurrentUserDep,
     session: SessionDep,
@@ -125,7 +125,7 @@ async def recognize(
     openapi_extra=binary_body(*AUDIO_TYPES, description="Голосовое: OGG, MP3, M4A, WEBM, WAV"),
 )
 async def voice(
-    document_id: int,
+    document_id: IdPath,
     request: Request,
     current: CurrentUserDep,
     session: SessionDep,
@@ -153,7 +153,7 @@ async def voice(
     summary="Ответить на вопрос по документу",
 )
 async def ask(
-    document_id: int,
+    document_id: IdPath,
     payload: AgentAskRequest,
     current: CurrentUserDep,
     session: SessionDep,
@@ -177,7 +177,7 @@ async def ask(
     summary="Черновик сопроводительного сообщения контрагенту",
 )
 async def cover_letter(
-    document_id: int, current: CurrentUserDep, session: SessionDep, state: StateDep
+    document_id: IdPath, current: CurrentUserDep, session: SessionDep, state: StateDep
 ) -> AgentTextResponse:
     text = await draft_cover_letter(
         session, user_id=current.id, document_id=document_id, llm=state.llm

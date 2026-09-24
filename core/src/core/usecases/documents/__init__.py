@@ -14,6 +14,7 @@ from .drafts import (
     copy_document,
     create_draft,
     delete_document,
+    document_name,
     get_document,
     list_documents,
     set_fields,
@@ -28,7 +29,14 @@ from .files import (
     render_document,
     send_document_to_chat,
 )
-from .journal import DocumentFact, Fact, SendState, document_history, record_delivery
+from .journal import (
+    DocumentFact,
+    Fact,
+    SendState,
+    document_history,
+    last_sends,
+    record_delivery,
+)
 from .organizations import (
     OrganizationView,
     create_organization,
@@ -64,9 +72,11 @@ __all__ = [
     "delete_document",
     "delete_organization",
     "document_history",
+    "document_name",
     "ensure_builtin_templates",
     "get_document",
     "get_template",
+    "last_sends",
     "list_counterparties",
     "list_document_files",
     "list_documents",

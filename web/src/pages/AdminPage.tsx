@@ -59,7 +59,7 @@ export function AdminPage() {
   };
 
   return (
-    <Page title="Администрирование" onBack={back}>
+    <Page title="Сводка и рассылка" onBack={back}>
       {error ? (
         <div className="section">
           <Banner tone="error" title={error} />

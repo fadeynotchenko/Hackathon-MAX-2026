@@ -6,7 +6,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Query, Response, status
 
 from core.api.dependencies import CurrentUserDep, RedisDep, SessionDep, StateDep
-from core.api.schemas.common import ErrorResponse, OkResponse
+from core.api.schemas.common import ErrorResponse, IdPath, OkResponse
 from core.api.schemas.documents import (
     ConfirmFieldsRequest,
     CopyDocumentRequest,
@@ -84,7 +84,9 @@ async def get_all(current: CurrentUserDep, session: SessionDep) -> list[Document
     operation_id="get_document",
     summary="Документ с предпросмотром",
 )
-async def get_one(document_id: int, current: CurrentUserDep, session: SessionDep) -> DocumentSchema:
+async def get_one(
+    document_id: IdPath, current: CurrentUserDep, session: SessionDep
+) -> DocumentSchema:
     document = await get_document(session, user_id=current.id, document_id=document_id)
     return DocumentSchema.model_validate(document)
 
@@ -97,7 +99,7 @@ async def get_one(document_id: int, current: CurrentUserDep, session: SessionDep
     summary="Путь документа: создан, готов, собран, отправлен, доставлен",
 )
 async def history(
-    document_id: int, current: CurrentUserDep, session: SessionDep
+    document_id: IdPath, current: CurrentUserDep, session: SessionDep
 ) -> list[DocumentFactSchema]:
     facts = await document_history(session, user_id=current.id, document_id=document_id)
     return [DocumentFactSchema.model_validate(fact) for fact in facts]
@@ -112,7 +114,7 @@ async def history(
     summary="Новый документ на основе этого: без номера и дат, со свежими реквизитами",
 )
 async def copy(
-    document_id: int,
+    document_id: IdPath,
     current: CurrentUserDep,
     session: SessionDep,
     payload: CopyDocumentRequest | None = None,
@@ -134,7 +136,7 @@ async def copy(
     summary="Заполнить поля документа",
 )
 async def patch_fields(
-    document_id: int,
+    document_id: IdPath,
     payload: SetFieldsRequest,
     current: CurrentUserDep,
     session: SessionDep,
@@ -167,7 +169,7 @@ async def patch_fields(
     summary="Собрать файл документа (DOCX или PDF)",
 )
 async def render(
-    document_id: int,
+    document_id: IdPath,
     payload: RenderRequest,
     current: CurrentUserDep,
     session: SessionDep,
@@ -191,7 +193,7 @@ async def render(
     summary="Собранные файлы документа",
 )
 async def get_files(
-    document_id: int, current: CurrentUserDep, session: SessionDep
+    document_id: IdPath, current: CurrentUserDep, session: SessionDep
 ) -> list[DocumentFileSchema]:
     files = await list_document_files(session, user_id=current.id, document_id=document_id)
     return [DocumentFileSchema.model_validate(f) for f in files]
@@ -208,7 +210,7 @@ async def get_files(
     summary="Скачать собранный файл",
 )
 async def download(
-    document_id: int,
+    document_id: IdPath,
     current: CurrentUserDep,
     session: SessionDep,
     state: StateDep,
@@ -241,7 +243,7 @@ async def download(
     summary="Отправить файл документа в чат MAX",
 )
 async def send(
-    document_id: int,
+    document_id: IdPath,
     payload: SendDocumentRequest,
     current: CurrentUserDep,
     session: SessionDep,
@@ -295,7 +297,7 @@ async def download_by_token(
     operation_id="delete_document",
     summary="Удалить документ",
 )
-async def delete(document_id: int, current: CurrentUserDep, session: SessionDep) -> OkResponse:
+async def delete(document_id: IdPath, current: CurrentUserDep, session: SessionDep) -> OkResponse:
     await delete_document(session, user_id=current.id, document_id=document_id)
     return OkResponse()
 
@@ -308,7 +310,7 @@ async def delete(document_id: int, current: CurrentUserDep, session: SessionDep)
     summary="Подтвердить значения помощника или распознавания",
 )
 async def confirm(
-    document_id: int,
+    document_id: IdPath,
     payload: ConfirmFieldsRequest,
     current: CurrentUserDep,
     session: SessionDep,

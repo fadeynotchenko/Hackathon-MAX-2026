@@ -3,7 +3,17 @@ import { Button, Spinner, Typography } from '@maxhub/max-ui';
 
 import { useAuth } from '@/auth/context';
 
-function Gate({ title, text, action }: { title: string; text: string; action?: () => void }) {
+function Gate({
+  title,
+  text,
+  action,
+  actionLabel = 'Попробовать снова',
+}: {
+  title: string;
+  text: string;
+  action?: () => void;
+  actionLabel?: string;
+}) {
   return (
     <div className="screen">
       <div className="center-state">
@@ -13,7 +23,7 @@ function Gate({ title, text, action }: { title: string; text: string; action?: (
         </Typography.Text>
         {action ? (
           <Button size="large" onClick={action}>
-            Попробовать снова
+            {actionLabel}
           </Button>
         ) : null}
       </div>
@@ -36,7 +46,14 @@ export function GatePage() {
     );
   }
   if (status === 'signed_out') {
-    return <Gate title="Вы вышли" text="Откройте приложение заново, чтобы войти." action={retry} />;
+    return (
+      <Gate
+        title="Вы вышли"
+        text="Документы и реквизиты сохранены — войдите, чтобы продолжить."
+        action={retry}
+        actionLabel="Войти снова"
+      />
+    );
   }
   if (status === 'outside') {
     return (

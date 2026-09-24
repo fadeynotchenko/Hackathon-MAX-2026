@@ -156,3 +156,19 @@ def test_percentile_uses_nearest_rank() -> None:
     assert percentile([5], 0.9) == 5
     assert percentile(list(range(1, 11)), 0.9) == 9
     assert percentile([3, 1, 2], 0.5) == 2
+
+
+async def test_delivery_of_deleted_document_is_not_counted_as_pending(
+    session: AsyncSession,
+) -> None:
+    """У удалённого документа document_id фактов пуст: исход отправки ищется по event_id."""
+    user_id = await _user(session, 1, _at(20, 10))
+    journal = DocumentEventRepository(session)
+    for kind, at in (("sent", _at(23, 10)), ("delivered", _at(23, 10, 1))):
+        await journal.add(
+            user_id=user_id, kind=kind, document_id=None, at=at, fmt="pdf", event_id="gone"
+        )
+
+    deliveries = (await admin_metrics(session, days=3, today=TODAY)).deliveries
+
+    assert (deliveries.delivered, deliveries.pending) == (1, 0)

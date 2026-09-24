@@ -59,7 +59,7 @@ async def test_agent_fills_only_valid_known_fields(session: AsyncSession) -> Non
     assert "invented_field" not in result.document.values
     assert set(result.document.unconfirmed) == {"total", "client_name"}
     assert result.reply.startswith("Заполнил:")
-    assert "Не принял" in result.reply and "Проверьте" in result.reply
+    assert "Не записал" in result.reply and "Проверьте" in result.reply
 
     kind, messages, schema = llm.calls[0]
     assert kind == "json"
@@ -180,9 +180,18 @@ async def test_repeated_profile_values_stay_confirmed_and_list_goes_in_order(
     assert (seller.source, seller.confirmed) == (ValueSource.PROFILE, True)
     prompt = llm.calls[0][1][0].content
     waiting = prompt.split("Ещё не заполнено:\n", 1)[1]
-    assert waiting.startswith("1. number: Номер счёта\n2. seller_bank: Банк"), (
-        "ответ столбиком модель разносит по этому порядку"
-    )
+    assert waiting.startswith(
+        "1. client_name: Название клиента\n2. number: Номер счёта\n"
+        "3. item: Наименование работ или услуг\n4. total: Сумма к оплате\n5. seller_bank: Банк"
+    ), "клиент и условия — первыми, свои реквизиты — в конце"
+    assert "Ещё нужно: название клиента, наименование работ или услуг, сумма к оплате, банк" in (
+        result.reply
+    ), "ответ столбиком модель разносит по тому же порядку, что видит человек"
+
+
+def test_yo_and_ye_are_the_same_letter_for_grounding() -> None:
+    name = FieldSpec("client_name", "Название клиента", FieldType.TEXT)
+    assert grounded(name, "ИП Семёнов Фёдор", "счёт для ИП Семенов Федор")
 
 
 def test_values_must_come_from_the_message() -> None:

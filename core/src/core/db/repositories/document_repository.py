@@ -23,7 +23,7 @@ class DocumentRepository:
         )
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
-    async def list_for_user(self, user_id: int, *, limit: int = 50) -> list[Document]:
+    async def list_for_user(self, user_id: int, *, limit: int) -> list[Document]:
         stmt = (
             select(Document)
             .where(Document.user_id == user_id)

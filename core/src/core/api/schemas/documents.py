@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.api.schemas.common import DbId, PrintableStr
 from core.domain.documents import FieldType, ValueSource
 
 
@@ -45,7 +46,7 @@ class FieldValueSchema(BaseModel):
     source: ValueSource = ValueSource.MANUAL
     confidence: float | None = Field(default=None, ge=0, le=1)
     confirmed: bool = True
-    fragment: str | None = Field(
+    fragment: PrintableStr | None = Field(
         default=None,
         max_length=500,
         description="Строка с фото или скана, откуда прочитано значение",
@@ -102,6 +103,9 @@ class DocumentSummarySchema(BaseModel):
     template_title: str
     counterparty_name: str | None
     client: str | None = Field(description="Кому: карточка контрагента или название клиента")
+    number: str | None = Field(
+        default=None, description="Номер документа из полей: отличает одинаковые счета в архиве"
+    )
     updated_at: datetime
     created_at: datetime
     sent: SendStateSchema | None = Field(description="Последняя отправка; пусто — не отправлялся")
@@ -120,7 +124,7 @@ class DocumentFactSchema(BaseModel):
 
 
 class CopyDocumentRequest(BaseModel):
-    title: str | None = Field(
+    title: PrintableStr | None = Field(
         default=None, max_length=255, description="Название копии; пусто — как у исходного"
     )
 
@@ -142,7 +146,7 @@ class RenderRequest(BaseModel):
 
 
 class SendDocumentRequest(RenderRequest):
-    text: str | None = Field(
+    text: PrintableStr | None = Field(
         default=None,
         max_length=4000,
         description="Сопроводительный текст; пусто — служебный текст по умолчанию",
@@ -151,7 +155,8 @@ class SendDocumentRequest(RenderRequest):
 
 class ConfirmFieldsRequest(BaseModel):
     keys: list[str] | None = Field(
-        default=None, description="Какие поля подтвердить; пусто — все ждущие подтверждения"
+        default=None,
+        description="Какие поля подтвердить; null — все ждущие подтверждения, [] — ни одного",
     )
 
 
@@ -162,19 +167,19 @@ class SendDocumentResponse(BaseModel):
 
 
 class CreateDocumentRequest(BaseModel):
-    template_id: int
-    counterparty_id: int | None = None
-    organization_id: int | None = Field(
+    template_id: DbId
+    counterparty_id: DbId | None = None
+    organization_id: DbId | None = Field(
         default=None, description="От какой своей организации; пусто — от основной"
     )
-    title: str = Field(default="", max_length=255)
+    title: PrintableStr = Field(default="", max_length=255)
 
 
 class SetFieldsRequest(BaseModel):
     values: dict[str, FieldValueSchema] = Field(
         description="Ключ поля → значение; пустая строка стирает поле"
     )
-    title: str | None = Field(default=None, max_length=255)
+    title: PrintableStr | None = Field(default=None, max_length=255)
 
 
 class AgentFillRequest(BaseModel):

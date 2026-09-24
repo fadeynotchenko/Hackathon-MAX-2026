@@ -221,7 +221,11 @@ async def admin_metrics(
         sent_documents, {Fact.CREATED, Fact.SENT, Fact.DELIVERED, Fact.DELIVERY_FAILED}
     )
     outcomes = {
-        fact.event_id for fact in history if fact.kind in (Fact.DELIVERED, Fact.DELIVERY_FAILED)
+        fact.event_id
+        for fact in await journal.with_event_ids(
+            [fact.event_id for fact in sends if fact.event_id],
+            {Fact.DELIVERED, Fact.DELIVERY_FAILED},
+        )
     }
 
     daily: list[DailyMetrics] = []

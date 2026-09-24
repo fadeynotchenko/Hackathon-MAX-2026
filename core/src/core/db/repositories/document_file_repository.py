@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import DocumentFile
@@ -17,6 +18,30 @@ class DocumentFileRepository:
             DocumentFile.document_id == document_id, DocumentFile.format == fmt
         )
         return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def _insert_or_existing(self, document_id: int, fmt: str) -> DocumentFile:
+        """Две сборки одного документа сразу (двойное нажатие) вставляли бы две
+        записи на формат: вторая упиралась в уникальный индекс и отвечала 500.
+        Проигравшая гонку сборка обновляет запись победившей."""
+        record = DocumentFile(
+            document_id=document_id,
+            format=fmt,
+            filename="",
+            path="",
+            size=0,
+            sha256="",
+            source_sha256="",
+        )
+        try:
+            async with self._session.begin_nested():
+                self._session.add(record)
+                await self._session.flush()
+        except IntegrityError:
+            existing = await self.get(document_id, fmt)
+            if existing is None:
+                raise
+            return existing
+        return record
 
     async def list_for_document(self, document_id: int) -> list[DocumentFile]:
         stmt = (
@@ -40,8 +65,7 @@ class DocumentFileRepository:
         """Актуальный файл один на формат: пересборка заменяет запись, а не копит версии."""
         record = await self.get(document_id, fmt)
         if record is None:
-            record = DocumentFile(document_id=document_id, format=fmt)
-            self._session.add(record)
+            record = await self._insert_or_existing(document_id, fmt)
         record.filename = filename
         record.path = path
         record.size = size

@@ -239,7 +239,13 @@ async def test_photo_goes_into_the_active_document(db: None, session: AsyncSessi
     await ensure_builtin_templates(session)
     await session.commit()
     llm = FakeLLM(
-        json_replies=[{"intent": "new", "template": "invoice"}, {"total": "120 000"}, RECOGNIZED]
+        json_replies=[
+            {"intent": "new", "template": "invoice"},
+            {"total": "120 000"},
+            # Подпись к фото тоже проходит маршрут: «это покупатель» — про текущий документ.
+            {"intent": "fill", "template": ""},
+            RECOGNIZED,
+        ]
     )
     storage = FakeStorage()
     handlers = _handlers(redis, llm=llm, fetch=storage)
@@ -438,4 +444,4 @@ async def test_sent_document_can_be_taken_as_a_base(
     )
     copied = (await _replies(redis))[-1]
     assert copied.text.startswith("Взял за основу «Коммерческое предложение»")
-    assert "Осталось заполнить: Дата предложения, Предложение действует до." in copied.text
+    assert "Осталось заполнить: дата предложения, предложение действует до." in copied.text

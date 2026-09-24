@@ -25,7 +25,7 @@ import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 import { hapticResult } from '@/max/webapp';
 
-import { defaultCoverText } from './fields';
+import { defaultCoverText, documentCaption } from './fields';
 
 const FORMATS: Array<{ format: FileFormat; title: string; subtitle: string }> = [
   { format: 'pdf', title: 'PDF', subtitle: 'Для отправки клиенту — выглядит одинаково везде' },
@@ -87,7 +87,7 @@ function ExportForm({ doc, onBack }: { doc: DocumentView; onBack: () => void }) 
       hapticResult('success');
       void navigate(`/documents/${doc.id}/sent`, {
         replace: true,
-        state: { filename: sent.filename, format: sent.format },
+        state: { filename: sent.filename, format: sent.format, withText },
       });
     } catch (err) {
       hapticResult('error');
@@ -103,7 +103,7 @@ function ExportForm({ doc, onBack }: { doc: DocumentView; onBack: () => void }) 
   return (
     <Page
       title="Выберите формат"
-      subtitle={`${doc.template.title} · ${doc.title}`}
+      subtitle={documentCaption(doc)}
       onBack={onBack}
       footer={
         <Button size="large" stretched loading={sending} onClick={() => void send()}>

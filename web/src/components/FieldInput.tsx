@@ -14,6 +14,8 @@ export interface FieldInputProps {
   required?: boolean | undefined;
   hint?: string | undefined;
   error?: string | null | undefined;
+  // Предел длины с сервера: лишнее не набирается, а не отклоняется после отправки.
+  maxLength?: number | null | undefined;
   // Откуда значение: «Из организации», «С фото — проверьте».
   source?: { label: string; draft: boolean } | null | undefined;
 }
@@ -27,6 +29,7 @@ export function FieldInput({
   hint,
   error,
   source,
+  maxLength,
 }: FieldInputProps) {
   const id = useId();
   const kind = inputKind(type);
@@ -36,6 +39,7 @@ export function FieldInput({
     value,
     'aria-invalid': Boolean(error),
     'aria-describedby': describedBy,
+    ...(maxLength ? { maxLength } : {}),
   };
 
   return (

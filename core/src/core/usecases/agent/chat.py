@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -43,7 +44,8 @@ from core.usecases.agent.service import (
     AgentFillResult,
     answer_question,
     fill_from_message,
-    stems,
+    lower_first,
+    missing_text,
 )
 from core.usecases.documents import (
     DocumentView,
@@ -52,7 +54,9 @@ from core.usecases.documents import (
     confirm_fields,
     copy_document,
     create_draft,
+    document_name,
     get_document,
+    last_sends,
     list_organizations,
     list_templates,
     send_document_to_chat,
@@ -68,10 +72,12 @@ ASK_TEMPLATE_TEXT = (
     "«Счёт на 120 000 для ООО Ромашка за разработку сайта»."
 )
 ASK_MEDIA_TEMPLATE_TEXT = (
-    "Для какого документа взять данные из вложения? Выберите ниже — распознаю и покажу, что нашёл."
+    "Куда перенести данные из вложения? Выберите документ — распознаю и покажу, что нашёл."
 )
 UNKNOWN_BUTTON_TEXT = "Эта кнопка больше не работает. Напишите, что нужно сделать."
-LLM_DOWN_TEXT = "Помощник не отвечает, попробуйте ещё раз чуть позже."
+LLM_DOWN_TEXT = "Помощник не отвечает. Попробуйте через минуту или заполните документ в приложении."
+MEDIA_EXPIRED_TEXT = "Вложение, присланное раньше, устарело — пришлите его ещё раз."
+MEDIA_OFFER_TEXT = "Данные из присланного раньше вложения тоже взять? Нажмите «Взять из вложения»."
 DOWNLOAD_FAILED_TEXT = "Не получилось скачать вложение из MAX, пришлите его ещё раз."
 UNSUPPORTED_FILE_TEXT = "Такой файл не прочитать. Подойдёт фото, PDF, DOCX или голосовое."
 
@@ -154,6 +160,8 @@ def _failure_text(exc: AppError) -> str:
     в HTTP это делает обработчик ошибок api, а у событий бота его нет."""
     if exc.status_code >= 500:
         biz_warn(logger, "agent.chat.failed", code=exc.code, error=exc.log_message or str(exc))
+    if exc.code == "agent.unavailable":
+        return LLM_DOWN_TEXT
     return exc.public_message
 
 
@@ -176,20 +184,63 @@ def _document_buttons(document: DocumentView) -> tuple[tuple[ChatButton, ...], .
     return tuple(rows)
 
 
-def _missing_text(document: DocumentView) -> str:
-    labels = {spec.key: spec.label for spec in document.template.fields}
-    return ", ".join(labels[key] for key in document.missing)
+def _heading(document: DocumentView) -> str:
+    """«Счёт на оплату № 17»; своё название — вместе с видом документа."""
+    if document.title != document.template.title:
+        return f"{document.template.title} «{document.title}»"
+    return document_name(document)
 
 
-def _fill_text(result: AgentFillResult) -> str:
+def _fill_text(
+    result: AgentFillResult, *, source: str = "В сообщении", seller: str | None = None
+) -> str:
     """Ответ показывает значения, а не только названия полей: подтверждать
     человек должен то, что увидел, а не то, что помощник пообещал заполнить."""
     document = result.document
     context = render_context(document.template.fields, document.values)
     labels = {spec.key: spec.label for spec in document.template.fields}
-    lines = [f"{document.template.title} «{document.title}»", result.reply]
-    lines += [f"— {labels[key]}: {context[key]}" for key in result.filled if context.get(key)]
+    lines = [_heading(document)]
+    if seller:
+        lines.append(f"От: {seller}")
+    if result.kind:
+        lines.append(f"Во вложении — {result.kind}.")
+    written = [f"— {labels[key]}: {context[key]}" for key in result.filled if context.get(key)]
+    if written:
+        lines += ["Записал:", *written]
+    elif result.unchanged and not result.rejected:
+        same = ", ".join(lower_first(labels[key]) for key in result.unchanged)
+        lines.append(f"Ничего не поменял — в документе уже так: {same}.")
+    elif not result.rejected:
+        lines.append(f"{source} не нашёл значений для полей документа.")
+    if result.kept:
+        kept = ", ".join(lower_first(labels[key]) for key in result.kept)
+        lines.append(f"Не стал менять — во вложении другое: {kept}.")
+    if result.rejected:
+        lines.append("Не записал: " + "; ".join(error.message for error in result.rejected) + ".")
+    rejected = {error.key for error in result.rejected}
+    # Ошибка уже записанного значения (счёт не сходится с новым БИК) — тоже сюда,
+    # иначе «Всё верно» подтвердит, а документ так и не станет готовым.
+    problems = [error.message for error in document.errors if error.key not in rejected]
+    if problems:
+        lines.append("Проверьте: " + "; ".join(problems) + ".")
+    if document.missing:
+        lines.append(f"Ещё нужно: {missing_text(document)}.")
+    if document.unconfirmed:
+        lines.append("Проверьте значения и нажмите «Всё верно».")
+    elif document.ready:
+        lines.append("Документ готов — прислать файл?")
     return "\n".join(lines)
+
+
+def _confirm_text(document: DocumentView) -> str:
+    if document.ready:
+        return "Готово, документ заполнен. Прислать файл?"
+    if document.missing:
+        return f"Подтвердил. Ещё нужно: {missing_text(document)}."
+    if not document.errors:
+        return "Подтвердил."
+    problems = "; ".join(error.message for error in document.errors)
+    return f"Подтвердил, но есть ошибки: {problems}. Поправьте их сообщением или в приложении."
 
 
 def _download_error_text(exc: InboundFileError, files: FilesConfig) -> str:
@@ -245,9 +296,7 @@ async def _route(
 ) -> tuple[str, str]:
     catalog = "\n".join(f"- {t.slug}: {t.title}" for t in templates)
     current = (
-        f"{active.template.title} «{active.title}», ждёт значений: {_missing_text(active) or 'нет'}"
-        if active
-        else "нет"
+        f"{_heading(active)}, ждёт значений: {missing_text(active) or 'нет'}" if active else "нет"
     )
     schema = {
         "type": "object",
@@ -274,29 +323,63 @@ async def _route(
 # Слова организационно-правовой формы есть в названии почти любой организации:
 # по ним своя организация не опознаётся.
 _LEGAL_FORM_STEMS = frozenset({"обще", "огра", "отве", "инди", "пред", "акци", "публ", "закр"})
+_NAME_WORD = re.compile(r"[0-9a-zа-я]+(?:-[0-9a-zа-я]+)*")
+# Сколько букв в конце слова может поменять падеж: «Ромашка» → «Ромашкой».
+_CASE_ENDING = 2
+_MIN_STEM = 4
+
+
+def _name_words(text: str) -> list[str]:
+    return _NAME_WORD.findall(text.lower().replace("ё", "е"))
+
+
+def _same_word(name_word: str, said: str) -> bool:
+    """Слово названия и слово сообщения — одно и то же с точностью до падежа.
+
+    Четырёх общих букв мало: «строительные» совпадало со «Стройпроект», а клиент
+    «Ромашка-Сервис» — со своей «Ромашкой». Нужна вся основа слова, и слово
+    сообщения не может быть намного длиннее."""
+    stem = max(_MIN_STEM, len(name_word) - _CASE_ENDING)
+    return said.startswith(name_word[:stem]) and len(said) <= len(name_word) + 3
 
 
 def named_organization(organizations: list[OrganizationView], text: str) -> int | None:
     """Своя организация, названная в сообщении: «счёт от ИП Нотченко». Если названы
     две или ни одной — не угадываем, документ пойдёт от основной."""
-    said = stems(text)
-    named = [o.id for o in organizations if (stems(o.name) - _LEGAL_FORM_STEMS) & said]
+    said = _name_words(text)
+    named = []
+    for organization in organizations:
+        words = [
+            word
+            for word in _name_words(organization.name)
+            if len(word) >= _MIN_STEM and word[:_MIN_STEM] not in _LEGAL_FORM_STEMS
+        ]
+        if any(_same_word(word, other) for word in words for other in said):
+            named.append(organization.id)
     return named[0] if len(named) == 1 else None
+
+
+@dataclass(frozen=True)
+class _Started:
+    document: DocumentView
+    # Своих организаций несколько: ответ называет, от какой документ, — выбор
+    # по словам сообщения человек должен видеть.
+    seller: str | None
 
 
 async def _start_document(
     session: AsyncSession, user_id: int, template_id: int, text: str = ""
-) -> DocumentView:
+) -> _Started:
     organization_id = None
-    if text:
-        organizations = await list_organizations(session, user_id=user_id)
-        if len(organizations) > 1:
-            organization_id = named_organization(organizations, text)
+    organizations = await list_organizations(session, user_id=user_id)
+    if text and len(organizations) > 1:
+        organization_id = named_organization(organizations, text)
     document = await create_draft(
         session, user_id=user_id, template_id=template_id, organization_id=organization_id
     )
     await ChatStateRepository(session).set_active_document(user_id, document.id)
-    return document
+    seller = next((o.name for o in organizations if o.id == document.organization_id), None)
+    return _Started(document, seller if len(organizations) > 1 else None)
 
 
 async def handle_chat_message(
@@ -305,8 +388,14 @@ async def handle_chat_message(
     user_id = await _ensure_user(session, sender)
     if llm is None:
         return ChatReply(DISABLED_TEXT)
+    chat = ChatStateRepository(session)
     templates = await list_templates(session, user_id=user_id)
     active = await _active_document(session, user_id)
+    started: _Started | None = None
+    # Новый документ создаётся до вызова модели; если модель упала, черновик и
+    # смена текущего документа откатываются: иначе повтор той же просьбы
+    # оставлял бы в архиве пустые копии.
+    savepoint = None
     try:
         intent, slug = await _route(llm, text, active, templates)
         if intent == "question" and active is not None:
@@ -318,34 +407,58 @@ async def handle_chat_message(
         if intent == "new" or active is None:
             template = next((t for t in templates if t.slug == slug), None)
             if template is None:
+                # «Новый документ» без вида: прежний больше не текущий, иначе следующее
+                # сообщение с данными дописало бы их в старый документ.
+                await chat.set_active_document(user_id, None)
                 return ChatReply(ASK_TEMPLATE_TEXT, _template_buttons(templates))
-            active = await _start_document(session, user_id, template.id, text)
-            # Документ начат словами: отложенное раньше фото к нему уже не относится.
-            await ChatStateRepository(session).set_pending_media(user_id, None)
+            savepoint = await session.begin_nested()
+            started = await _start_document(session, user_id, template.id, text)
+            active = started.document
 
         result = await fill_from_message(
             session, user_id=user_id, document_id=active.id, message=text, llm=llm
         )
-    except LLMError as exc:
+    except (LLMError, AppError) as exc:
+        if savepoint is not None and savepoint.is_active:
+            await savepoint.rollback()
+        if isinstance(exc, AppError):
+            return ChatReply(_failure_text(exc))
         # Сбой маршрутизации — та же временная недоступность, что и у заполнения.
         # Пользователь видит общую фразу, поэтому причина нужна в логе.
         biz_warn(logger, "agent.chat.llm_failed", error=str(exc))
         return ChatReply(LLM_DOWN_TEXT)
-    except AppError as exc:
-        return ChatReply(_failure_text(exc))
-    return ChatReply(_fill_text(result), _document_buttons(result.document))
+    text_out = _fill_text(result, seller=started.seller if started else None)
+    buttons = _document_buttons(result.document)
+    if started is not None and await _has_fresh_pending(chat, user_id):
+        # Вложение ждало выбора документа, а человек ответил словами: не теряем
+        # его молча, но и не распознаём без спроса — оно могло быть о другом.
+        text_out += f"\n\n{MEDIA_OFFER_TEXT}"
+        buttons = ((ChatButton("Взять из вложения", f"doc:media:{result.document.id}"),), *buttons)
+    return ChatReply(text_out, buttons)
 
 
 async def _document_for_caption(
-    session: AsyncSession, user_id: int, caption: str, llm: LLMClient
+    session: AsyncSession,
+    user_id: int,
+    caption: str,
+    active: DocumentView | None,
+    llm: LLMClient,
 ) -> DocumentView | None:
-    """Подпись к фото без текущего документа может назвать его вид: «счёт для них»."""
+    """Подпись к фото может назвать документ: «счёт для них» начинает новый, «это
+    покупатель» — про текущий. Без подписи фото идёт в текущий документ."""
     templates = await list_templates(session, user_id=user_id)
-    _intent, slug = await _route(llm, caption, None, templates)
+    intent, slug = await _route(llm, caption, active, templates)
+    if active is not None and intent != "new":
+        return active
     template = next((t for t in templates if t.slug == slug), None)
     if template is None:
+        await ChatStateRepository(session).set_active_document(user_id, None)
         return None
-    return await _start_document(session, user_id, template.id, caption)
+    return (await _start_document(session, user_id, template.id, caption)).document
+
+
+async def _was_sent(session: AsyncSession, document: DocumentView) -> bool:
+    return document.id in await last_sends(session, [document.id])
 
 
 async def _recognize_into(
@@ -367,7 +480,7 @@ async def _recognize_into(
         max_bytes=deps.files.media_max_bytes,
         request=caption,
     )
-    return ChatReply(_fill_text(result), _document_buttons(result.document))
+    return ChatReply(_fill_text(result, source="Во вложении"), _document_buttons(result.document))
 
 
 async def _hear(
@@ -397,8 +510,12 @@ async def handle_chat_attachment(
             return await _hear(session, sender=sender, attachment=attachment, deps=deps)
         caption = (attachment.caption or "").strip()
         active = await _active_document(session, user_id)
-        if active is None and caption:
-            active = await _document_for_caption(session, user_id, caption, llm)
+        if active is not None and await _was_sent(session, active):
+            # Файл уже ушёл в чат — документ закончен. Новое фото скорее к новому
+            # документу, и тихо дописывать в отправленный его нельзя.
+            active = None
+        if caption:
+            active = await _document_for_caption(session, user_id, caption, active, llm)
         if active is None:
             await ChatStateRepository(session).set_pending_media(
                 user_id,
@@ -429,17 +546,30 @@ async def handle_chat_attachment(
         return ChatReply(_failure_text(exc))
 
 
-async def _take_fresh_pending(chat: ChatStateRepository, user_id: int) -> dict[str, object] | None:
-    pending = await chat.take_pending_media(user_id)
-    if pending is None:
-        return None
+def _is_fresh(pending: dict[str, object]) -> bool:
     try:
         at = datetime.fromisoformat(str(pending.get("at")))
     except ValueError:
-        return None
-    if datetime.now(UTC) - at > PENDING_MEDIA_TTL:
-        return None
-    return pending
+        return False
+    return datetime.now(UTC) - at <= PENDING_MEDIA_TTL
+
+
+async def _has_fresh_pending(chat: ChatStateRepository, user_id: int) -> bool:
+    pending = await chat.pending_media(user_id)
+    return pending is not None and _is_fresh(pending)
+
+
+async def _take_pending(
+    chat: ChatStateRepository, user_id: int
+) -> tuple[dict[str, object] | None, bool]:
+    """Отложенное вложение и признак «было, но устарело»: о протухшем фото
+    человеку надо сказать, а не делать вид, что его не присылали."""
+    pending = await chat.take_pending_media(user_id)
+    if pending is None:
+        return None, False
+    if not _is_fresh(pending):
+        return None, True
+    return pending, False
 
 
 async def _new_from_button(
@@ -449,9 +579,9 @@ async def _new_from_button(
     templates = await list_templates(session, user_id=user_id, slug=slug)
     if not templates:
         return ChatReply(UNKNOWN_BUTTON_TEXT)
-    document = await _start_document(session, user_id, templates[0].id)
+    document = (await _start_document(session, user_id, templates[0].id)).document
     started = f"Начал «{document.template.title}»."
-    pending = await _take_fresh_pending(chat, user_id)
+    pending, expired = await _take_pending(chat, user_id)
     if pending is not None and deps.llm is not None:
         try:
             return await _recognize_into(
@@ -468,11 +598,36 @@ async def _new_from_button(
             )
         except AppError as exc:
             return ChatReply(f"{started} {_failure_text(exc)}", _document_buttons(document))
-    return ChatReply(
-        f"{started} Напишите данные одним сообщением, надиктуйте голосовым или пришлите "
-        f"фото карточки: {_missing_text(document)}.",
-        _document_buttons(document),
+    lines = [started]
+    if expired:
+        lines.append(MEDIA_EXPIRED_TEXT)
+    lines.append(
+        f"Ещё нужно: {missing_text(document)}. Напишите одним сообщением, надиктуйте "
+        "голосовым или пришлите фото карточки клиента."
     )
+    return ChatReply(" ".join(lines), _document_buttons(document))
+
+
+def _parse_id(raw: str) -> int | None:
+    """id из строки кнопки: строка не доверенная, а BIGINT в базе — 18 цифр."""
+    return int(raw) if raw.isdigit() and len(raw) <= 18 else None
+
+
+async def _buttons_after_failure(
+    session: AsyncSession, user_id: int, document_id: int | None, exc: AppError
+) -> tuple[tuple[ChatButton, ...], ...]:
+    """Кнопки к ошибке: бот уже снял их с нажатого сообщения, и без них человек
+    остался бы с текстом ошибки и пустым чатом."""
+    new = (ChatButton("Новый документ", "doc:new"),)
+    if document_id is None:
+        return (new,)
+    if exc.code == "render.pdf_unavailable":
+        return ((ChatButton("Прислать DOCX", f"doc:send:{document_id}:docx"),), new)
+    try:
+        document = await get_document(session, user_id=user_id, document_id=document_id)
+    except NotFoundError:
+        return (new,)
+    return _document_buttons(document)
 
 
 async def handle_chat_action(
@@ -488,6 +643,7 @@ async def handle_chat_action(
     if len(parts) < 2 or parts[0] != "doc":
         return ChatReply(UNKNOWN_BUTTON_TEXT)
     action, args = parts[1], parts[2:]
+    document_id = _parse_id(args[0]) if args else None
     try:
         if action == "new" and not args:
             await chat.set_active_document(user_id, None)
@@ -499,22 +655,17 @@ async def handle_chat_action(
         if action == "new" and len(args) == 1:
             return await _new_from_button(session, user_id=user_id, slug=args[0], deps=deps)
 
-        if action == "confirm" and len(args) == 1 and args[0].isdigit():
-            document = await confirm_fields(session, user_id=user_id, document_id=int(args[0]))
+        if action == "confirm" and len(args) == 1 and document_id is not None:
+            document = await confirm_fields(session, user_id=user_id, document_id=document_id)
             await chat.set_active_document(user_id, document.id)
-            text = (
-                "Готово, документ заполнен. Прислать файл?"
-                if document.ready
-                else f"Подтвердил. Ещё нужно: {_missing_text(document)}."
-            )
-            return ChatReply(text, _document_buttons(document))
+            return ChatReply(_confirm_text(document), _document_buttons(document))
 
-        if action == "send" and len(args) == 2 and args[0].isdigit():
+        if action == "send" and len(args) == 2 and document_id is not None:
             file, _ = await send_document_to_chat(
                 session,
                 user_id=user_id,
                 max_user_id=sender.max_user_id,
-                document_id=int(args[0]),
+                document_id=document_id,
                 fmt=args[1],
                 cfg=deps.files,
                 bus=deps.bus,
@@ -530,11 +681,11 @@ async def handle_chat_action(
                 ),
             )
 
-        if action == "copy" and len(args) == 1 and args[0].isdigit():
-            document = await copy_document(session, user_id=user_id, document_id=int(args[0]))
+        if action == "copy" and len(args) == 1 and document_id is not None:
+            document = await copy_document(session, user_id=user_id, document_id=document_id)
             await chat.set_active_document(user_id, document.id)
             rest = (
-                f"Осталось заполнить: {_missing_text(document)}."
+                f"Осталось заполнить: {missing_text(document)}."
                 if document.missing
                 else "Проверьте значения."
             )
@@ -543,6 +694,27 @@ async def handle_chat_action(
                 f"свежие из карточек. {rest}",
                 _document_buttons(document),
             )
+
+        if action == "media" and len(args) == 1 and document_id is not None:
+            document = await get_document(session, user_id=user_id, document_id=document_id)
+            pending, _expired = await _take_pending(chat, user_id)
+            if pending is None or deps.llm is None:
+                return ChatReply(MEDIA_EXPIRED_TEXT, _document_buttons(document))
+            await chat.set_active_document(user_id, document.id)
+            return await _recognize_into(
+                session,
+                user_id=user_id,
+                document_id=document.id,
+                url=str(pending["url"]),
+                caption=str(pending.get("caption") or ""),
+                deps=deps,
+            )
+    except InboundFileError as exc:
+        return ChatReply(_download_error_text(exc, deps.files))
+    except LLMError as exc:
+        biz_warn(logger, "agent.chat.llm_failed", error=str(exc), action=action)
+        return ChatReply(LLM_DOWN_TEXT)
     except AppError as exc:
-        return ChatReply(_failure_text(exc))
+        buttons = await _buttons_after_failure(session, user_id, document_id, exc)
+        return ChatReply(_failure_text(exc), buttons)
     return ChatReply(UNKNOWN_BUTTON_TEXT)

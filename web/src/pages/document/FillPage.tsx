@@ -22,6 +22,7 @@ import { hapticResult } from '@/max/webapp';
 
 import {
   changedValues,
+  documentCaption,
   draftFromDocument,
   fieldErrors,
   mergeAfterSave,
@@ -144,7 +145,7 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
   return (
     <Page
       title="Заполните данные"
-      subtitle={`${doc.template.title} · ${doc.title}`}
+      subtitle={documentCaption(doc)}
       onBack={onBack}
       footer={
         <Button size="large" stretched loading={saving} onClick={() => void check()}>
@@ -197,9 +198,16 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
                     type={field.type}
                     required={field.required}
                     hint={field.hint || undefined}
+                    maxLength={field.max_length}
                     value={draft[field.key] ?? ''}
                     error={errors[field.key]}
-                    source={draft[field.key] === initial[field.key] ? sourceOf(doc, field) : null}
+                    // Отклонённое значение в поле — то, что ввёл человек, а сервер
+                    // хранит прежнее: метка «Из карточки» рядом с ним соврала бы.
+                    source={
+                      !errors[field.key] && draft[field.key] === initial[field.key]
+                        ? sourceOf(doc, field)
+                        : null
+                    }
                     onChange={(value) => setDraft((prev) => ({ ...prev, [field.key]: value }))}
                   />
                 </div>

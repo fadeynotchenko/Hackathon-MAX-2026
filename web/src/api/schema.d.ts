@@ -655,7 +655,7 @@ export interface components {
         ConfirmFieldsRequest: {
             /**
              * Keys
-             * @description Какие поля подтвердить; пусто — все ждущие подтверждения
+             * @description Какие поля подтвердить; null — все ждущие подтверждения, [] — ни одного
              */
             keys?: string[] | null;
         };
@@ -912,6 +912,11 @@ export interface components {
             created_at: string;
             /** Id */
             id: number;
+            /**
+             * Number
+             * @description Номер документа из полей: отличает одинаковые счета в архиве
+             */
+            number?: string | null;
             /** @description Последняя отправка; пусто — не отправлялся */
             sent: components["schemas"]["SendStateSchema"] | null;
             /** Status */

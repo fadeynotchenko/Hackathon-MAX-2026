@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,7 @@ from core.usecases.agent.prompts import (
     fields_schema,
     fill_instructions,
     missing_fields,
+    missing_in_order,
 )
 from core.usecases.documents import DocumentView, get_document, set_fields
 
@@ -55,10 +57,30 @@ class AgentFillResult:
     filled: tuple[str, ...]
     rejected: tuple[FieldError, ...]
     reply: str
+    # Для ответа в чате: что во вложении и какие подтверждённые значения фото
+    # не перезаписало, потому что на нём другое.
+    kind: str = ""
+    kept: tuple[str, ...] = ()
+    # Значения, которые в документе уже такие же: «ничего не поменял», а не «не нашёл».
+    unchanged: tuple[str, ...] = ()
 
 
 def stems(text: str) -> set[str]:
-    return {word[:_MIN_WORD] for word in _WORD.findall(text.lower()) if len(word) >= _MIN_WORD}
+    # «Семенов» и «Семёнов» — одно слово: ё пишут не все, и модель тоже.
+    words = _WORD.findall(text.lower().replace("ё", "е"))
+    return {word[:_MIN_WORD] for word in words if len(word) >= _MIN_WORD}
+
+
+def lower_first(label: str) -> str:
+    """«Номер счёта» → «номер счёта» посреди фразы; «ИНН клиента» и «НДС» — как есть."""
+    if len(label) > 1 and label[1].islower():
+        return label[0].lower() + label[1:]
+    return label
+
+
+def missing_text(document: DocumentView) -> str:
+    labels = {spec.key: spec.label for spec in document.template.fields}
+    return ", ".join(lower_first(labels[key]) for key in missing_in_order(document))
 
 
 def grounded(spec: FieldSpec, value: str, message: str) -> bool:
@@ -102,11 +124,20 @@ def map_llm_error(exc: LLMError) -> AppError:
             log_message=str(exc),
         )
     return AppError(
-        "Помощник ответил непонятно, попробуйте переформулировать",
+        "Не получилось разобрать ответ помощника, пришлите ещё раз",
         code="agent.bad_response",
         status_code=502,
         log_message=str(exc),
     )
+
+
+def written_keys(
+    proposals: Mapping[str, FieldValue], updated: DocumentView, rejected: tuple[FieldError, ...]
+) -> tuple[str, ...]:
+    """Что действительно записано. Отклонённое значение оставляет в документе
+    прежнее — поле заполнено, но не этим предложением."""
+    refused = {error.key for error in rejected}
+    return tuple(key for key in proposals if key in updated.values and key not in refused)
 
 
 def compose_fill_reply(
@@ -120,21 +151,21 @@ def compose_fill_reply(
     labels = {spec.key: spec.label for spec in document.template.fields}
     parts: list[str] = []
     if filled:
-        parts.append("Заполнил: " + ", ".join(labels[key] for key in filled) + ".")
-    else:
+        parts.append("Заполнил: " + ", ".join(lower_first(labels[key]) for key in filled) + ".")
+    elif not rejected:
         parts.append(f"{source} не нашёл значений для полей документа.")
     if kept:
         parts.append(
-            "Оставил как было, хотя во вложении другое: "
-            + ", ".join(labels[key] for key in kept)
+            "Не стал менять — во вложении другое: "
+            + ", ".join(lower_first(labels[key]) for key in kept)
             + "."
         )
     if rejected:
-        parts.append("Не принял: " + "; ".join(error.message for error in rejected) + ".")
+        parts.append("Не записал: " + "; ".join(error.message for error in rejected) + ".")
     if document.missing:
-        parts.append("Ещё нужно: " + ", ".join(labels[key] for key in document.missing) + ".")
+        parts.append(f"Ещё нужно: {missing_text(document)}.")
     if document.unconfirmed:
-        parts.append("Проверьте заполненное и подтвердите.")
+        parts.append("Проверьте и подтвердите.")
     return " ".join(parts)
 
 
@@ -152,7 +183,7 @@ async def fill_from_message(
     prompt = (
         f"{fill_instructions()}\n\nПоля документа «{document.template.title}»:\n"
         f"{describe_fields(fields)}\n\nУже заполнено:\n{current_values(fields, document.values)}\n\n"
-        f"Ещё не заполнено:\n{missing_fields(fields, document.missing)}"
+        f"Ещё не заполнено:\n{missing_fields(fields, missing_in_order(document))}"
     )
     try:
         raw = await model.complete_json(
@@ -164,26 +195,29 @@ async def fill_from_message(
 
     specs = {spec.key: spec for spec in fields}
     proposals: dict[str, FieldValue] = {}
+    unchanged: list[str] = []
     for key, value in raw.items():
         text = str(value).strip()
         if key not in specs or not text:
             continue
         # Модель повторяет значения из «Уже заполнено»: без этой проверки реквизиты
         # из профиля переписывались бы с источником «помощник» и снова ждали подтверждения.
+        if not grounded(specs[key], text, message):
+            continue
         previous = document.values.get(key)
         if previous is not None and normalize(specs[key], text)[0] == previous.value:
-            continue
-        if not grounded(specs[key], text, message):
+            unchanged.append(key)
             continue
         proposals[key] = FieldValue(text, ValueSource.AGENT, confirmed=False)
     updated = await set_fields(session, user_id=user_id, document_id=document_id, values=proposals)
-    filled = tuple(key for key in proposals if key in updated.values)
     rejected = tuple(error for error in updated.errors if error.key in proposals)
+    filled = written_keys(proposals, updated, rejected)
     return AgentFillResult(
         document=updated,
         filled=filled,
         rejected=rejected,
         reply=compose_fill_reply(updated, filled, rejected),
+        unchanged=tuple(unchanged),
     )
 
 
@@ -207,7 +241,7 @@ async def answer_question(
         )
     except LLMError as exc:
         raise map_llm_error(exc) from exc
-    return answer.strip()
+    return _not_empty(answer)
 
 
 async def draft_cover_letter(
@@ -225,4 +259,16 @@ async def draft_cover_letter(
         )
     except LLMError as exc:
         raise map_llm_error(exc) from exc
+    return _not_empty(text)
+
+
+def _not_empty(text: str) -> str:
+    """Пустой ответ модели — сбой, а не ответ: пустое сообщение в чат не уйдёт
+    (контракт notify.user его не пропустит), и человек остался бы без ответа."""
+    if not text.strip():
+        raise AppError(
+            "Помощник не нашёл, что ответить. Спросите по-другому",
+            code="agent.empty_answer",
+            status_code=502,
+        )
     return text.strip()

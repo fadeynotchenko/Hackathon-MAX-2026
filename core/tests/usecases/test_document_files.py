@@ -9,7 +9,7 @@ import pytest
 from docx import Document as DocxDocument
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.domain.documents import FieldValue
+from core.domain.documents import FieldValue, ValueSource
 from core.domain.exceptions import AppError, ConflictError, NotFoundError
 from core.files import DocumentStorage, FilesConfig
 from core.usecases.documents import (
@@ -71,6 +71,42 @@ async def test_render_docx_contains_filled_values(
     assert "КП для «Клиента»" in text
     assert "450 000,00" in text
     assert "ООО «Клиент»" in text
+
+
+READY_INVOICE = {
+    "number": FieldValue("17"),
+    "seller_name": FieldValue("ООО «Ромашка»"),
+    "seller_inn": FieldValue("7707083893"),
+    "seller_bank": FieldValue("ПАО Сбербанк"),
+    "seller_bic": FieldValue("044525225"),
+    "seller_account": FieldValue("40702810438000123459"),
+    "client_name": FieldValue("ООО «Клиент»"),
+    "item": FieldValue("Разработка сайта"),
+    "total": FieldValue("120 000"),
+}
+
+
+async def test_invoice_file_is_named_by_number_and_has_one_heading(
+    session: AsyncSession, files_config: FilesConfig
+) -> None:
+    user_id = await make_user(session)
+    await ensure_builtin_templates(session)
+    (invoice,) = await list_templates(session, user_id=user_id, slug="invoice")
+    draft = await create_draft(session, user_id=user_id, template_id=invoice.id)
+    filled = await set_fields(session, user_id=user_id, document_id=draft.id, values=READY_INVOICE)
+    assert filled.ready, filled.missing
+
+    file = await render_document(
+        session, user_id=user_id, document_id=draft.id, fmt=DOCX, cfg=files_config
+    )
+    assert file.filename == "Счёт на оплату № 17.docx", "счета в чате различаются номером"
+    _, data = await load_document_file(
+        session, user_id=user_id, document_id=draft.id, fmt=DOCX, cfg=files_config
+    )
+    paragraphs = [p for p in DocxDocument(BytesIO(data)).paragraphs if p.text.strip()]
+    assert paragraphs[0].text.startswith("Счёт на оплату № 17 от "), "заголовок — первая строка"
+    assert paragraphs[0].runs[0].bold
+    assert not any(p.text == "Счёт на оплату" for p in paragraphs), "название не повторяется"
 
 
 async def test_draft_cannot_be_rendered(session: AsyncSession, files_config: FilesConfig) -> None:
@@ -191,3 +227,59 @@ async def test_send_rebuilds_a_file_missing_on_disk(
     assert len(rendered) == 2, "свежий файл не пересобирается, пропавший — пересобирается"
     row = await DocumentFileRepository(session).get(document_id, DOCX)
     assert row is not None and storage.exists(row.path)
+
+
+async def test_send_publishes_only_committed_ready_documents(
+    session: AsyncSession, redis, files_config: FilesConfig
+) -> None:
+    """Бот качает файл другим соединением сразу по событию: к публикации запись
+    о файле уже в базе. Документ, вернувшийся в черновик, не уходит даже со
+    «свежим» файлом."""
+    from core.db.repositories import DownloadTokenRepository
+    from core.events import EventBus
+    from core.usecases.documents import send_document_to_chat
+
+    user_id = await make_user(session, max_user_id=77)
+    document_id = await _ready_document(session, user_id)
+    bus = EventBus(redis, stream_to_bot="test:to_bot", source="test", maxlen=100)
+    publish = bus.document_ready
+    open_transaction_at_publish: list[bool] = []
+
+    async def spy(event):  # type: ignore[no-untyped-def]
+        open_transaction_at_publish.append(session.in_transaction())
+        return await publish(event)
+
+    bus.document_ready = spy  # type: ignore[method-assign]
+
+    async def send() -> None:
+        await send_document_to_chat(
+            session,
+            user_id=user_id,
+            max_user_id=77,
+            document_id=document_id,
+            fmt=DOCX,
+            cfg=files_config,
+            bus=bus,
+            tokens=DownloadTokenRepository(redis),
+        )
+
+    await send()
+    assert open_transaction_at_publish == [False], "событие — только после коммита"
+
+    await set_fields(
+        session,
+        user_id=user_id,
+        document_id=document_id,
+        values={"total": FieldValue("450 000", ValueSource.AGENT, confirmed=False)},
+    )
+    with pytest.raises(ConflictError):
+        await send()
+
+
+def test_file_name_is_safe_for_the_bot() -> None:
+    from core.usecases.documents.files import build_filename
+
+    assert build_filename("Счёт/для Альфы", "pdf") == "Счёт для Альфы.pdf"
+    assert build_filename("Строка\nвторая\tтаб", "docx") == "Строка вторая таб.docx"
+    assert build_filename("....", "docx") == "document.docx"
+    assert len(build_filename("Я" * 300, "docx").encode()) <= 160

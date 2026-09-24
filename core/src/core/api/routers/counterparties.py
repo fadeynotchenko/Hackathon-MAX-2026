@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, status
 
 from core.api.dependencies import CurrentUserDep, SessionDep
-from core.api.schemas.common import ErrorResponse, OkResponse
+from core.api.schemas.common import ErrorResponse, IdPath, OkResponse
 from core.api.schemas.documents import (
     CounterpartyRequest,
     CounterpartySchema,
@@ -60,7 +60,7 @@ async def create(
     summary="Изменить карточку контрагента",
 )
 async def update(
-    counterparty_id: int,
+    counterparty_id: IdPath,
     payload: CounterpartyRequest,
     current: CurrentUserDep,
     session: SessionDep,
@@ -82,6 +82,8 @@ async def update(
     operation_id="delete_counterparty",
     summary="Удалить карточку контрагента",
 )
-async def delete(counterparty_id: int, current: CurrentUserDep, session: SessionDep) -> OkResponse:
+async def delete(
+    counterparty_id: IdPath, current: CurrentUserDep, session: SessionDep
+) -> OkResponse:
     await delete_counterparty(session, user_id=current.id, counterparty_id=counterparty_id)
     return OkResponse()

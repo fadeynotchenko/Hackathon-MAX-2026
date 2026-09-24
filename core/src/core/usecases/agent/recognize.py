@@ -31,7 +31,7 @@ from core.domain.documents import (
 )
 from core.domain.exceptions import AppError
 from core.domain.media import AUDIBLE, READABLE, MediaType, require_media
-from core.llm import Attachment, ChatMessage, LLMClient, LLMError
+from core.llm import Attachment, ChatMessage, LLMClient, LLMError, LLMInputError
 from core.usecases.agent.prompts import (
     RECOGNIZE_INSTRUCTIONS,
     REQUISITES_INSTRUCTIONS,
@@ -47,6 +47,7 @@ from core.usecases.agent.service import (
     fill_from_message,
     map_llm_error,
     require_llm,
+    written_keys,
 )
 from core.usecases.documents import DocumentView, get_document, set_fields
 from core.usecases.documents.requisites import REQUISITE_FIELDS
@@ -54,6 +55,7 @@ from core.usecases.documents.requisites import REQUISITE_FIELDS
 FRAGMENT_MAX_LENGTH = 300
 TRANSCRIPT_MAX_LENGTH = 4000
 DEFAULT_REQUEST = "Перенеси значения из вложения."
+VOICE_UNREADABLE_TEXT = "Голосовое не получилось прочитать. Запишите ещё раз или напишите текстом"
 
 
 @dataclass(frozen=True)
@@ -189,18 +191,20 @@ async def fill_from_file(
         updated = await set_fields(
             session, user_id=user_id, document_id=document_id, values=proposals
         )
-    filled = tuple(key for key in proposals if key in updated.values)
     rejected = tuple(error for error in updated.errors if error.key in proposals)
-    reply = compose_fill_reply(
-        updated,
-        filled,
-        rejected,
-        kept=_conflicts(document, reading, protected),
-        source="Во вложении",
-    )
+    filled = written_keys(proposals, updated, rejected)
+    kept = _conflicts(document, reading, protected)
+    reply = compose_fill_reply(updated, filled, rejected, kept=kept, source="Во вложении")
     if reading.kind:
         reply = f"Во вложении — {reading.kind}. {reply}"
-    return AgentFillResult(document=updated, filled=filled, rejected=rejected, reply=reply)
+    return AgentFillResult(
+        document=updated,
+        filled=filled,
+        rejected=rejected,
+        reply=reply,
+        kind=reading.kind,
+        kept=kept,
+    )
 
 
 async def recognize_requisites(
@@ -227,7 +231,12 @@ async def recognize_requisites(
 async def transcribe(*, data: bytes, llm: LLMClient | None, max_bytes: int) -> str:
     """Голосовое → текст. Пустая расшифровка — ошибка, а не пустое сообщение помощнику."""
     model = require_llm(llm)
-    media = require_media(data, kinds=AUDIBLE, max_bytes=max_bytes)
+    try:
+        media = require_media(data, kinds=AUDIBLE, max_bytes=max_bytes)
+    except AppError as exc:
+        if exc.code != "media.unsupported":
+            raise
+        raise AppError(VOICE_UNREADABLE_TEXT, code=exc.code, status_code=exc.status_code) from exc
     try:
         raw = await model.complete_json(
             [
@@ -238,6 +247,11 @@ async def transcribe(*, data: bytes, llm: LLMClient | None, max_bytes: int) -> s
             ],
             schema=TRANSCRIPT_SCHEMA,
         )
+    except LLMInputError as exc:
+        # Тексты про «фото JPG или PNG» к голосовому не подходят.
+        raise AppError(
+            VOICE_UNREADABLE_TEXT, code="media.rejected", status_code=415, log_message=str(exc)
+        ) from exc
     except LLMError as exc:
         raise map_llm_error(exc) from exc
     text = str(raw.get("text", "")).strip()
@@ -259,6 +273,8 @@ async def fill_from_voice(
     llm: LLMClient | None,
     max_bytes: int,
 ) -> VoiceFillResult:
+    # Чужой или удалённый документ — 404 до модели: голосовое не уходит к провайдеру зря.
+    await get_document(session, user_id=user_id, document_id=document_id)
     transcript = await transcribe(data=data, llm=llm, max_bytes=max_bytes)
     fill = await fill_from_message(
         session, user_id=user_id, document_id=document_id, message=transcript, llm=llm

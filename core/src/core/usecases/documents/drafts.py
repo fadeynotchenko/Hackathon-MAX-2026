@@ -34,6 +34,9 @@ from core.usecases.documents.templates import TemplateView, get_template, to_vie
 
 STATUS_DRAFT = "draft"
 STATUS_READY = "ready"
+# Архив мини-аппа ищет и группирует на клиенте: при пятидесяти старые документы
+# пропадали из поиска совсем. Пагинация понадобится, когда их станут тысячи.
+ARCHIVE_LIMIT = 500
 
 
 @dataclass(frozen=True)
@@ -63,9 +66,20 @@ class DocumentSummary:
     counterparty_name: str | None
     # Кому документ: карточка контрагента или название клиента из полей.
     client: str | None
+    # Номер из полей документа: без него в архиве все счета называются одинаково.
+    number: str | None
     updated_at: datetime
     created_at: datetime
     sent: SendState | None
+
+
+def document_name(document: DocumentView) -> str:
+    """«Счёт на оплату № 17»: так документ называется в имени файла и в чате —
+    одинаковые по виду счета различаются номером."""
+    number = document.values.get("number")
+    if number is None or number.value in document.title:
+        return document.title
+    return f"{document.title} № {number.value}"
 
 
 def dump_values(values: Mapping[str, FieldValue]) -> dict[str, dict[str, object]]:
@@ -218,6 +232,11 @@ async def copy_document(
         counterparty_id=source.counterparty_id,
         strict=False,
     )
+    values = _without_stale_requisites(
+        values,
+        seller_changed=seller_id != source.organization_id,
+        has_counterparty=source.counterparty_id is not None,
+    )
     values |= prefilled
     validated = validate_fields(template.fields, values)
     document = await DocumentRepository(session).create(
@@ -237,6 +256,27 @@ async def copy_document(
         source=COPY_SOURCE,
     )
     return _view(document, template)
+
+
+def _without_stale_requisites(
+    values: Mapping[str, FieldValue], *, seller_changed: bool, has_counterparty: bool
+) -> dict[str, FieldValue]:
+    """Реквизиты сторон в копии — только свежие, без примеси старых.
+
+    Подставленное из организации или карточки перечитывается заново: поле,
+    которое там стёрли, не должно доехать из прошлого документа. Если продавец
+    сменился (организацию удалили — копия идёт от основной), уходят все его
+    поля: иначе КПП и счёт удалённой организации встали бы рядом с названием
+    основной. Карточки клиента нет — его значения остаются как были в документе."""
+
+    def stale(key: str, value: FieldValue) -> bool:
+        if key.startswith(SELLER_PREFIX):
+            return seller_changed or value.source is ValueSource.PROFILE
+        if key.startswith(CLIENT_PREFIX):
+            return has_counterparty and value.source is ValueSource.COUNTERPARTY
+        return False
+
+    return {key: value for key, value in values.items() if not stale(key, value)}
 
 
 async def _load(session: AsyncSession, *, user_id: int, document_id: int) -> Document:
@@ -266,6 +306,7 @@ async def _save(
     сейчас (``incoming``): ошибка уже лежащего значения — не новая пойманная,
     её покажет ``_view`` по сохранённому. Возвращаются только отклонённые."""
     was_ready = document.status == STATUS_READY
+    previous = load_values(document.values)
     validated = validate_fields(template.fields, values)
     incoming = incoming or {}
     rejected = tuple(error for error in validated.errors if error.key in incoming)
@@ -273,6 +314,9 @@ async def _save(
     # отклонённое убираем явно: иначе счёт остался бы в документе рядом с ошибкой о нём.
     rejected_keys = {error.key for error in rejected}
     kept = {key: value for key, value in validated.values.items() if key not in rejected_keys}
+    # Отклонённая правка не стирает прежнее верное значение: «сумма 150 тыщ» с
+    # ошибкой оставляет в документе прошлую сумму, а ошибку показывает рядом.
+    kept |= {key: previous[key] for key in rejected_keys if key in previous}
     ready = validate_fields(template.fields, kept).ready
     saved = await DocumentRepository(session).save_values(
         document,
@@ -356,12 +400,16 @@ async def delete_document(session: AsyncSession, *, user_id: int, document_id: i
 def _client(document: Document) -> str | None:
     if document.counterparty is not None:
         return document.counterparty.name
-    name = document.values.get(f"{CLIENT_PREFIX}name") or {}
-    return str(name.get("value") or "") or None
+    return _raw_value(document, f"{CLIENT_PREFIX}name")
+
+
+def _raw_value(document: Document, key: str) -> str | None:
+    item = document.values.get(key) or {}
+    return str(item.get("value") or "") or None
 
 
 async def list_documents(
-    session: AsyncSession, *, user_id: int, limit: int = 50
+    session: AsyncSession, *, user_id: int, limit: int = ARCHIVE_LIMIT
 ) -> list[DocumentSummary]:
     """История: что, кому и когда отправлено, чем кончилась доставка."""
     documents = await DocumentRepository(session).list_for_user(user_id, limit=limit)
@@ -374,6 +422,7 @@ async def list_documents(
             template_title=document.template.title,
             counterparty_name=document.counterparty.name if document.counterparty else None,
             client=_client(document),
+            number=_raw_value(document, "number"),
             updated_at=document.updated_at,
             created_at=document.created_at,
             sent=sends.get(document.id),

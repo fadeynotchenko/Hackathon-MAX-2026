@@ -66,6 +66,18 @@ class DocumentEventRepository:
         )
         return list((await self._session.execute(stmt)).scalars())
 
+    async def with_event_ids(
+        self, event_ids: Sequence[str], kinds: Collection[str]
+    ) -> list[DocumentEvent]:
+        """Факты по событиям доставки: у удалённого документа document_id пуст,
+        а event_id связывает отправку с её исходом и после удаления."""
+        if not event_ids:
+            return []
+        stmt = select(DocumentEvent).where(
+            DocumentEvent.event_id.in_(event_ids), DocumentEvent.kind.in_(kinds)
+        )
+        return list((await self._session.execute(stmt)).scalars())
+
     async def find(self, event_id: str, kind: str) -> DocumentEvent | None:
         stmt = select(DocumentEvent).where(
             DocumentEvent.event_id == event_id, DocumentEvent.kind == kind

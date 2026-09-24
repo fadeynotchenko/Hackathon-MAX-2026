@@ -441,3 +441,34 @@ async def test_history_of_foreign_document_is_hidden(
         response = await client.request(method, path, headers=stranger)
         assert response.status_code == 404, path
         assert response.json()["code"] == "document.not_found"
+
+
+async def test_huge_ids_and_control_characters_are_422_not_500(
+    client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    await _seed(session)
+    headers = await _auth(client, make_init_data)
+    too_big = 2**63
+    for method, path, body in (
+        ("GET", f"/api/v1/documents/{too_big}", None),
+        ("GET", f"/api/v1/templates/{too_big}", None),
+        ("DELETE", f"/api/v1/counterparties/{too_big}", None),
+        ("POST", "/api/v1/documents", {"template_id": too_big}),
+    ):
+        response = await client.request(method, path, headers=headers, json=body)
+        assert response.status_code == 422, (path, response.text)
+
+    offer = (await client.get("/api/v1/templates?slug=offer", headers=headers)).json()[0]
+    created = await client.post(
+        "/api/v1/documents",
+        headers=headers,
+        json={"template_id": offer["id"], "title": "КП\x00 для​ Клиента"},
+    )
+    assert created.status_code == 201 and created.json()["title"] == "КП для Клиента"
+    patched = await client.patch(
+        f"/api/v1/documents/{created.json()['id']}/fields",
+        headers=headers,
+        json={"values": {"client_name": {"value": "ООО\x07 Клиент"}}},
+    )
+    assert patched.status_code == 200
+    assert [e["code"] for e in patched.json()["errors"]] == ["field.control_chars"]

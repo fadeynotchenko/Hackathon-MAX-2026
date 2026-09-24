@@ -65,6 +65,16 @@ CONSUMER_GROUP = "core"
 PROCESSED_KEY = "events:processed:"
 # Дольше, чем событие может висеть pending до исчерпания доставок.
 PROCESSED_TTL_SECONDS = 7 * 24 * 3600
+# Отметка «в работе» живёт недолго: если процесс убили посреди ответа модели,
+# повторная доставка (через stale_after, 60 с) после неё выполнит работу, а не
+# подтвердит событие без ответа.
+IN_PROGRESS_TTL_SECONDS = 180
+_DONE = "done"
+_WORKING = "working"
+# Двойное нажатие одной кнопки: бот снимает кнопки после первого, но второе
+# успевает уйти. Одинаковое нажатие того же человека в это окно — дубль.
+CALLBACK_KEY = "events:callback:"
+CALLBACK_WINDOW_SECONDS = 5
 # Предел текста сообщения в контракте notify.user (и в MAX).
 MESSAGE_LIMIT = 4000
 # Сколько событий бота обрабатывается одновременно. Обработчик держит соединение
@@ -103,16 +113,24 @@ async def _reply(deps: WorkerDeps, max_user_id: int, reply: ChatReply) -> None:
     await deps.bus.notify_user(max_user_id, text, buttons=_buttons(reply))
 
 
+class EventInProgressError(RuntimeError):
+    """То же событие уже в работе (или процесс упал посреди неё): не подтверждать,
+    а переиграть позже, когда отметка «в работе» истечёт."""
+
+
 async def _once(deps: WorkerDeps, event: Event, work: Callable[[], Awaitable[None]]) -> None:
     """Выполнить работу один раз на Event.id; при сбое снять отметку, чтобы повтор был возможен."""
     key = f"{PROCESSED_KEY}{event.id}"
-    if not await deps.redis.set(key, "1", ex=PROCESSED_TTL_SECONDS, nx=True):
+    if not await deps.redis.set(key, _WORKING, ex=IN_PROGRESS_TTL_SECONDS, nx=True):
+        if await deps.redis.get(key) == _WORKING:
+            raise EventInProgressError(event.id)
         return
     try:
         await work()
     except BaseException:
         await deps.redis.delete(key)
         raise
+    await deps.redis.set(key, _DONE, ex=PROCESSED_TTL_SECONDS)
 
 
 def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
@@ -143,6 +161,11 @@ def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
     async def on_callback(event: Event) -> None:
         bind_context(request_id=event.id)
         data = BotCallback.model_validate(event.payload)
+        tap = f"{CALLBACK_KEY}{data.max_user_id}:{data.payload}"
+        first = await deps.redis.set(tap, event.id, ex=CALLBACK_WINDOW_SECONDS, nx=True)
+        if not first and await deps.redis.get(tap) != event.id:
+            # Второе «Прислать PDF» собрало бы и отправило файл ещё раз.
+            return
 
         async def work() -> None:
             async with get_session() as session:

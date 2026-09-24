@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { makeTemplate } from '@/test-utils';
 
 import {
+  documentName,
   documentState,
   formatMoney,
   formatRelative,
@@ -25,6 +26,13 @@ describe('format helpers', () => {
     expect(inputKind('money')).toMatchObject({ inputMode: 'decimal', suffix: '₽' });
     expect(inputKind('date').type).toBe('date');
     expect(inputKind('multiline').multiline).toBe(true);
+    expect(inputKind('address').multiline).toBe(true);
+  });
+
+  it('tells same-kind documents apart by number', () => {
+    expect(documentName('Счёт на оплату', '17')).toBe('Счёт на оплату № 17');
+    expect(documentName('Счёт на оплату', null)).toBe('Счёт на оплату');
+    expect(documentName('Счёт № 17 для Альфы', '17')).toBe('Счёт № 17 для Альфы');
   });
 
   it('orders form sections: client, terms, own organization', () => {

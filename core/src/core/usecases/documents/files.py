@@ -21,7 +21,7 @@ from core.db.repositories import DocumentFileRepository, DownloadTicket, Downloa
 from core.domain.exceptions import AppError, ConflictError, NotFoundError
 from core.events import DocumentReady, EventBus
 from core.files import DocumentStorage, FilesConfig, PdfUnavailableError, build_docx, convert_to_pdf
-from core.usecases.documents.drafts import DocumentView, get_document
+from core.usecases.documents.drafts import DocumentView, document_name, get_document
 from core.usecases.documents.journal import Fact, record
 
 DOCX = "docx"
@@ -31,6 +31,8 @@ MEDIA_TYPES = {
     PDF: "application/pdf",
 }
 _UNSAFE_IN_NAME = re.compile(r"[^\w\s.()№-]+", re.UNICODE)
+# Предел названия в событии document.ready (контракт core ↔ bot).
+TITLE_LIMIT = 255
 
 
 @dataclass(frozen=True)
@@ -60,9 +62,18 @@ def to_view(row: DocumentFile, *, current_source: str) -> DocumentFileView:
     )
 
 
+# Имя файла ограничено 255 байтами, а кириллица занимает по два: бот пишет файл
+# во временный каталог под этим именем, и длинное название роняло бы отправку.
+FILENAME_MAX_BYTES = 150
+_WHITESPACE = re.compile(r"\s+")
+
+
 def build_filename(title: str, fmt: str) -> str:
-    cleaned = _UNSAFE_IN_NAME.sub("", title).strip() or "document"
-    return f"{cleaned[:100]}.{fmt}"
+    # «Счёт/для Альфы» — два слова, а не «Счётдля»; переводы строк — пробелы.
+    cleaned = _WHITESPACE.sub(" ", _UNSAFE_IN_NAME.sub(" ", title)).strip(" .")
+    encoded = cleaned.encode()[:FILENAME_MAX_BYTES]
+    cleaned = encoded.decode(errors="ignore").rstrip(" .") or "document"
+    return f"{cleaned}.{fmt}"
 
 
 async def list_document_files(
@@ -112,7 +123,7 @@ async def render_document(
     file = await DocumentFileRepository(session).upsert(
         document_id=document_id,
         fmt=fmt,
-        filename=build_filename(document.title, fmt),
+        filename=build_filename(document_name(document), fmt),
         path=stored.relative_path,
         size=stored.size,
         sha256=stored.sha256,
@@ -161,6 +172,13 @@ async def send_document_to_chat(
     из бэкапа, в который файлы не входят).
     """
     document = await get_document(session, user_id=user_id, document_id=document_id)
+    if not document.ready:
+        # Собранный раньше файл мог пережить правку, вернувшую документ в черновик
+        # (значение от помощника ждёт «Всё верно»): такой документ не отправляется.
+        raise ConflictError(
+            "Документ ещё не готов: остались пустые или непроверенные поля",
+            code="document.not_ready",
+        )
     current = source_hash(document)
     row = await DocumentFileRepository(session).get(document_id, fmt)
     fresh = (
@@ -175,12 +193,16 @@ async def send_document_to_chat(
             session, user_id=user_id, document_id=document_id, fmt=fmt, cfg=cfg
         )
 
+    # Бот скачивает файл сразу, как увидит событие, — другим соединением с базой.
+    # Запись о только что собранном файле к этому моменту должна быть видна,
+    # иначе бот получит 404 (или прошлую редакцию) и сожжёт одноразовый токен.
+    await session.commit()
     token = await tokens.issue(DownloadTicket(document_id=document_id, user_id=user_id, format=fmt))
     event_id = await bus.document_ready(
         DocumentReady(
             max_user_id=max_user_id,
             document_id=document_id,
-            title=document.title,
+            title=document_name(document)[:TITLE_LIMIT],
             filename=file.filename,
             format=fmt,  # type: ignore[arg-type]
             size=file.size,
@@ -188,7 +210,7 @@ async def send_document_to_chat(
             # Свой текст приходит от человека (или письмо помощника, которое он
             # просмотрел); без него — служебная строка, а не молчаливая генерация.
             text=(text or "").strip()
-            or f"{document.title}: файл во вложении. Проверьте реквизиты перед отправкой.",
+            or f"{document_name(document)}: файл во вложении. Проверьте реквизиты перед отправкой.",
         )
     )
     await record(

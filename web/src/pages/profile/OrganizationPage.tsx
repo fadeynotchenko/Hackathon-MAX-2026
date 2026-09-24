@@ -64,6 +64,7 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const save = async (makeDefault = false) => {
     setError(null);
@@ -95,12 +96,14 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
       setConfirmDelete(true);
       return;
     }
-    if (!organization) return;
+    if (!organization || deleting) return;
+    setDeleting(true);
     try {
       await api.deleteOrganization(organization.id);
       void navigate('/profile/organizations', { replace: true });
     } catch (err) {
       setError(errorText(err, 'Не удалось удалить организацию'));
+      setDeleting(false);
     }
   };
 
@@ -133,13 +136,18 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
           {!organization.is_default ? (
             <CellAction
               before={<IconCheckCircle />}
-              disabled={saving}
+              disabled={saving || deleting}
               onClick={() => void save(true)}
             >
-              Сохранить и сделать основной
+              Сделать основной
             </CellAction>
           ) : null}
-          <CellAction before={<IconTrash />} mode="destructive" onClick={() => void remove()}>
+          <CellAction
+            before={<IconTrash />}
+            mode="destructive"
+            disabled={saving || deleting}
+            onClick={() => void remove()}
+          >
             {confirmDelete ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить организацию'}
           </CellAction>
         </CellList>

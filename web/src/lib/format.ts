@@ -23,6 +23,11 @@ export function formatRelative(iso: string, now: Date = new Date()): string {
   return DATE.format(date);
 }
 
+// «Счёт на оплату № 17»: документы одного вида в архиве различаются номером.
+export function documentName(title: string, number: string | null | undefined): string {
+  return number && !title.includes(number) ? `${title} № ${number}` : title;
+}
+
 export function formatDateTime(iso: string): string {
   const date = new Date(iso);
   return `${DATE_SHORT.format(date)}, ${TIME.format(date)}`;
@@ -65,6 +70,8 @@ export interface InputKind {
 
 export function inputKind(type: FieldType): InputKind {
   switch (type) {
+    // Адрес в одну строку на телефоне не перечитать: видно только начало.
+    case 'address':
     case 'multiline':
       return { type: 'text', multiline: true };
     case 'email':

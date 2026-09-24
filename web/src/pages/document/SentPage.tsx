@@ -10,7 +10,11 @@ import { closeApp, isInsideMax } from '@/max/webapp';
 export function SentPage() {
   const navigate = useNavigate();
   const documentId = Number(useParams().documentId);
-  const sent = useLocation().state as { filename?: string; format?: string } | null;
+  const sent = useLocation().state as {
+    filename?: string;
+    format?: string;
+    withText?: boolean;
+  } | null;
   const inside = isInsideMax();
 
   return (
@@ -49,7 +53,10 @@ export function SentPage() {
         <Typography.Text variant="header">Документ отправлен</Typography.Text>
         <Typography.Text variant="body" color="secondary">
           {sent?.filename ? `Бот пришлёт «${sent.filename}» в чат` : 'Бот пришлёт файл в чат'} через
-          несколько секунд. Перешлите его клиенту вместе с текстом.
+          несколько секунд.{' '}
+          {sent?.withText === false
+            ? 'Перешлите его клиенту.'
+            : 'Перешлите его клиенту вместе с текстом.'}
         </Typography.Text>
         <Typography.Text variant="description" color="tertiary">
           Документ сохранён в архиве: там видно, дошёл ли файл до чата.

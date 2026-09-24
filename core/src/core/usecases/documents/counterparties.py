@@ -72,9 +72,11 @@ async def update_counterparty(
     if counterparty is None:
         raise NotFoundError("Контрагент не найден", code="counterparty.not_found")
     clean_name, clean = _clean(name, values)
-    return to_view(
-        await repo.update(counterparty, name=clean_name, inn=clean.get("inn"), values=clean)
-    )
+    inn = clean.get("inn")
+    twin = await repo.find_by_inn(user_id, inn) if inn else None
+    if twin is not None and twin.id != counterparty.id:
+        raise ValidationError(f"Контрагент с ИНН {inn} уже есть", code="counterparty.duplicate_inn")
+    return to_view(await repo.update(counterparty, name=clean_name, inn=inn, values=clean))
 
 
 async def delete_counterparty(session: AsyncSession, *, user_id: int, counterparty_id: int) -> None:

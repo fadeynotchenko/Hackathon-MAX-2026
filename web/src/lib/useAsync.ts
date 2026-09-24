@@ -13,8 +13,14 @@ export interface AsyncState<T> {
   setData: (data: T) => void;
 }
 
+export const OFFLINE_TEXT = 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.';
+
 export function errorText(err: unknown, fallback = 'Не удалось загрузить данные'): string {
-  return err instanceof ApiError ? err.message : fallback;
+  if (err instanceof ApiError) return err.message;
+  // fetch без сети падает TypeError, а не ответом сервера: «не удалось загрузить»
+  // тут не объясняет, что делать.
+  if (err instanceof TypeError) return OFFLINE_TEXT;
+  return fallback;
 }
 
 interface Settled<T> {

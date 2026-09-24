@@ -36,7 +36,7 @@ describe('ClientPage', () => {
     ]);
 
     fireEvent.click(await screen.findByText('ИП Нотченко'));
-    fireEvent.click(screen.getByText('Без карточки — введу вручную'));
+    fireEvent.click(screen.getByText('Ввести вручную'));
 
     await waitFor(() =>
       expect(createDocument).toHaveBeenCalledWith({
@@ -50,7 +50,7 @@ describe('ClientPage', () => {
   it('does not ask «from whom» with a single organization and uses it', async () => {
     const createDocument = setup([organization(1, 'ООО «Ромашка»', true)]);
 
-    fireEvent.click(await screen.findByText('Без карточки — введу вручную'));
+    fireEvent.click(await screen.findByText('Ввести вручную'));
 
     await waitFor(() =>
       expect(createDocument).toHaveBeenCalledWith(expect.objectContaining({ organization_id: 1 })),

@@ -20,6 +20,7 @@ import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
 import {
   type DocumentState,
+  documentName,
   documentState,
   formatRelative,
   kindStyle,
@@ -31,7 +32,7 @@ const NO_CLIENT = 'Без клиента';
 
 function matches(doc: DocumentSummary, query: string): boolean {
   if (!query) return true;
-  const haystack = [doc.title, doc.template_title, doc.client, doc.counterparty_name]
+  const haystack = [doc.title, doc.number, doc.template_title, doc.client, doc.counterparty_name]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -140,6 +141,7 @@ export function ArchivePage() {
               filled
               header={
                 <CellHeader
+                  innerClassNames={{ content: 'clamp-2' }}
                   after={
                     <Typography.Text variant="description" color="tertiary">
                       {docs.length} {pluralize(docs.length, 'документ', 'документа', 'документов')}
@@ -156,7 +158,7 @@ export function ArchivePage() {
                 return (
                   <CellSimple
                     key={doc.id}
-                    title={doc.title}
+                    title={documentName(doc.title, doc.number)}
                     // Вид документа уже на значке, статус — первым словом подписи:
                     // так строка не переносится и название видно целиком.
                     subtitle={

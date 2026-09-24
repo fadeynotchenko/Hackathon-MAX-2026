@@ -32,6 +32,10 @@ class ChatStateRepository:
         state.pending_media = media
         await self._session.flush()
 
+    async def pending_media(self, user_id: int) -> dict[str, object] | None:
+        state = await self._session.get(ChatState, user_id)
+        return state.pending_media if state is not None else None
+
     async def take_pending_media(self, user_id: int) -> dict[str, object] | None:
         """Забрать отложенное вложение: второй раз то же фото не распознаётся."""
         state = await self._session.get(ChatState, user_id)

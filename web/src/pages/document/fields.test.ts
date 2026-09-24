@@ -5,6 +5,8 @@ import { makeDocument } from '@/test-utils';
 import {
   changedValues,
   defaultCoverText,
+  documentCaption,
+  fragmentLabel,
   draftFromDocument,
   fieldErrors,
   mergeAfterSave,
@@ -107,11 +109,12 @@ describe('document form state', () => {
     expect(sourceOf(doc, client!)).toBeNull();
   });
 
-  it('writes a neutral cover text addressed to the client', () => {
+  it('writes a neutral cover text without declining the client name', () => {
     const doc = makeDocument({
       values: {
+        number: { value: '17', source: 'manual', confirmed: true, fragment: null, confidence: null },
         client_name: {
-          value: 'ООО «Альфа»',
+          value: 'Акционерное общество «Альфа»',
           source: 'counterparty',
           confirmed: true,
           fragment: null,
@@ -119,6 +122,29 @@ describe('document form state', () => {
         },
       },
     });
-    expect(defaultCoverText(doc)).toContain('Направляю счёт на оплату для ООО «Альфа»');
+    expect(defaultCoverText(doc)).toContain('Направляю счёт на оплату № 17.');
+    expect(defaultCoverText(doc)).not.toContain('для Акционерное');
+  });
+
+  it('captions a document without repeating its kind', () => {
+    const value = (v: string) => ({
+      value: v,
+      source: 'manual' as const,
+      confirmed: true,
+      fragment: null,
+      confidence: null,
+    });
+    const plain = makeDocument({
+      title: 'Счёт на оплату',
+      values: { number: value('17'), client_name: value('ООО «Альфа»') },
+    });
+    expect(documentCaption(plain)).toBe('Счёт на оплату № 17 · ООО «Альфа»');
+    const named = makeDocument({ title: 'Счёт для Альфы', values: {} });
+    expect(documentCaption(named)).toBe('Счёт для Альфы · Счёт на оплату');
+  });
+
+  it('says where a value to confirm was read from', () => {
+    expect(fragmentLabel('ocr', 'ИНН 7707083893')).toBe('На фото: «ИНН 7707083893»');
+    expect(fragmentLabel('agent', 'на 120 тысяч')).toBe('В сообщении: «на 120 тысяч»');
   });
 });

@@ -17,7 +17,7 @@ import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 import { hapticResult } from '@/max/webapp';
 
-import { labelsOf } from './fields';
+import { documentCaption, fragmentLabel, labelsOf } from './fields';
 
 export function ReviewPage() {
   const { api } = useAuth();
@@ -81,7 +81,7 @@ export function ReviewPage() {
   );
 
   return (
-    <Page title="Проверьте документ" subtitle={doc.template.title} onBack={back} footer={footer}>
+    <Page title="Проверьте документ" subtitle={documentCaption(doc)} onBack={back} footer={footer}>
       <div className="section">
         <Steps current={2} />
       </div>
@@ -96,7 +96,7 @@ export function ReviewPage() {
           </Banner>
         ) : null}
         {!error && !blocked && pending ? (
-          <Banner tone="info" title="Проверьте значения с фото или от помощника">
+          <Banner tone="info" title="Проверьте распознанные значения">
             Сверьте их с оригиналом. Если всё верно — подтвердите, иначе исправьте в форме.
           </Banner>
         ) : null}
@@ -116,7 +116,7 @@ export function ReviewPage() {
                 key={key}
                 overline={`${field.label} · ${SOURCE_LABEL[value.source]}`}
                 title={displayValue(field.type, value.value)}
-                subtitle={value.fragment ? `На фото: «${value.fragment}»` : undefined}
+                subtitle={value.fragment ? fragmentLabel(value.source, value.fragment) : undefined}
                 subtitleMode="tertiary"
               />
             );

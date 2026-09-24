@@ -43,6 +43,9 @@ class CounterpartyRepository:
         counterparty.inn = inn
         counterparty.values = values
         await self._session.flush()
+        # updated_at обновляет база (onupdate): без refresh чтение атрибута после
+        # flush — ленивая загрузка вне greenlet и 500 на любой правке карточки.
+        await self._session.refresh(counterparty)
         return counterparty
 
     async def delete(self, counterparty: Counterparty) -> None:

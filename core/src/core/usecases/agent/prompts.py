@@ -22,6 +22,7 @@ FILL_INSTRUCTIONS = """Ты помощник, который заполняет 
 - Реквизиты (ИНН, КПП, ОГРН, БИК, счёт) переписывай цифра в цифру, без исправлений.
 - Суммы пиши числом, даты — в формате ДД.ММ.ГГГГ.
 - Слова «сегодня», «завтра», «до 10 октября» переводи в дату, считая от сегодняшней ({today}). Если даты в сообщении нет — пустая строка, сегодняшнюю дату сам не подставляй.
+- Срок в днях для поля-даты («оплата в течение 5 дней», «поменяй срок на 10 дней») — это дата: сегодняшняя плюс столько дней. Для поля, где срок указан в днях, пиши просто число.
 - Если пользователь просит изменить уже заполненное поле, верни новое значение этого поля.
 - «Уже заполнено» — только для справки: эти значения не повторяй и другие поля из них не выводи (город из адреса, подписанта из названия).
 - Значения без названий полей — столбиком или через запятую — это ответы на поля из списка «Ещё не заполнено», строго по порядку. Строку, которая не подходит полю по смыслу, пропусти."""
@@ -86,9 +87,14 @@ def describe_document(document: DocumentView) -> str:
         if context.get(spec.key)
     ]
     labels = {spec.key: spec.label for spec in document.template.fields}
-    missing = [labels[key] for key in document.missing]
+    missing = [labels[key] for key in missing_in_order(document)]
+    name = (
+        document.title
+        if document.title == document.template.title
+        else f"{document.template.title} «{document.title}»"
+    )
     return (
-        f"Документ: {document.template.title} «{document.title}».\n"
+        f"Документ: {name}.\n"
         f"Заполнено:\n{chr(10).join(filled) or '- пока ничего'}\n"
         f"Не заполнено: {', '.join(missing) or 'всё обязательное заполнено'}.\n"
         f"Текст документа:\n{document.preview}"
@@ -102,6 +108,22 @@ def fields_schema(fields: tuple[FieldSpec, ...]) -> dict[str, object]:
         "properties": {spec.key: {"type": "string", "description": spec.label} for spec in fields},
         "additionalProperties": False,
     }
+
+
+# Порядок, в котором бот перечисляет незаполненное: клиент и условия — то, что
+# человек знает о сделке, — впереди, свои реквизиты в конце. Ответ столбиком
+# модель разносит по этому же списку, поэтому порядок один на подсказку и промпт.
+_GROUP_ORDER = ("Клиент", "Предмет", "Продавец")
+
+
+def missing_in_order(document: DocumentView) -> tuple[str, ...]:
+    groups = {spec.key: spec.group for spec in document.template.fields}
+
+    def rank(key: str) -> int:
+        group = groups.get(key, "")
+        return _GROUP_ORDER.index(group) if group in _GROUP_ORDER else len(_GROUP_ORDER)
+
+    return tuple(sorted(document.missing, key=rank))
 
 
 def missing_fields(fields: tuple[FieldSpec, ...], missing: tuple[str, ...]) -> str:

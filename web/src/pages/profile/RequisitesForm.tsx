@@ -98,6 +98,7 @@ export function RequisitesForm({ values, onChange, errors }: RequisitesFormProps
                   field.example && !values[field.key] ? `Например: ${field.example}` : undefined
                 }
                 value={values[field.key] ?? ''}
+                maxLength={field.maxLength}
                 error={errors[field.key]}
                 source={
                   recognized.has(field.key) ? { label: 'С фото · проверьте', draft: true } : null
