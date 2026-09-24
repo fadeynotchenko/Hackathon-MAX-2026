@@ -196,3 +196,80 @@ async def test_bot_event_keeps_avatar_from_mini_app(
     assert user.first_name == issued.profile.first_name, (
         "пустое имя от бота не затирает имя из мини-аппа"
     )
+
+
+def _by_user(event) -> str:
+    return str(event.payload["max_user_id"])
+
+
+async def test_different_users_are_handled_concurrently(redis) -> None:
+    stream = "test:to_core:parallel"
+    for user in (1, 2):
+        await publish_event(
+            redis, stream, "bot.test", {"max_user_id": user}, source="bot", maxlen=100
+        )
+    second_started = asyncio.Event()
+    done: list[int] = []
+
+    async def handler(event) -> None:
+        user = event.payload["max_user_id"]
+        if user == 1:
+            # Строго последовательный потребитель здесь упёрся бы в таймаут.
+            await asyncio.wait_for(second_started.wait(), timeout=1)
+        else:
+            second_started.set()
+        done.append(user)
+
+    await _consume(
+        redis,
+        stream,
+        {"bot.test": handler},
+        concurrency=2,
+        partition=_by_user,
+        stop_after_calls=2,
+        timeout=2,
+    )
+    assert done == [2, 1]
+    assert await _pending(redis, stream) == 0
+
+
+async def test_events_of_one_user_keep_their_order(redis) -> None:
+    stream = "test:to_core:order"
+    for n in range(3):
+        await publish_event(
+            redis, stream, "bot.test", {"max_user_id": 7, "n": n}, source="bot", maxlen=100
+        )
+    log: list[str] = []
+
+    async def handler(event) -> None:
+        n = event.payload["n"]
+        log.append(f"start {n}")
+        await asyncio.sleep(0.01)
+        log.append(f"end {n}")
+
+    await _consume(
+        redis,
+        stream,
+        {"bot.test": handler},
+        concurrency=3,
+        partition=_by_user,
+        stop_after_calls=3,
+        timeout=2,
+    )
+    assert log == ["start 0", "end 0", "start 1", "end 1", "start 2", "end 2"]
+
+
+async def test_event_in_progress_is_not_redelivered(redis) -> None:
+    """Перехват зависших не повторяет своё же событие, пока обработчик работает."""
+    stream = "test:to_core:inflight"
+    await publish_event(redis, stream, "bot.test", {"max_user_id": 1}, source="bot", maxlen=100)
+    calls = 0
+
+    async def slow(_event) -> None:
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.2)
+
+    await _consume(redis, stream, {"bot.test": slow}, stale_after_ms=0, concurrency=2, timeout=0.5)
+    assert calls == 1
+    assert await _pending(redis, stream) == 0

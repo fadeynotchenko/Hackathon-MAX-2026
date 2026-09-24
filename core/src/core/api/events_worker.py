@@ -10,6 +10,10 @@
 
 Вложения (фото, сканы, голосовые) приходят ссылкой MAX: байты сценарий скачивает
 сам через ``ChatActionDeps.download`` — событие остаётся маленьким.
+
+События разных пользователей обрабатываются параллельно, одного — по очереди:
+распознавание чужого фото не задерживает ответ на сообщение, а правка документа
+не обгоняет его создание.
 """
 
 from __future__ import annotations
@@ -60,6 +64,9 @@ PROCESSED_KEY = "events:processed:"
 PROCESSED_TTL_SECONDS = 7 * 24 * 3600
 # Предел текста сообщения в контракте notify.user (и в MAX).
 MESSAGE_LIMIT = 4000
+# Сколько событий бота обрабатывается одновременно. Обработчик держит соединение
+# с БД, пока ждёт модель, поэтому предел ниже пула соединений (DB_POOL_SIZE).
+WORKER_CONCURRENCY = 4
 
 
 @dataclass(frozen=True)
@@ -175,6 +182,12 @@ def consumer_name() -> str:
     return f"{socket.gethostname()}-{os.getpid()}"
 
 
+def by_user(event: Event) -> str | None:
+    """Ключ очереди: реплики одного пользователя идут строго друг за другом."""
+    user = event.payload.get("max_user_id")
+    return str(user) if user is not None else None
+
+
 async def run_events_worker(
     redis: Redis, *, stream: str, stop: asyncio.Event, deps: WorkerDeps
 ) -> None:
@@ -185,4 +198,6 @@ async def run_events_worker(
         consumer=consumer_name(),
         handlers=build_handlers(deps),
         stop=stop,
+        concurrency=WORKER_CONCURRENCY,
+        partition=by_user,
     )

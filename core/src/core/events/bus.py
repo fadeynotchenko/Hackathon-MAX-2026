@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
@@ -208,8 +209,10 @@ async def consume_stream(
     batch: int = 32,
     stale_after_ms: int = 60_000,
     max_deliveries: int = 5,
+    concurrency: int = 1,
+    partition: Callable[[Event], str | None] | None = None,
 ) -> None:
-    """Цикл потребителя: XAUTOCLAIM зависших → XREADGROUP новых → обработка → XACK.
+    """Цикл потребителя: перехват зависших → XREADGROUP новых → обработка → XACK.
 
     ``block_ms`` обязан быть меньше socket_timeout клиента (core.db.redis.new_client),
     иначе блокирующее чтение обрывается таймаутом сокета, а не ответом сервера.
@@ -221,19 +224,24 @@ async def consume_stream(
       ``stale_after_ms``; после ``max_deliveries`` попыток — ack + ошибка в лог,
       чтобы одно «ядовитое» событие не крутилось вечно.
     Потребитель обязан быть идемпотентным по ``Event.id``.
+
+    Параллельность: до ``concurrency`` обработчиков сразу, но события с одним
+    ключом ``partition`` (реплики одного пользователя) идут строго по очереди —
+    «поменяй сумму» не обгонит «выставь счёт». Долгий обработчик одного ключа
+    не держит остальных. События в работе потребитель периодически «продлевает»
+    (XCLAIM JUSTID сбрасывает простой, не трогая счётчик доставок), поэтому
+    соседний процесс не перехватит их как зависшие.
     """
     await _ensure_group(redis, stream, group)
     biz_info(logger, "events.consumer.started", stream=stream, group=group, consumer=consumer)
+    slots = asyncio.Semaphore(concurrency)
+    # Сколько событий держать в памяти процесса: остальные ждут в стриме.
+    window = max(concurrency * 4, 1)
+    running: dict[str, asyncio.Task[None]] = {}
+    tails: dict[str, asyncio.Task[None]] = {}
+    renewed_at = time.monotonic()
 
-    async def _handle(stream_id: str, fields: dict[str, str], *, deliveries: int = 1) -> None:
-        try:
-            event = Event.from_fields(stream_id, fields)
-        except EventDecodeError as exc:
-            await redis.xack(stream, group, stream_id)
-            biz_error(
-                logger, "events.bad_envelope", stream=stream, stream_id=stream_id, error=str(exc)
-            )
-            return
+    async def _dispatch(event: Event, stream_id: str, deliveries: int) -> None:
         handler = handlers.get(event.type)
         if handler is None:
             await redis.xack(stream, group, stream_id)
@@ -273,31 +281,106 @@ async def consume_stream(
         await redis.xack(stream, group, stream_id)
         biz_info(logger, "events.handled", type=event.type, event_id=event.id, source=event.source)
 
-    while not stop.is_set():
+    async def _process(
+        event: Event, stream_id: str, deliveries: int, before: asyncio.Task[None] | None
+    ) -> None:
+        if before is not None:
+            await asyncio.wait([before])
+        async with slots:
+            await _dispatch(event, stream_id, deliveries)
+
+    async def _schedule(stream_id: str, fields: dict[str, str], *, deliveries: int = 1) -> None:
+        if stream_id in running:
+            return
         try:
-            # Сначала чужие зависшие сообщения (упавший потребитель), потом новые.
-            _next, claimed, _deleted = await redis.xautoclaim(
-                stream, group, consumer, min_idle_time=stale_after_ms, start_id="0-0", count=batch
+            event = Event.from_fields(stream_id, fields)
+        except EventDecodeError as exc:
+            await redis.xack(stream, group, stream_id)
+            biz_error(
+                logger, "events.bad_envelope", stream=stream, stream_id=stream_id, error=str(exc)
             )
-            counts = await _delivery_counts(redis, stream, group, consumer, claimed)
-            for stream_id, fields in claimed:
-                await _handle(stream_id, fields, deliveries=counts.get(stream_id, 1))
+            return
+        key = partition(event) if partition is not None else None
+        before = tails.get(key) if key is not None else None
+        task = asyncio.create_task(
+            _process(event, stream_id, deliveries, before), name=f"event-{stream_id}"
+        )
+        running[stream_id] = task
+        if key is not None:
+            tails[key] = task
 
-            response = await redis.xreadgroup(
-                group, consumer, {stream: ">"}, count=batch, block=block_ms
-            )
-            for _stream, entries in response or []:
-                for stream_id, fields in entries:
-                    await _handle(stream_id, fields)
-            if not response and not claimed:
-                # Пустой опрос: отдать управление циклу событий. Настоящий Redis
-                # блокирует XREADGROUP на block_ms, но клиент без блокировки
-                # (fakeredis) иначе превратил бы цикл в busy-loop.
+        def _forget(done: asyncio.Task[None]) -> None:
+            running.pop(stream_id, None)
+            if key is not None and tails.get(key) is done:
+                del tails[key]
+
+        task.add_done_callback(_forget)
+
+    async def _renew_leases() -> None:
+        nonlocal renewed_at
+        if not running or (time.monotonic() - renewed_at) * 1000 < stale_after_ms / 2:
+            return
+        renewed_at = time.monotonic()
+        await redis.xclaim(
+            stream, group, consumer, min_idle_time=0, message_ids=list(running), justid=True
+        )
+
+    async def _claim_stale(room: int) -> list[tuple[str, dict[str, str]]]:
+        """Зависшие у упавших потребителей события: JUSTID забирает их, не увеличивая
+        счётчик доставок, а повтор (XCLAIM, счётчик +1) — только тем, что не в работе."""
+        stale = await redis.xautoclaim(
+            stream,
+            group,
+            consumer,
+            min_idle_time=stale_after_ms,
+            start_id="0-0",
+            count=room,
+            justid=True,
+        )
+        retry = [str(stream_id) for stream_id in stale if str(stream_id) not in running]
+        if not retry:
+            return []
+        return await redis.xclaim(stream, group, consumer, min_idle_time=0, message_ids=retry)
+
+    try:
+        while not stop.is_set():
+            try:
+                await _renew_leases()
+                room = window - len(running)
+                if room <= 0:
+                    # Окно заполнено: ждать освобождения, но не дольше половины
+                    # stale_after_ms — иначе долгие обработчики остались бы без продления.
+                    await asyncio.wait(
+                        list(running.values()),
+                        timeout=max(stale_after_ms / 2000, 0.05),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    continue
+                claimed = await _claim_stale(min(batch, room))
+                counts = await _delivery_counts(redis, stream, group, consumer, claimed)
+                for stream_id, fields in claimed:
+                    await _schedule(stream_id, fields, deliveries=counts.get(stream_id, 1))
+
+                response = await redis.xreadgroup(
+                    group, consumer, {stream: ">"}, count=min(batch, room), block=block_ms
+                )
+                for _stream, entries in response or []:
+                    for stream_id, fields in entries:
+                        await _schedule(stream_id, fields)
+                # Отдать управление циклу событий: запланированные обработчики стартуют,
+                # а клиент без блокировки XREADGROUP (fakeredis) не крутит busy-loop.
                 await asyncio.sleep(0)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            biz_warn(logger, "events.consumer.error", stream=stream, exc_info=True)
-            await asyncio.sleep(1)
-
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                biz_warn(logger, "events.consumer.error", stream=stream, exc_info=True)
+                await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        # Недоделанные события остаются pending и переиграются после рестарта.
+        for task in running.values():
+            task.cancel()
+        await asyncio.gather(*running.values(), return_exceptions=True)
+        raise
+    # Штатная остановка: начатое доделывается, чтобы не оставлять половину диалога.
+    await asyncio.gather(*running.values(), return_exceptions=True)
     biz_info(logger, "events.consumer.stopped", stream=stream, group=group)

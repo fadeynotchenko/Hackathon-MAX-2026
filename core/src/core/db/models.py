@@ -15,6 +15,8 @@ from core.db.types import BigIntPK, UtcDateTime
 # вместо таблицы «поле-значение». В PostgreSQL это JSONB (индексируемый),
 # в SQLite тестов — обычный JSON.
 JsonDict = JSON().with_variant(JSONB, "postgresql")
+# Необязательный документ: None пишется SQL NULL, а не JSON-литералом null.
+NullableJson = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
 
 
 class Base(DeclarativeBase):
@@ -200,7 +202,7 @@ class ChatState(Base):
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     # Фото или скан, присланный до выбора документа: ссылка MAX, а не байты —
     # файл перекачивается, когда пользователь выберет, куда его распознать.
-    pending_media: Mapped[dict[str, object] | None] = mapped_column(JsonDict)
+    pending_media: Mapped[dict[str, object] | None] = mapped_column(NullableJson)
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()
     )
