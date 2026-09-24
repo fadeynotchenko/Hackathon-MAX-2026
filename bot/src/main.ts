@@ -13,7 +13,9 @@ import { registerHandlers } from './handlers/index.js';
 import { startHealthServer } from './health.js';
 import { createLogger } from './logger.js';
 import { createFetchWithTimeout } from './max-fetch.js';
+import { handlerFailure } from './middlewares/failure.js';
 import { loggingMiddleware } from './middlewares/logging.js';
+import { malformedUpdateGuard } from './middlewares/malformed.js';
 import { createRedis } from './redis.js';
 import { RedisSessionStore } from './session/redis-store.js';
 
@@ -28,6 +30,7 @@ async function main(): Promise<void> {
   const bot = new Bot<BotContext>(config.MAX_BOT_TOKEN, {
     clientOptions: { fetch: createFetchWithTimeout() },
   });
+  bot.use(malformedUpdateGuard(log));
   bot.use(
     session<BotSession, BotContext>({
       store: new RedisSessionStore<BotSession>(redis, {
@@ -37,10 +40,7 @@ async function main(): Promise<void> {
     }),
   );
   bot.use(loggingMiddleware(log));
-  bot.catch((err, ctx) => {
-    // Ошибка одного апдейта не роняет процесс: пишем в лог и живём дальше.
-    log.error({ event: 'bot.handler.error', update_type: ctx.updateType, err }, 'handler failed');
-  });
+  bot.catch(handlerFailure(log));
 
   const publisher = new EventPublisher(redis, log, {
     stream: config.EVENTS_STREAM_TO_CORE,
