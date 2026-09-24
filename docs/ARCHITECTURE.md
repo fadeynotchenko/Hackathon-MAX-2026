@@ -42,7 +42,7 @@ Python в core импортирует только пакет `core` (`import-li
                │    api/     │                 lifespan (миграции, воркер событий)
                └──────┬──────┘                 парсит вход → зовёт сценарий → рендерит
                       ▼
-               ┌─────────────┐                 use-case-ы: auth, users, documents, agent
+               ┌─────────────┐                 use-case-ы: auth, users, documents, agent, admin
                │  usecases/  │                 функции с явными session/cfg/now,
                └──────┬──────┘                 результат — frozen dataclass
      ┌──────────┬─────┴────┬──────────┐

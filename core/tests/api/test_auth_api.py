@@ -116,3 +116,25 @@ async def test_openapi_is_served_in_dev(client: AsyncClient) -> None:
     assert response.status_code == 200
     paths = response.json()["paths"]
     assert "/api/v1/auth/max" in paths and "/api/v1/me" in paths
+
+
+async def test_admin_metrics_route(client: AsyncClient, make_init_data) -> None:
+    user = await _login(client, make_init_data, 6)
+    forbidden = await client.get(
+        "/api/v1/admin/metrics", headers={"Authorization": f"Bearer {user['access_token']}"}
+    )
+    assert forbidden.status_code == 403
+
+    admin = await _login(client, make_init_data, ADMIN_MAX_ID, first_name="Root")
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+    response = await client.get("/api/v1/admin/metrics?days=7", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["daily"]) == 7
+    today = body["daily"][-1]
+    assert today["day"] == body["until"]
+    assert today["users_total"] == 2 and today["active_day"] == 2, "вход отмечает день активности"
+    assert set(body["funnel"]) == {"created", "ready", "rendered", "sent", "delivered"}
+
+    too_long = await client.get("/api/v1/admin/metrics?days=1000", headers=headers)
+    assert too_long.status_code == 422

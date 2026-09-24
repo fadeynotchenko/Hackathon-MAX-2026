@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -51,6 +53,15 @@ class DocumentRepository:
         await self._session.flush()
         await self._session.refresh(document, ["template", "counterparty"])
         return document
+
+    async def values_created_between(
+        self, since: datetime, until: datetime
+    ) -> list[dict[str, dict[str, object]]]:
+        """Значения полей документов, созданных в окне: из них считается доля автозаполнения."""
+        stmt = select(Document.values).where(
+            Document.created_at >= since, Document.created_at < until
+        )
+        return list((await self._session.execute(stmt)).scalars())
 
     async def delete(self, document: Document) -> None:
         await self._session.delete(document)

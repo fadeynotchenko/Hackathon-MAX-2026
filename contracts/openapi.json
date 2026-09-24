@@ -1,6 +1,70 @@
 {
   "components": {
     "schemas": {
+      "AdminMetricsResponse": {
+        "properties": {
+          "autofill": {
+            "$ref": "#/components/schemas/AutofillSchema"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/DailyMetricsSchema"
+            },
+            "title": "Daily",
+            "type": "array"
+          },
+          "deliveries": {
+            "$ref": "#/components/schemas/DeliveriesSchema"
+          },
+          "funnel": {
+            "$ref": "#/components/schemas/FunnelSchema",
+            "description": "Документы периода по шагам до доставки"
+          },
+          "rejections": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Код ошибки → сколько раз поймана",
+            "title": "Rejections",
+            "type": "object"
+          },
+          "render_ms": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DistributionSchema"
+            },
+            "description": "Формат → время сборки файла",
+            "title": "Render Ms",
+            "type": "object"
+          },
+          "since": {
+            "format": "date",
+            "title": "Since",
+            "type": "string"
+          },
+          "time_to_send_minutes": {
+            "$ref": "#/components/schemas/DistributionSchema",
+            "description": "От создания документа до первой отправки в чат"
+          },
+          "until": {
+            "format": "date",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "daily",
+          "funnel",
+          "autofill",
+          "rejections",
+          "deliveries",
+          "time_to_send_minutes",
+          "render_ms"
+        ],
+        "title": "AdminMetricsResponse",
+        "type": "object"
+      },
       "AdminStatsResponse": {
         "properties": {
           "users_active_24h": {
@@ -96,6 +160,41 @@
           "text"
         ],
         "title": "AgentTextResponse",
+        "type": "object"
+      },
+      "AutofillSchema": {
+        "properties": {
+          "automatic_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Доля полей, заполненных не руками",
+            "title": "Automatic Share"
+          },
+          "by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Источник значения → полей",
+            "title": "By Source",
+            "type": "object"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "by_source",
+          "total",
+          "automatic_share"
+        ],
+        "title": "AutofillSchema",
         "type": "object"
       },
       "CompanyProfileRequest": {
@@ -281,6 +380,117 @@
         "title": "CreateDocumentRequest",
         "type": "object"
       },
+      "DailyMetricsSchema": {
+        "properties": {
+          "active_day": {
+            "title": "Active Day",
+            "type": "integer"
+          },
+          "active_week": {
+            "description": "Уникальные активные за семь дней по этот день",
+            "title": "Active Week",
+            "type": "integer"
+          },
+          "created_by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Вид шаблона → создано документов",
+            "title": "Created By Kind",
+            "type": "object"
+          },
+          "day": {
+            "description": "День по Москве",
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "delivered": {
+            "title": "Delivered",
+            "type": "integer"
+          },
+          "delivery_failed": {
+            "title": "Delivery Failed",
+            "type": "integer"
+          },
+          "documents_copied": {
+            "description": "Созданные на основе прошлого документа",
+            "title": "Documents Copied",
+            "type": "integer"
+          },
+          "documents_created": {
+            "title": "Documents Created",
+            "type": "integer"
+          },
+          "rejected": {
+            "description": "Значения, которые проверка остановила",
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "rendered_docx": {
+            "title": "Rendered Docx",
+            "type": "integer"
+          },
+          "rendered_pdf": {
+            "title": "Rendered Pdf",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "users_new": {
+            "title": "Users New",
+            "type": "integer"
+          },
+          "users_total": {
+            "title": "Users Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "users_total",
+          "users_new",
+          "active_day",
+          "active_week",
+          "documents_created",
+          "documents_copied",
+          "created_by_kind",
+          "rendered_docx",
+          "rendered_pdf",
+          "sent",
+          "delivered",
+          "delivery_failed",
+          "rejected"
+        ],
+        "title": "DailyMetricsSchema",
+        "type": "object"
+      },
+      "DeliveriesSchema": {
+        "properties": {
+          "delivered": {
+            "title": "Delivered",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "pending": {
+            "description": "Отправлены в периоде, бот ещё не подтвердил",
+            "title": "Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delivered",
+          "failed",
+          "pending"
+        ],
+        "title": "DeliveriesSchema",
+        "type": "object"
+      },
       "DevInitDataResponse": {
         "properties": {
           "init_data": {
@@ -303,6 +513,43 @@
           "is_admin"
         ],
         "title": "DevInitDataResponse",
+        "type": "object"
+      },
+      "DistributionSchema": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          },
+          "p90": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90"
+          }
+        },
+        "required": [
+          "count",
+          "median",
+          "p90"
+        ],
+        "title": "DistributionSchema",
         "type": "object"
       },
       "DocumentFactSchema": {
@@ -781,6 +1028,39 @@
           "value"
         ],
         "title": "FieldValueSchema",
+        "type": "object"
+      },
+      "FunnelSchema": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "delivered": {
+            "title": "Delivered",
+            "type": "integer"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "integer"
+          },
+          "rendered": {
+            "title": "Rendered",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "ready",
+          "rendered",
+          "sent",
+          "delivered"
+        ],
+        "title": "FunnelSchema",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1349,6 +1629,73 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/metrics": {
+      "get": {
+        "operationId": "admin_metrics",
+        "parameters": [
+          {
+            "description": "Сколько последних дней",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "description": "Сколько последних дней",
+              "maximum": 180,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Метрики по дням: пользователи, документы, воронка, автозаполнение, доставки",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/notify": {
       "post": {
         "operationId": "admin_notify",

@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/admin/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Метрики по дням: пользователи, документы, воронка, автозаполнение, доставки */
+        get: operations["admin_metrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/notify": {
         parameters: {
             query?: never;
@@ -523,6 +540,41 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdminMetricsResponse */
+        AdminMetricsResponse: {
+            autofill: components["schemas"]["AutofillSchema"];
+            /** Daily */
+            daily: components["schemas"]["DailyMetricsSchema"][];
+            deliveries: components["schemas"]["DeliveriesSchema"];
+            /** @description Документы периода по шагам до доставки */
+            funnel: components["schemas"]["FunnelSchema"];
+            /**
+             * Rejections
+             * @description Код ошибки → сколько раз поймана
+             */
+            rejections: {
+                [key: string]: number;
+            };
+            /**
+             * Render Ms
+             * @description Формат → время сборки файла
+             */
+            render_ms: {
+                [key: string]: components["schemas"]["DistributionSchema"];
+            };
+            /**
+             * Since
+             * Format: date
+             */
+            since: string;
+            /** @description От создания документа до первой отправки в чат */
+            time_to_send_minutes: components["schemas"]["DistributionSchema"];
+            /**
+             * Until
+             * Format: date
+             */
+            until: string;
+        };
         /** AdminStatsResponse */
         AdminStatsResponse: {
             /** Users Active 24H */
@@ -563,6 +615,23 @@ export interface components {
         AgentTextResponse: {
             /** Text */
             text: string;
+        };
+        /** AutofillSchema */
+        AutofillSchema: {
+            /**
+             * Automatic Share
+             * @description Доля полей, заполненных не руками
+             */
+            automatic_share: number | null;
+            /**
+             * By Source
+             * @description Источник значения → полей
+             */
+            by_source: {
+                [key: string]: number;
+            };
+            /** Total */
+            total: number;
         };
         /** CompanyProfileRequest */
         CompanyProfileRequest: {
@@ -642,6 +711,67 @@ export interface components {
              */
             title: string;
         };
+        /** DailyMetricsSchema */
+        DailyMetricsSchema: {
+            /** Active Day */
+            active_day: number;
+            /**
+             * Active Week
+             * @description Уникальные активные за семь дней по этот день
+             */
+            active_week: number;
+            /**
+             * Created By Kind
+             * @description Вид шаблона → создано документов
+             */
+            created_by_kind: {
+                [key: string]: number;
+            };
+            /**
+             * Day
+             * Format: date
+             * @description День по Москве
+             */
+            day: string;
+            /** Delivered */
+            delivered: number;
+            /** Delivery Failed */
+            delivery_failed: number;
+            /**
+             * Documents Copied
+             * @description Созданные на основе прошлого документа
+             */
+            documents_copied: number;
+            /** Documents Created */
+            documents_created: number;
+            /**
+             * Rejected
+             * @description Значения, которые проверка остановила
+             */
+            rejected: number;
+            /** Rendered Docx */
+            rendered_docx: number;
+            /** Rendered Pdf */
+            rendered_pdf: number;
+            /** Sent */
+            sent: number;
+            /** Users New */
+            users_new: number;
+            /** Users Total */
+            users_total: number;
+        };
+        /** DeliveriesSchema */
+        DeliveriesSchema: {
+            /** Delivered */
+            delivered: number;
+            /** Failed */
+            failed: number;
+            /**
+             * Pending
+             * @description Отправлены в периоде, бот ещё не подтвердил
+             */
+            pending: number;
+        };
         /** DevInitDataResponse */
         DevInitDataResponse: {
             /**
@@ -653,6 +783,15 @@ export interface components {
             is_admin: boolean;
             /** Max User Id */
             max_user_id: number;
+        };
+        /** DistributionSchema */
+        DistributionSchema: {
+            /** Count */
+            count: number;
+            /** Median */
+            median: number | null;
+            /** P90 */
+            p90: number | null;
         };
         /** DocumentFactSchema */
         DocumentFactSchema: {
@@ -856,6 +995,19 @@ export interface components {
             source: components["schemas"]["ValueSource"];
             /** Value */
             value: string;
+        };
+        /** FunnelSchema */
+        FunnelSchema: {
+            /** Created */
+            created: number;
+            /** Delivered */
+            delivered: number;
+            /** Ready */
+            ready: number;
+            /** Rendered */
+            rendered: number;
+            /** Sent */
+            sent: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1116,6 +1268,56 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    admin_metrics: {
+        parameters: {
+            query?: {
+                /** @description Сколько последних дней */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMetricsResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_notify: {
         parameters: {
             query?: never;

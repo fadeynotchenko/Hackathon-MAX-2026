@@ -85,3 +85,11 @@ class UserRepository:
     async def count_logged_in_since(self, since: datetime) -> int:
         stmt = select(func.count()).select_from(User).where(User.last_login_at >= since)
         return int(await self._session.scalar(stmt) or 0)
+
+    async def count_created_before(self, moment: datetime) -> int:
+        stmt = select(func.count()).select_from(User).where(User.created_at < moment)
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def created_between(self, since: datetime, until: datetime) -> list[datetime]:
+        stmt = select(User.created_at).where(User.created_at >= since, User.created_at < until)
+        return list((await self._session.execute(stmt)).scalars())
