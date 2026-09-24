@@ -243,13 +243,20 @@ async def _save(
 
     Статус считается по тому, что сохранено: отклонённое значение в документ не
     попадает и готовность не портит. Отклонённым считается только пришедшее
-    сейчас (``incoming``): ошибка уже лежащего значения — не новая пойманная."""
+    сейчас (``incoming``): ошибка уже лежащего значения — не новая пойманная,
+    её покажет ``_view`` по сохранённому. Возвращаются только отклонённые."""
     was_ready = document.status == STATUS_READY
     validated = validate_fields(template.fields, values)
-    ready = validate_fields(template.fields, validated.values).ready
+    incoming = incoming or {}
+    rejected = tuple(error for error in validated.errors if error.key in incoming)
+    # Сверка счёта с БИК пропускает оба значения по отдельности, поэтому
+    # отклонённое убираем явно: иначе счёт остался бы в документе рядом с ошибкой о нём.
+    rejected_keys = {error.key for error in rejected}
+    kept = {key: value for key, value in validated.values.items() if key not in rejected_keys}
+    ready = validate_fields(template.fields, kept).ready
     saved = await DocumentRepository(session).save_values(
         document,
-        dump_values(validated.values),
+        dump_values(kept),
         status=STATUS_READY if ready else STATUS_DRAFT,
     )
     if ready and not was_ready:
@@ -260,9 +267,7 @@ async def _save(
             document_id=saved.id,
             template_kind=template.kind,
         )
-    for error in validated.errors:
-        if incoming is None or error.key not in incoming:
-            continue
+    for error in rejected:
         await record(
             session,
             user_id=saved.user_id,
@@ -272,7 +277,7 @@ async def _save(
             code=error.code,
             source=incoming[error.key].source.value,
         )
-    return saved, validated.errors
+    return saved, rejected
 
 
 async def set_fields(

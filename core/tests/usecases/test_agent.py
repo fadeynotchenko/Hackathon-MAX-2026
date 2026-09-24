@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.documents import FieldValue, ValueSource
 from core.domain.exceptions import AppError
 from core.usecases.agent import answer_question, draft_cover_letter, fill_from_message
+from core.usecases.agent.prompts import fill_instructions
 from core.usecases.documents import (
     confirm_fields,
     create_draft,
@@ -61,7 +64,15 @@ async def test_agent_fills_only_valid_known_fields(session: AsyncSession) -> Non
     assert schema is not None and schema["additionalProperties"] is False
     assert "seller_inn" in schema["properties"]
     assert "Ничего не придумывай" in messages[0].content
+    assert messages[0].content.startswith(fill_instructions()), "с сегодняшней датой в правилах"
     assert messages[1].content.startswith("Счёт на 120 тысяч")
+
+
+def test_fill_rules_carry_the_moscow_date() -> None:
+    late_evening_utc = datetime(2026, 9, 24, 22, 30, tzinfo=UTC)
+    rules = fill_instructions(late_evening_utc)
+    assert "от сегодняшней (25.09.2026)" in rules, "в 01:30 по Москве уже 25-е"
+    assert "{today}" not in rules
 
 
 async def test_agent_values_need_confirmation_before_ready(session: AsyncSession) -> None:

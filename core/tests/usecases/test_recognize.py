@@ -103,6 +103,29 @@ async def test_misread_requisite_is_rejected_not_stored(session: AsyncSession) -
     assert "Во вложении не нашёл значений" in result.reply
 
 
+async def test_account_not_matching_bic_is_rejected_once_and_not_stored(
+    session: AsyncSession,
+) -> None:
+    user_id, document_id = await _invoice_with_profile(session)
+    llm = FakeLLM(
+        json_reply={
+            "kind": "карточка предприятия",
+            "values": [
+                _item("seller_bic", "044525225", "БИК 044525225"),
+                _item("seller_account", "40702810438000123458", "р/с 40702810438000123458"),
+            ],
+        }
+    )
+    result = await fill_from_file(
+        session, user_id=user_id, document_id=document_id, data=PHOTO, llm=llm, max_bytes=LIMIT
+    )
+    assert result.filled == ("seller_bic",)
+    assert "seller_account" not in result.document.values
+    assert [e.code for e in result.rejected] == ["field.account_key_invalid"]
+    assert [e.key for e in result.document.errors] == ["seller_account"], "ошибка не дублируется"
+    assert result.reply.count("счёт не сходится с БИК") == 1
+
+
 async def test_unsupported_file_is_refused_before_the_model(session: AsyncSession) -> None:
     user_id, document_id = await _invoice_with_profile(session)
     llm = FakeLLM()

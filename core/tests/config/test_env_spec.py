@@ -208,3 +208,10 @@ def test_explicitly_empty_log_dir_disables_file_log(monkeypatch: pytest.MonkeyPa
     assert get_env_or_default("LOG_DIR", "app_logs") == ""
     monkeypatch.delenv("LOG_DIR")
     assert get_env_or_default("LOG_DIR", "app_logs") == "app_logs"
+
+
+def test_model_gives_up_before_the_request_does() -> None:
+    by_name = {var.name: var for var in ENV_SPEC}
+    model = int(by_name["GIGACHAT_TIMEOUT_SECONDS"].default or 0)
+    request = int(by_name["API_REQUEST_TIMEOUT_SECONDS"].default or 0)
+    assert 0 < model < request, "зависшая модель должна давать 503 помощника, а не общий 504"

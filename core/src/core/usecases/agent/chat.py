@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -36,6 +37,7 @@ from core.domain.media import AUDIBLE, MediaKind
 from core.events import EventBus
 from core.files import FilesConfig, InboundFileError, InboundFileTooLargeError, fetch_media
 from core.llm import ChatMessage, LLMClient, LLMError
+from core.logs import biz_warn
 from core.usecases.agent.recognize import fill_from_file, transcribe
 from core.usecases.agent.service import AgentFillResult, answer_question, fill_from_message
 from core.usecases.documents import (
@@ -84,6 +86,8 @@ intent:
 template — вид нового документа из списка ниже или пустая строка, если вид не ясен."""
 
 MediaFetcher = Callable[[str], Awaitable[bytes]]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -135,6 +139,14 @@ class ChatActionDeps:
             max_bytes=self.files.media_max_bytes,
             timeout_seconds=self.files.media_timeout_seconds,
         )
+
+
+def _failure_text(exc: AppError) -> str:
+    """Текст ошибки для чата. Сбой на нашей стороне или у модели (5xx) пишется в лог:
+    в HTTP это делает обработчик ошибок api, а у событий бота его нет."""
+    if exc.status_code >= 500:
+        biz_warn(logger, "agent.chat.failed", code=exc.code, error=exc.log_message or str(exc))
+    return exc.public_message
 
 
 def _template_buttons(templates: list[TemplateView]) -> tuple[tuple[ChatButton, ...], ...]:
@@ -280,11 +292,13 @@ async def handle_chat_message(
         result = await fill_from_message(
             session, user_id=user_id, document_id=active.id, message=text, llm=llm
         )
-    except LLMError:
+    except LLMError as exc:
         # Сбой маршрутизации — та же временная недоступность, что и у заполнения.
+        # Пользователь видит общую фразу, поэтому причина нужна в логе.
+        biz_warn(logger, "agent.chat.llm_failed", error=str(exc))
         return ChatReply(LLM_DOWN_TEXT)
     except AppError as exc:
-        return ChatReply(exc.public_message)
+        return ChatReply(_failure_text(exc))
     return ChatReply(_fill_text(result), _document_buttons(result.document))
 
 
@@ -374,10 +388,11 @@ async def handle_chat_attachment(
         )
     except InboundFileError as exc:
         return ChatReply(_download_error_text(exc, deps.files))
-    except LLMError:
+    except LLMError as exc:
+        biz_warn(logger, "agent.chat.llm_failed", error=str(exc), kind=attachment.kind)
         return ChatReply(LLM_DOWN_TEXT)
     except AppError as exc:
-        return ChatReply(exc.public_message)
+        return ChatReply(_failure_text(exc))
 
 
 async def _take_fresh_pending(chat: ChatStateRepository, user_id: int) -> dict[str, object] | None:
@@ -418,7 +433,7 @@ async def _new_from_button(
                 f"{started} {_download_error_text(exc, deps.files)}", _document_buttons(document)
             )
         except AppError as exc:
-            return ChatReply(f"{started} {exc.public_message}", _document_buttons(document))
+            return ChatReply(f"{started} {_failure_text(exc)}", _document_buttons(document))
     return ChatReply(
         f"{started} Напишите данные одним сообщением, надиктуйте голосовым или пришлите "
         f"фото карточки: {_missing_text(document)}.",
@@ -495,5 +510,5 @@ async def handle_chat_action(
                 _document_buttons(document),
             )
     except AppError as exc:
-        return ChatReply(exc.public_message)
+        return ChatReply(_failure_text(exc))
     return ChatReply(UNKNOWN_BUTTON_TEXT)

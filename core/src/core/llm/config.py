@@ -19,6 +19,9 @@ class GigaChatConfig:
     auth_url: str
     ca_bundle: Path
     timeout_seconds: int
+    # Сколько запросов к модели идёт одновременно: на тарифе физлиц GigaChat
+    # держит один поток и на второй параллельный отвечает 429.
+    max_concurrency: int = 1
 
     @property
     def enabled(self) -> bool:
@@ -36,5 +39,6 @@ class GigaChatConfig:
             ),
             ca_bundle=CORE_ROOT
             / get_env_or_default("GIGACHAT_CA_BUNDLE", "certs/russian_trusted_root_ca.pem"),
-            timeout_seconds=get_env_int("GIGACHAT_TIMEOUT_SECONDS", 30),
+            timeout_seconds=get_env_int("GIGACHAT_TIMEOUT_SECONDS", 20),
+            max_concurrency=max(1, get_env_int("GIGACHAT_MAX_CONCURRENCY", 1)),
         )

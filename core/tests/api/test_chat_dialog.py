@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 from pydantic import ValidationError
@@ -24,6 +25,7 @@ from core.usecases.agent.chat import (
     ASK_MEDIA_TEMPLATE_TEXT,
     DISABLED_TEXT,
     DOWNLOAD_FAILED_TEXT,
+    LLM_DOWN_TEXT,
     UNKNOWN_BUTTON_TEXT,
     UNSUPPORTED_FILE_TEXT,
 )
@@ -176,6 +178,19 @@ async def test_disabled_agent_replies_without_model(db: None, session: AsyncSess
     await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт")))
     (reply,) = await _replies(redis)
     assert reply.text == DISABLED_TEXT and reply.buttons is None
+
+
+async def test_model_outage_is_explained_and_logged(
+    db: None, session: AsyncSession, redis, caplog: pytest.LogCaptureFixture
+) -> None:
+    await ensure_builtin_templates(session)
+    await session.commit()
+    handlers = _handlers(redis, llm=FakeLLM(unavailable=True))
+    with caplog.at_level(logging.WARNING, logger="core.usecases.agent.chat"):
+        await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("КП для ООО Ромашка на 200к")))
+    (reply,) = await _replies(redis)
+    assert reply.text == LLM_DOWN_TEXT
+    assert "agent.chat.llm_failed" in caplog.text, "иначе причину «не отвечает» не найти в логах"
 
 
 def test_reply_payload_round_trips_through_contract() -> None:

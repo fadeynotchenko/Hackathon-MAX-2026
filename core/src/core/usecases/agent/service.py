@@ -19,11 +19,11 @@ from core.llm import ChatMessage, LLMClient, LLMError, LLMInputError, LLMUnavail
 from core.usecases.agent.prompts import (
     ASK_INSTRUCTIONS,
     COVER_INSTRUCTIONS,
-    FILL_INSTRUCTIONS,
     current_values,
     describe_document,
     describe_fields,
     fields_schema,
+    fill_instructions,
 )
 from core.usecases.documents import DocumentView, get_document, set_fields
 
@@ -112,7 +112,7 @@ async def fill_from_message(
     document = await get_document(session, user_id=user_id, document_id=document_id)
     fields = document.template.fields
     prompt = (
-        f"{FILL_INSTRUCTIONS}\n\nПоля документа «{document.template.title}»:\n"
+        f"{fill_instructions()}\n\nПоля документа «{document.template.title}»:\n"
         f"{describe_fields(fields)}\n\nУже заполнено:\n{current_values(fields, document.values)}"
     )
     try:
