@@ -41,11 +41,13 @@ class DocumentRepository:
         counterparty_id: int | None,
         title: str,
         values: dict[str, dict[str, object]],
+        organization_id: int | None = None,
     ) -> Document:
         document = Document(
             user_id=user_id,
             template_id=template_id,
             counterparty_id=counterparty_id,
+            organization_id=organization_id,
             title=title,
             values=values,
         )

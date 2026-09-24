@@ -15,11 +15,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import Document
-from core.db.repositories import (
-    CompanyProfileRepository,
-    CounterpartyRepository,
-    DocumentRepository,
-)
+from core.db.repositories import CounterpartyRepository, DocumentRepository
 from core.domain.documents import (
     FieldError,
     FieldSpec,
@@ -31,6 +27,7 @@ from core.domain.documents import (
 )
 from core.domain.exceptions import NotFoundError
 from core.usecases.documents.journal import COPY_SOURCE, Fact, SendState, last_sends, record
+from core.usecases.documents.organizations import seller_for_document
 from core.usecases.documents.requisites import CLIENT_PREFIX, SELLER_PREFIX
 from core.usecases.documents.templates import TemplateView, get_template, to_view
 
@@ -45,6 +42,7 @@ class DocumentView:
     status: str
     template: TemplateView
     counterparty_id: int | None
+    organization_id: int | None
     values: dict[str, FieldValue]
     errors: tuple[FieldError, ...]
     missing: tuple[str, ...]
@@ -109,6 +107,7 @@ def _view(
         status=document.status,
         template=template,
         counterparty_id=document.counterparty_id,
+        organization_id=document.organization_id,
         values=validated.values,
         errors=validated.errors + rejected,
         missing=validated.missing,
@@ -127,15 +126,20 @@ async def _prefill(
     *,
     user_id: int,
     specs: tuple[FieldSpec, ...],
+    organization_id: int | None,
     counterparty_id: int | None,
-) -> dict[str, FieldValue]:
+    strict: bool = True,
+) -> tuple[dict[str, FieldValue], int | None]:
     """Реквизиты сторон подставляются по префиксу ключа: ``seller_*`` из своей
-    карточки, ``client_*`` из карточки контрагента."""
+    организации (выбранной или основной), ``client_*`` из карточки контрагента.
+    Возвращает и id организации, чьи реквизиты стоят продавцом."""
     values: dict[str, FieldValue] = {}
-    profile = await CompanyProfileRepository(session).get(user_id)
+    seller = await seller_for_document(
+        session, user_id=user_id, organization_id=organization_id, strict=strict
+    )
     sources: list[tuple[str, Mapping[str, str], ValueSource]] = []
-    if profile is not None:
-        sources.append((SELLER_PREFIX, profile.values, ValueSource.PROFILE))
+    if seller is not None:
+        sources.append((SELLER_PREFIX, seller.values, ValueSource.PROFILE))
     if counterparty_id is not None:
         counterparty = await CounterpartyRepository(session).get(user_id, counterparty_id)
         if counterparty is None:
@@ -149,7 +153,7 @@ async def _prefill(
             filled = requisites.get(spec.key.removeprefix(prefix))
             if filled:
                 values[spec.key] = FieldValue(filled, source=source)
-    return values
+    return values, seller.id if seller is not None else None
 
 
 async def create_draft(
@@ -158,17 +162,23 @@ async def create_draft(
     user_id: int,
     template_id: int,
     counterparty_id: int | None = None,
+    organization_id: int | None = None,
     title: str = "",
 ) -> DocumentView:
     template = await get_template(session, user_id=user_id, template_id=template_id)
-    values = await _prefill(
-        session, user_id=user_id, specs=template.fields, counterparty_id=counterparty_id
+    values, seller_id = await _prefill(
+        session,
+        user_id=user_id,
+        specs=template.fields,
+        organization_id=organization_id,
+        counterparty_id=counterparty_id,
     )
     validated = validate_fields(template.fields, values)
     document = await DocumentRepository(session).create(
         user_id,
         template_id=template.id,
         counterparty_id=counterparty_id,
+        organization_id=seller_id,
         title=title.strip() or template.title,
         values=dump_values(validated.values),
     )
@@ -187,24 +197,29 @@ async def copy_document(
 ) -> DocumentView:
     """Новый черновик на основе прошлого документа: те же условия и стороны.
 
-    Реквизиты сторон берутся заново из профиля и карточки контрагента — они могли
-    измениться с прошлого раза. Поля с ``carry_over=False`` (номер, даты) не
-    переносятся: у нового документа они свои."""
+    Реквизиты сторон берутся заново из той же организации и карточки контрагента —
+    они могли измениться с прошлого раза; удалённую организацию заменяет основная.
+    Поля с ``carry_over=False`` (номер, даты) не переносятся: у нового документа
+    они свои."""
     source = await _load(session, user_id=user_id, document_id=document_id)
     template = to_view(source.template)
     carried = {spec.key for spec in template.fields if spec.carry_over}
     values = {key: v for key, v in load_values(source.values).items() if key in carried}
-    values |= await _prefill(
+    prefilled, seller_id = await _prefill(
         session,
         user_id=user_id,
         specs=template.fields,
+        organization_id=source.organization_id,
         counterparty_id=source.counterparty_id,
+        strict=False,
     )
+    values |= prefilled
     validated = validate_fields(template.fields, values)
     document = await DocumentRepository(session).create(
         user_id,
         template_id=template.id,
         counterparty_id=source.counterparty_id,
+        organization_id=seller_id,
         title=(title or "").strip() or source.title,
         values=dump_values(validated.values),
     )

@@ -5,17 +5,13 @@ from fastapi import APIRouter, status
 from core.api.dependencies import CurrentUserDep, SessionDep
 from core.api.schemas.common import ErrorResponse, OkResponse
 from core.api.schemas.documents import (
-    CompanyProfileRequest,
-    CompanyProfileSchema,
     CounterpartyRequest,
     CounterpartySchema,
 )
 from core.usecases.documents import (
     create_counterparty,
     delete_counterparty,
-    get_company_profile,
     list_counterparties,
-    save_company_profile,
     update_counterparty,
 )
 
@@ -89,31 +85,3 @@ async def update(
 async def delete(counterparty_id: int, current: CurrentUserDep, session: SessionDep) -> OkResponse:
     await delete_counterparty(session, user_id=current.id, counterparty_id=counterparty_id)
     return OkResponse()
-
-
-@router.get(
-    "/company",
-    response_model=CompanyProfileSchema,
-    responses={401: {"model": ErrorResponse}},
-    operation_id="get_company_profile",
-    summary="Реквизиты моей компании",
-)
-async def get_company(current: CurrentUserDep, session: SessionDep) -> CompanyProfileSchema:
-    profile = await get_company_profile(session, user_id=current.id)
-    return CompanyProfileSchema.model_validate(profile)
-
-
-@router.put(
-    "/company",
-    response_model=CompanyProfileSchema,
-    responses=_ERRORS,
-    operation_id="save_company_profile",
-    summary="Сохранить реквизиты моей компании",
-)
-async def put_company(
-    payload: CompanyProfileRequest, current: CurrentUserDep, session: SessionDep
-) -> CompanyProfileSchema:
-    profile = await save_company_profile(
-        session, user_id=current.id, name=payload.name, values=payload.values
-    )
-    return CompanyProfileSchema.model_validate(profile)

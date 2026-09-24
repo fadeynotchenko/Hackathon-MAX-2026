@@ -7,13 +7,15 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.domain.documents import FieldValue, ValueSource
+from core.domain.documents import FieldSpec, FieldType, FieldValue, ValueSource
 from core.domain.exceptions import AppError
 from core.usecases.agent import answer_question, draft_cover_letter, fill_from_message
 from core.usecases.agent.prompts import fill_instructions
+from core.usecases.agent.service import grounded
 from core.usecases.documents import (
     confirm_fields,
     create_draft,
+    create_organization,
     ensure_builtin_templates,
     list_templates,
     set_fields,
@@ -153,3 +155,49 @@ async def test_provider_outage_is_reported_as_temporary(session: AsyncSession) -
             llm=FakeLLM(unavailable=True),
         )
     assert exc.value.code == "agent.unavailable"
+
+
+async def test_repeated_profile_values_stay_confirmed_and_list_goes_in_order(
+    session: AsyncSession,
+) -> None:
+    user_id = await make_user(session)
+    await ensure_builtin_templates(session)
+    await create_organization(
+        session, user_id=user_id, name="ООО «Ромашка»", values={"inn": "7707083893"}
+    )
+    invoice = (await list_templates(session, user_id=user_id, slug="invoice"))[0]
+    document = await create_draft(session, user_id=user_id, template_id=invoice.id)
+    llm = FakeLLM(
+        json_reply={"seller_name": "ООО «Ромашка»", "seller_inn": "7707083893", "number": "17"}
+    )
+
+    result = await fill_from_message(
+        session, user_id=user_id, document_id=document.id, message="17", llm=llm
+    )
+
+    assert result.filled == ("number",), "повтор значения из профиля — не заполнение"
+    seller = result.document.values["seller_inn"]
+    assert (seller.source, seller.confirmed) == (ValueSource.PROFILE, True)
+    prompt = llm.calls[0][1][0].content
+    waiting = prompt.split("Ещё не заполнено:\n", 1)[1]
+    assert waiting.startswith("1. number: Номер счёта\n2. date: Дата счёта"), (
+        "ответ столбиком модель разносит по этому порядку"
+    )
+
+
+def test_values_must_come_from_the_message() -> None:
+    city = FieldSpec("city", "Город", FieldType.TEXT)
+    inn = FieldSpec("client_inn", "ИНН клиента", FieldType.INN)
+    total = FieldSpec("total", "Сумма", FieldType.MONEY)
+    message = "договор между ооо рога и копыта и нами, ИНН 7736 207 543, на 200к"
+    assert not grounded(city, "Москва", message), "город из адреса продавца, а не из слов"
+    assert grounded(
+        FieldSpec("client_name", "Клиент", FieldType.TEXT), "ООО «Рога и копыта»", message
+    )
+    assert grounded(
+        FieldSpec("subject", "Предмет", FieldType.MULTILINE),
+        "сочнейшая бебра",
+        "за сочнейшую бебру",
+    )
+    assert grounded(inn, "7736207543", message) and not grounded(inn, "7707083893", message)
+    assert grounded(total, "200000", message), "суммы пишутся иначе, их не сверяем"

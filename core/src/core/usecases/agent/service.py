@@ -9,11 +9,19 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.domain.documents import FieldError, FieldValue, ValueSource
+from core.domain.documents import (
+    FieldError,
+    FieldSpec,
+    FieldType,
+    FieldValue,
+    ValueSource,
+    normalize,
+)
 from core.domain.exceptions import AppError
 from core.llm import ChatMessage, LLMClient, LLMError, LLMInputError, LLMUnavailableError
 from core.usecases.agent.prompts import (
@@ -24,10 +32,21 @@ from core.usecases.agent.prompts import (
     describe_fields,
     fields_schema,
     fill_instructions,
+    missing_fields,
 )
 from core.usecases.documents import DocumentView, get_document, set_fields
 
 MAX_ANSWER_TOKENS = 600
+
+_WORD = re.compile(r"[0-9a-zа-яё]+")
+# Слова короче — «ооо», «ип», «г», «ул»: по ним опору в сообщении не проверить.
+_MIN_WORD = 4
+_WORDED = frozenset(
+    {FieldType.TEXT, FieldType.MULTILINE, FieldType.NAME, FieldType.ADDRESS, FieldType.EMAIL}
+)
+_DIGITS_ONLY = frozenset(
+    {FieldType.INN, FieldType.KPP, FieldType.OGRN, FieldType.BIC, FieldType.ACCOUNT}
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +55,25 @@ class AgentFillResult:
     filled: tuple[str, ...]
     rejected: tuple[FieldError, ...]
     reply: str
+
+
+def stems(text: str) -> set[str]:
+    return {word[:_MIN_WORD] for word in _WORD.findall(text.lower()) if len(word) >= _MIN_WORD}
+
+
+def grounded(spec: FieldSpec, value: str, message: str) -> bool:
+    """Значение опирается на слова пользователя, а не выведено моделью из контекста.
+
+    Правило «не придумывай» в инструкции GigaChat нарушал: вписывал город из адреса
+    продавца, которого в сообщении не было. Текст должен разделять с сообщением хотя
+    бы одно слово (по первым буквам — падежи меняют окончание), реквизит — цифры.
+    Даты, суммы и сроки не проверяются: «сегодня» и «200к» законно пишутся иначе."""
+    if spec.type in _DIGITS_ONLY:
+        return re.sub(r"\D", "", value) in re.sub(r"\D", "", message)
+    if spec.type in _WORDED:
+        value_stems = stems(value)
+        return not value_stems or bool(value_stems & stems(message))
+    return True
 
 
 def require_llm(llm: LLMClient | None) -> LLMClient:
@@ -113,7 +151,8 @@ async def fill_from_message(
     fields = document.template.fields
     prompt = (
         f"{fill_instructions()}\n\nПоля документа «{document.template.title}»:\n"
-        f"{describe_fields(fields)}\n\nУже заполнено:\n{current_values(fields, document.values)}"
+        f"{describe_fields(fields)}\n\nУже заполнено:\n{current_values(fields, document.values)}\n\n"
+        f"Ещё не заполнено:\n{missing_fields(fields, document.missing)}"
     )
     try:
         raw = await model.complete_json(
@@ -123,12 +162,20 @@ async def fill_from_message(
     except LLMError as exc:
         raise map_llm_error(exc) from exc
 
-    known = {spec.key for spec in fields}
-    proposals = {
-        key: FieldValue(str(value).strip(), ValueSource.AGENT, confirmed=False)
-        for key, value in raw.items()
-        if key in known and str(value).strip()
-    }
+    specs = {spec.key: spec for spec in fields}
+    proposals: dict[str, FieldValue] = {}
+    for key, value in raw.items():
+        text = str(value).strip()
+        if key not in specs or not text:
+            continue
+        # Модель повторяет значения из «Уже заполнено»: без этой проверки реквизиты
+        # из профиля переписывались бы с источником «помощник» и снова ждали подтверждения.
+        previous = document.values.get(key)
+        if previous is not None and normalize(specs[key], text)[0] == previous.value:
+            continue
+        if not grounded(specs[key], text, message):
+            continue
+        proposals[key] = FieldValue(text, ValueSource.AGENT, confirmed=False)
     updated = await set_fields(session, user_id=user_id, document_id=document_id, values=proposals)
     filled = tuple(key for key in proposals if key in updated.values)
     rejected = tuple(error for error in updated.errors if error.key in proposals)

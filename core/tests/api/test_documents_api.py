@@ -47,8 +47,8 @@ async def test_document_flow_from_requisites_to_preview(
     await _seed(session)
     headers = await _auth(client, make_init_data)
 
-    company = await client.put(
-        "/api/v1/company",
+    company = await client.post(
+        "/api/v1/organizations",
         headers=headers,
         json={
             "name": "ООО «Ромашка»",
@@ -60,7 +60,8 @@ async def test_document_flow_from_requisites_to_preview(
             },
         },
     )
-    assert company.status_code == 200, company.text
+    assert company.status_code == 201, company.text
+    assert company.json()["is_default"] is True, "первая организация — основная"
 
     client_card = await client.post(
         "/api/v1/counterparties",

@@ -59,6 +59,7 @@ async def create(
         user_id=current.id,
         template_id=payload.template_id,
         counterparty_id=payload.counterparty_id,
+        organization_id=payload.organization_id,
         title=payload.title,
     )
     return DocumentSchema.model_validate(document)

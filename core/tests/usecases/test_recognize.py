@@ -16,9 +16,9 @@ from core.usecases.agent import (
 )
 from core.usecases.documents import (
     create_draft,
+    create_organization,
     ensure_builtin_templates,
     list_templates,
-    save_company_profile,
 )
 from tests.fakes import FakeLLM
 from tests.usecases.test_documents import make_user
@@ -35,7 +35,7 @@ def _item(key: str, value: str, fragment: str = "", confidence: float = 0.9) -> 
 async def _invoice_with_profile(session: AsyncSession) -> tuple[int, int]:
     user_id = await make_user(session)
     await ensure_builtin_templates(session)
-    await save_company_profile(
+    await create_organization(
         session, user_id=user_id, name="ООО «Поставщик»", values={"inn": "7707083893"}
     )
     invoice = (await list_templates(session, user_id=user_id, slug="invoice"))[0]

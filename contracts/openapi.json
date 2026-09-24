@@ -197,48 +197,6 @@
         "title": "AutofillSchema",
         "type": "object"
       },
-      "CompanyProfileRequest": {
-        "properties": {
-          "name": {
-            "maxLength": 255,
-            "title": "Name",
-            "type": "string"
-          },
-          "values": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Values",
-            "type": "object"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "CompanyProfileRequest",
-        "type": "object"
-      },
-      "CompanyProfileSchema": {
-        "properties": {
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "values": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Values",
-            "type": "object"
-          }
-        },
-        "required": [
-          "name",
-          "values"
-        ],
-        "title": "CompanyProfileSchema",
-        "type": "object"
-      },
       "ConfirmFieldsRequest": {
         "properties": {
           "keys": {
@@ -362,6 +320,18 @@
               }
             ],
             "title": "Counterparty Id"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "От какой своей организации; пусто — от основной",
+            "title": "Organization Id"
           },
           "template_id": {
             "title": "Template Id",
@@ -701,6 +671,18 @@
             "title": "Missing",
             "type": "array"
           },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Своя организация, чьи реквизиты стоят продавцом",
+            "title": "Organization Id"
+          },
           "preview": {
             "title": "Preview",
             "type": "string"
@@ -747,6 +729,7 @@
           "status",
           "template",
           "counterparty_id",
+          "organization_id",
           "values",
           "errors",
           "missing",
@@ -1178,6 +1161,89 @@
           }
         },
         "title": "OkResponse",
+        "type": "object"
+      },
+      "OrganizationRequest": {
+        "properties": {
+          "is_default": {
+            "default": false,
+            "description": "Сделать основной",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OrganizationRequest",
+        "type": "object"
+      },
+      "OrganizationSchema": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "inn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inn"
+          },
+          "is_default": {
+            "description": "Основная: от неё документ, если организацию не выбрали",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "inn",
+          "values",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "OrganizationSchema",
         "type": "object"
       },
       "RecognizedRequisitesSchema": {
@@ -1954,96 +2020,6 @@
         "summary": "Новый access-токен по refresh-cookie",
         "tags": [
           "auth"
-        ]
-      }
-    },
-    "/api/v1/company": {
-      "get": {
-        "operationId": "get_company_profile",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CompanyProfileSchema"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          }
-        },
-        "summary": "Реквизиты моей компании",
-        "tags": [
-          "documents"
-        ]
-      },
-      "put": {
-        "operationId": "save_company_profile",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CompanyProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CompanyProfileSchema"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "summary": "Сохранить реквизиты моей компании",
-        "tags": [
-          "documents"
         ]
       }
     },
@@ -3858,6 +3834,232 @@
         "summary": "Профиль текущего пользователя",
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/api/v1/organizations": {
+      "get": {
+        "operationId": "list_organizations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizationSchema"
+                  },
+                  "title": "Response List Organizations",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "summary": "Мои организации: основная первой",
+        "tags": [
+          "documents"
+        ]
+      },
+      "post": {
+        "operationId": "create_organization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Завести свою организацию; первая становится основной",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}": {
+      "delete": {
+        "operationId": "delete_organization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Удалить организацию; основной станет следующая",
+        "tags": [
+          "documents"
+        ]
+      },
+      "put": {
+        "operationId": "update_organization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Изменить организацию или сделать её основной",
+        "tags": [
+          "documents"
         ]
       }
     },

@@ -1,4 +1,3 @@
-from .company import CompanyProfileView, get_company_profile, save_company_profile
 from .counterparties import (
     CounterpartyView,
     create_counterparty,
@@ -30,6 +29,14 @@ from .files import (
     send_document_to_chat,
 )
 from .journal import DocumentFact, Fact, SendState, document_history, record_delivery
+from .organizations import (
+    OrganizationView,
+    create_organization,
+    delete_organization,
+    list_organizations,
+    seller_for_document,
+    update_organization,
+)
 from .requisites import REQUISITE_FIELDS
 from .templates import TemplateView, ensure_builtin_templates, get_template, list_templates
 
@@ -39,36 +46,39 @@ __all__ = [
     "REQUISITE_FIELDS",
     "STATUS_DRAFT",
     "STATUS_READY",
-    "CompanyProfileView",
     "CounterpartyView",
     "DocumentFact",
     "DocumentFileView",
     "DocumentSummary",
     "DocumentView",
     "Fact",
+    "OrganizationView",
     "SendState",
     "TemplateView",
     "confirm_fields",
     "copy_document",
     "create_counterparty",
     "create_draft",
+    "create_organization",
     "delete_counterparty",
     "delete_document",
+    "delete_organization",
     "document_history",
     "ensure_builtin_templates",
-    "get_company_profile",
     "get_document",
     "get_template",
     "list_counterparties",
     "list_document_files",
     "list_documents",
+    "list_organizations",
     "list_templates",
     "load_document_file",
     "load_file_by_token",
     "record_delivery",
     "render_document",
-    "save_company_profile",
+    "seller_for_document",
     "send_document_to_chat",
     "set_fields",
     "update_counterparty",
+    "update_organization",
 ]

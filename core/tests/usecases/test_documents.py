@@ -16,12 +16,12 @@ from core.usecases.documents import (
     STATUS_READY,
     create_counterparty,
     create_draft,
+    create_organization,
     ensure_builtin_templates,
     get_document,
     get_template,
     list_documents,
     list_templates,
-    save_company_profile,
     set_fields,
 )
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES
@@ -59,7 +59,7 @@ async def test_builtin_templates_are_seeded_idempotently(session: AsyncSession) 
 async def test_draft_is_prefilled_from_profile_and_counterparty(session: AsyncSession) -> None:
     user_id = await make_user(session)
     await ensure_builtin_templates(session)
-    await save_company_profile(
+    await create_organization(
         session,
         user_id=user_id,
         name="ООО «Ромашка»",

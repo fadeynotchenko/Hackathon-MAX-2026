@@ -8,6 +8,7 @@ from datetime import date, datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     Date,
     ForeignKey,
     Integer,
@@ -83,18 +84,22 @@ class RefreshToken(Base):
     user: Mapped[User] = relationship(back_populates="refresh_tokens")
 
 
-class CompanyProfile(Base):
-    """Реквизиты самого пользователя: то, что в документе стоит со стороны продавца."""
+class Organization(Base):
+    """Своя организация пользователя (ООО, ИП): в документе — сторона продавца.
 
-    __tablename__ = "company_profiles"
+    Организаций может быть несколько, одна из них — основная: её реквизиты
+    подставляются, когда документ создают, не выбрав организацию (чат, копия
+    документа, чья организация уже удалена)."""
+
+    __tablename__ = "organizations"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
-    )
-    name: Mapped[str] = mapped_column(String(255), default="")
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    inn: Mapped[str | None] = mapped_column(String(12))
     # Ключ → значение в каноническом виде домена (inn, kpp, bic, account, address...).
     values: Mapped[dict[str, str]] = mapped_column(JsonDict, default=dict)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()
@@ -155,6 +160,10 @@ class Document(Base):
     template_id: Mapped[int] = mapped_column(ForeignKey("templates.id", ondelete="RESTRICT"))
     counterparty_id: Mapped[int | None] = mapped_column(
         ForeignKey("counterparties.id", ondelete="SET NULL")
+    )
+    # От чьего имени документ: копия берёт свежие реквизиты той же организации.
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL")
     )
     title: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(16), default="draft")

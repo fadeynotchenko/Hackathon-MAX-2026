@@ -39,14 +39,21 @@ from core.files import FilesConfig, InboundFileError, InboundFileTooLargeError, 
 from core.llm import ChatMessage, LLMClient, LLMError
 from core.logs import biz_warn
 from core.usecases.agent.recognize import fill_from_file, transcribe
-from core.usecases.agent.service import AgentFillResult, answer_question, fill_from_message
+from core.usecases.agent.service import (
+    AgentFillResult,
+    answer_question,
+    fill_from_message,
+    stems,
+)
 from core.usecases.documents import (
     DocumentView,
+    OrganizationView,
     TemplateView,
     confirm_fields,
     copy_document,
     create_draft,
     get_document,
+    list_organizations,
     list_templates,
     send_document_to_chat,
 )
@@ -80,8 +87,9 @@ _AUDIBLE_SUFFIXES = frozenset({".ogg", ".oga", ".opus", ".mp3", ".m4a", ".mp4", 
 ROUTE_INSTRUCTIONS = """Определи, чего хочет пользователь в чате с помощником по документам.
 intent:
 - new — подготовить новый документ (укажи его вид в template);
-- fill — дописать или поправить текущий документ;
-- question — вопрос о текущем документе, ничего менять не надо.
+- fill — дописать или поправить текущий документ; сюда же значения без вопроса —
+  числа, даты, ФИО, реквизиты, в том числе столбиком или через запятую;
+- question — человек спрашивает о текущем документе и ничего не присылает для заполнения.
 Если текущего документа нет, запрос на заполнение означает new.
 template — вид нового документа из списка ниже или пустая строка, если вид не ясен."""
 
@@ -236,7 +244,11 @@ async def _route(
     llm: LLMClient, text: str, active: DocumentView | None, templates: list[TemplateView]
 ) -> tuple[str, str]:
     catalog = "\n".join(f"- {t.slug}: {t.title}" for t in templates)
-    current = f"{active.template.title} «{active.title}»" if active else "нет"
+    current = (
+        f"{active.template.title} «{active.title}», ждёт значений: {_missing_text(active) or 'нет'}"
+        if active
+        else "нет"
+    )
     schema = {
         "type": "object",
         "properties": {
@@ -259,8 +271,30 @@ async def _route(
     return str(raw.get("intent", "fill")), str(raw.get("template", ""))
 
 
-async def _start_document(session: AsyncSession, user_id: int, template_id: int) -> DocumentView:
-    document = await create_draft(session, user_id=user_id, template_id=template_id)
+# Слова организационно-правовой формы есть в названии почти любой организации:
+# по ним своя организация не опознаётся.
+_LEGAL_FORM_STEMS = frozenset({"обще", "огра", "отве", "инди", "пред", "акци", "публ", "закр"})
+
+
+def named_organization(organizations: list[OrganizationView], text: str) -> int | None:
+    """Своя организация, названная в сообщении: «счёт от ИП Нотченко». Если названы
+    две или ни одной — не угадываем, документ пойдёт от основной."""
+    said = stems(text)
+    named = [o.id for o in organizations if (stems(o.name) - _LEGAL_FORM_STEMS) & said]
+    return named[0] if len(named) == 1 else None
+
+
+async def _start_document(
+    session: AsyncSession, user_id: int, template_id: int, text: str = ""
+) -> DocumentView:
+    organization_id = None
+    if text:
+        organizations = await list_organizations(session, user_id=user_id)
+        if len(organizations) > 1:
+            organization_id = named_organization(organizations, text)
+    document = await create_draft(
+        session, user_id=user_id, template_id=template_id, organization_id=organization_id
+    )
     await ChatStateRepository(session).set_active_document(user_id, document.id)
     return document
 
@@ -285,7 +319,7 @@ async def handle_chat_message(
             template = next((t for t in templates if t.slug == slug), None)
             if template is None:
                 return ChatReply(ASK_TEMPLATE_TEXT, _template_buttons(templates))
-            active = await _start_document(session, user_id, template.id)
+            active = await _start_document(session, user_id, template.id, text)
             # Документ начат словами: отложенное раньше фото к нему уже не относится.
             await ChatStateRepository(session).set_pending_media(user_id, None)
 
@@ -311,7 +345,7 @@ async def _document_for_caption(
     template = next((t for t in templates if t.slug == slug), None)
     if template is None:
         return None
-    return await _start_document(session, user_id, template.id)
+    return await _start_document(session, user_id, template.id, caption)
 
 
 async def _recognize_into(

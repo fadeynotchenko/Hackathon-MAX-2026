@@ -68,6 +68,9 @@ class DocumentSchema(BaseModel):
     status: str
     template: TemplateSchema
     counterparty_id: int | None
+    organization_id: int | None = Field(
+        description="Своя организация, чьи реквизиты стоят продавцом"
+    )
     values: dict[str, FieldValueSchema]
     errors: list[FieldErrorSchema]
     missing: list[str] = Field(description="Обязательные поля, которые ещё не заполнены")
@@ -161,6 +164,9 @@ class SendDocumentResponse(BaseModel):
 class CreateDocumentRequest(BaseModel):
     template_id: int
     counterparty_id: int | None = None
+    organization_id: int | None = Field(
+        default=None, description="От какой своей организации; пусто — от основной"
+    )
     title: str = Field(default="", max_length=255)
 
 
@@ -226,13 +232,19 @@ class CounterpartyRequest(BaseModel):
     values: dict[str, str] = Field(default_factory=dict)
 
 
-class CompanyProfileSchema(BaseModel):
+class OrganizationSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: int
     name: str
+    inn: str | None
     values: dict[str, str]
+    is_default: bool = Field(description="Основная: от неё документ, если организацию не выбрали")
+    created_at: datetime
+    updated_at: datetime
 
 
-class CompanyProfileRequest(BaseModel):
+class OrganizationRequest(BaseModel):
     name: str = Field(max_length=255)
     values: dict[str, str] = Field(default_factory=dict)
+    is_default: bool = Field(default=False, description="Сделать основной")

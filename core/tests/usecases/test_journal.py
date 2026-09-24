@@ -19,15 +19,16 @@ from core.usecases.documents import (
     confirm_fields,
     copy_document,
     create_draft,
+    create_organization,
     document_history,
     ensure_builtin_templates,
     list_documents,
     list_templates,
     record_delivery,
     render_document,
-    save_company_profile,
     send_document_to_chat,
     set_fields,
+    update_organization,
 )
 from core.usecases.users import mark_active
 from tests.usecases.test_document_files import READY_OFFER, _ready_document
@@ -189,7 +190,7 @@ async def test_rejected_value_does_not_keep_document_in_draft(session: AsyncSess
 async def test_copy_takes_terms_but_not_number_and_dates(session: AsyncSession) -> None:
     user_id = await make_user(session)
     await ensure_builtin_templates(session)
-    await save_company_profile(
+    seller = await create_organization(
         session, user_id=user_id, name="ООО «Старое»", values={"inn": "7707083893"}
     )
     invoice = (await list_templates(session, user_id=user_id, slug="invoice"))[0]
@@ -205,8 +206,12 @@ async def test_copy_takes_terms_but_not_number_and_dates(session: AsyncSession) 
             "total": FieldValue("30 000", ValueSource.AGENT, confirmed=False),
         },
     )
-    await save_company_profile(
-        session, user_id=user_id, name="ООО «Новое»", values={"inn": "7707083893"}
+    await update_organization(
+        session,
+        user_id=user_id,
+        organization_id=seller.id,
+        name="ООО «Новое»",
+        values={"inn": "7707083893"},
     )
 
     copy = await copy_document(session, user_id=user_id, document_id=source.id)
@@ -215,7 +220,9 @@ async def test_copy_takes_terms_but_not_number_and_dates(session: AsyncSession) 
     assert "number" not in copy.values and "date" not in copy.values
     assert copy.values["item"].value == "Сопровождение сайта"
     assert copy.values["total"].confirmed is False, "непроверенное остаётся непроверенным"
-    assert copy.values["seller_name"].value == "ООО «Новое»", "реквизиты — из свежего профиля"
+    assert copy.values["seller_name"].value == "ООО «Новое»", (
+        "реквизиты — свежие, той же организации"
+    )
     history = await document_history(session, user_id=user_id, document_id=copy.id)
     assert [(f.kind, f.source) for f in history] == [(Fact.CREATED, "copy")]
 

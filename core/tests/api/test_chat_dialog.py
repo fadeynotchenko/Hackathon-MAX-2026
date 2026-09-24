@@ -407,7 +407,8 @@ async def test_sent_document_can_be_taken_as_a_base(
         ]
     )
     handlers = _handlers(redis, llm=llm, files=FilesConfig(tmp_path / "documents", "soffice", 5))
-    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("КП на сайт"), "evt-1"))
+    text = "КП от ООО Ромашка для ООО Клиент на сайт: вёрстка, 90 000, действует до 31.10.2026"
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message(text), "evt-1"))
     confirm = (await _replies(redis))[0].buttons[0][0].payload  # type: ignore[index]
     await handlers[BOT_CALLBACK](
         _event(

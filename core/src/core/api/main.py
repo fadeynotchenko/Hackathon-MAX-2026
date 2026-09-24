@@ -28,6 +28,7 @@ from core.api.routers import (
     documents,
     health,
     me,
+    organizations,
     templates,
 )
 from core.api.state import ApiState
@@ -193,6 +194,7 @@ def create_app(
         agent.router,
         agent.requisites_router,
         counterparties.router,
+        organizations.router,
     ):
         app.include_router(router, prefix=API_V1_PREFIX)
     # Dev-вход — явный opt-in (DEV_LOGIN_ENABLED) и никогда в production: в проде
