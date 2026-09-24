@@ -264,11 +264,15 @@ body {
 .thumb {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   aspect-ratio: 3 / 4;
   padding: 12px 10px;
   border-radius: var(--size-border-radius-semantic-border-radius-paper);
   background: var(--background-secondary);
+  color: var(--text-secondary);
+  font-family: var(--family-base);
+  font-size: 9px;
+  line-height: 1.25;
   overflow: hidden;
 }
 
@@ -276,48 +280,54 @@ body {
   aspect-ratio: auto;
   min-height: 220px;
   padding: 20px 18px;
-  gap: 8px;
+  gap: 10px;
+  font-size: var(--font-size-tag);
 }
 
-.thumb__line {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--divider-primary);
+.thumb__title {
+  color: var(--text-themed);
+  font-size: 1.15em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
-.thumb__line--title {
-  height: 6px;
-  width: 60%;
-  background: var(--icon-themed);
-  opacity: 0.8;
+.thumb__meta {
+  margin-bottom: 2px;
+  color: var(--text-tertiary);
 }
 
-.thumb__line--short {
-  width: 45%;
-}
-
-.thumb__line--mid {
-  width: 75%;
-}
-
-.thumb__table {
-  display: grid;
-  grid-template-columns: 3fr 1fr;
+/* Строка бланка: подпись и линия под значение, как на бумажной форме. */
+.thumb__row {
+  display: flex;
+  align-items: baseline;
   gap: 4px;
-  margin: 4px 0;
+  white-space: nowrap;
+}
+
+.thumb__row--total {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.thumb__blank {
+  flex: 1;
+  min-width: 12px;
+  border-bottom: 1px solid var(--divider-primary);
 }
 
 .thumb__sign {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   margin-top: auto;
+  color: var(--text-tertiary);
 }
 
 .thumb__sign span {
-  width: 36%;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--divider-primary);
+  flex: 1;
+  padding-top: 3px;
+  border-top: 1px solid var(--divider-primary);
 }
 
 /* Поля формы. */
@@ -331,6 +341,11 @@ body {
   display: flex;
   justify-content: space-between;
   gap: var(--spacing-size-m);
+  padding: 0 var(--spacing-size-xs);
+}
+
+/* Подсказка и ошибка под полем — на одной линии с подписью над ним. */
+.field__note {
   padding: 0 var(--spacing-size-xs);
 }
 

@@ -46,8 +46,8 @@ export interface MaxWebApp {
   close?: () => void;
   BackButton?: MaxBackButton;
   HapticFeedback?: {
-    impactOccurred?: (style: 'light' | 'medium' | 'heavy') => void;
-    notificationOccurred?: (type: 'success' | 'warning' | 'error') => void;
+    impactOccurred?: (style: 'light' | 'medium' | 'heavy') => Promise<unknown> | void;
+    notificationOccurred?: (type: 'success' | 'warning' | 'error') => Promise<unknown> | void;
   };
   onEvent?: (event: string, handler: () => void) => void;
   offEvent?: (event: string, handler: () => void) => void;
@@ -93,12 +93,19 @@ export function closeApp(): boolean {
   return true;
 }
 
+// Вибрации нет в браузере и на десктопе MAX: мост отклоняет промис объектом
+// {error: {code: 'client.haptic_feedback_*.request_timeout'}}. Это не ошибка
+// приложения, а без перехвата каждое нажатие оставляло Uncaught в консоли.
+function quietly(result: Promise<unknown> | void | undefined): void {
+  if (result) result.catch(() => undefined);
+}
+
 export function haptic(style: 'light' | 'medium' | 'heavy' = 'light'): void {
-  getWebApp()?.HapticFeedback?.impactOccurred?.(style);
+  quietly(getWebApp()?.HapticFeedback?.impactOccurred?.(style));
 }
 
 export function hapticResult(type: 'success' | 'warning' | 'error'): void {
-  getWebApp()?.HapticFeedback?.notificationOccurred?.(type);
+  quietly(getWebApp()?.HapticFeedback?.notificationOccurred?.(type));
 }
 
 // Тема клиента. Вне MAX — undefined: провайдер MAX UI возьмёт системную.
@@ -133,6 +140,8 @@ export function showBackButton(handler: () => void): () => void {
   };
 }
 
+// Скрипт моста подключён и в обычном браузере, но кнопку там рисовать некому:
+// без initData мы не в клиенте MAX, и «Назад» нужна своя, в шапке экрана.
 export function hasBackButton(): boolean {
-  return Boolean(getWebApp()?.BackButton?.show);
+  return isInsideMax() && Boolean(getWebApp()?.BackButton?.show);
 }

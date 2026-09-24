@@ -60,6 +60,7 @@ export function FieldInput({
         {kind.multiline ? (
           <Textarea
             {...common}
+            mode="secondary"
             className="field__box"
             rows={3}
             onChange={(event) => onChange(event.target.value)}
@@ -82,11 +83,20 @@ export function FieldInput({
         )}
       </div>
       {error ? (
-        <Typography.Text id={describedBy} variant="description" className="field__error">
+        <Typography.Text
+          id={describedBy}
+          variant="description"
+          className="field__note field__error"
+        >
           {error}
         </Typography.Text>
       ) : hint ? (
-        <Typography.Text id={describedBy} variant="description" color="tertiary">
+        <Typography.Text
+          id={describedBy}
+          variant="description"
+          color="tertiary"
+          className="field__note"
+        >
           {hint}
         </Typography.Text>
       ) : null}

@@ -76,7 +76,7 @@ export function AdminPage() {
         <form className="fields" onSubmit={(e) => void submit(e)}>
           <Input
             aria-label="ID пользователя в MAX"
-            hint="ID пользователя в MAX"
+            placeholder="ID пользователя в MAX"
             inputMode="numeric"
             pattern="[0-9]+"
             value={maxUserId}
@@ -85,6 +85,8 @@ export function AdminPage() {
           />
           <Textarea
             aria-label="Текст сообщения"
+            placeholder="Текст сообщения"
+            mode="secondary"
             rows={3}
             value={text}
             onChange={(e) => setText(e.target.value)}

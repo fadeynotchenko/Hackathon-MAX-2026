@@ -29,7 +29,7 @@ import { defaultCoverText } from './fields';
 
 const FORMATS: Array<{ format: FileFormat; title: string; subtitle: string }> = [
   { format: 'pdf', title: 'PDF', subtitle: 'Для отправки клиенту — выглядит одинаково везде' },
-  { format: 'docx', title: 'DOCX', subtitle: 'Для правок — откроется в Word или «Р7-Офис»' },
+  { format: 'docx', title: 'DOCX', subtitle: 'Для правок — откроется в Word или «Р7‑Офис»' },
 ];
 
 export function ExportPage() {

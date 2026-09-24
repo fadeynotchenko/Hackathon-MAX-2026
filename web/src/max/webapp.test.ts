@@ -5,6 +5,9 @@ import {
   getInitData,
   getPlatform,
   getStartParam,
+  hasBackButton,
+  haptic,
+  hapticResult,
   isInsideMax,
   markReady,
   onThemeChange,
@@ -16,6 +19,36 @@ afterEach(() => {
 });
 
 describe('webapp bridge', () => {
+  it('draws its own back button when the bridge script runs outside MAX', () => {
+    const BackButton = { show: () => undefined, hide: () => undefined };
+    window.WebApp = { initData: '', initDataUnsafe: {}, BackButton };
+    expect(hasBackButton()).toBe(false);
+    window.WebApp = { initData: 'auth_date=1&hash=x', initDataUnsafe: {}, BackButton };
+    expect(hasBackButton()).toBe(true);
+  });
+
+  it('swallows haptic timeouts outside the mobile client', async () => {
+    const timeout = { error: { code: 'client.haptic_feedback_impact.request_timeout' } };
+    // Мост отклоняет промис простым объектом, а не Error: повторяем его как есть.
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+    const rejectLikeBridge = () => Promise.reject(timeout);
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    window.WebApp = {
+      initData: '',
+      initDataUnsafe: {},
+      HapticFeedback: {
+        impactOccurred: rejectLikeBridge,
+        notificationOccurred: rejectLikeBridge,
+      },
+    };
+    haptic('light');
+    hapticResult('success');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it('reports outside MAX when the bridge is missing', () => {
     vi.stubEnv('VITE_DEV_INIT_DATA', '');
     expect(isInsideMax()).toBe(false);

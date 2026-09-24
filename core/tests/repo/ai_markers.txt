@@ -18,7 +18,8 @@ note that this is
 please note that
 it'?s worth noting
 remember to (replace|update|change) this
-placeholder
+# Атрибут placeholder= у поля ввода — часть HTML, а не заглушка в тексте.
+placeholder(?!=)
 lorem ipsum
 your[_ ]token[_ ]here
 insert .* here

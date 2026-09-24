@@ -85,7 +85,7 @@ export function ArchivePage() {
             <Input
               type="search"
               aria-label="Поиск по названию или клиенту"
-              hint="Название документа, вид или клиент"
+              placeholder="Название, вид или клиент"
               mode="contrast"
               iconBefore={<Icon16SearchOutline />}
               withClearButton

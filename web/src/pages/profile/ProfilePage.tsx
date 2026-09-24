@@ -4,7 +4,7 @@
 import { Avatar, Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useNavigate } from 'react-router-dom';
 
-import { IconBuilding, IconTemplates, IconUsers } from '@/components/icons';
+import { IconBuilding, IconChart, IconTemplates, IconUsers } from '@/components/icons';
 import { Page } from '@/components/Page';
 import { useAuth } from '@/auth/context';
 import { initials, pluralize } from '@/lib/format';
@@ -85,6 +85,7 @@ export function ProfilePage() {
           <CellSimple
             title="Сводка и рассылка"
             subtitle="Пользователи и сообщения через бота"
+            before={<IconChart />}
             showChevron
             onClick={() => navigate('/admin')}
           />

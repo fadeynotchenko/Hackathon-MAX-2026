@@ -187,3 +187,14 @@ export function IconSparkle(props: IconProps) {
     </Icon>
   );
 }
+
+export function IconChart(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 20h16" />
+      <path d="M7 16v-5" />
+      <path d="M12 16V6" />
+      <path d="M17 16v-8" />
+    </Icon>
+  );
+}
