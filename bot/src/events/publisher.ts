@@ -5,11 +5,13 @@ import type { Logger } from '../logger.js';
 import {
   BOT_ATTACHMENT,
   BOT_CALLBACK,
+  BOT_DOCUMENT_DELIVERY,
   BOT_MESSAGE,
   BOT_USER_STARTED,
   encodeEvent,
   type BotAttachment,
   type BotCallback,
+  type BotDocumentDelivery,
   type BotMessage,
   type BotUserStarted,
   type EventType,
@@ -44,9 +46,13 @@ export class EventPublisher {
     return this.publish(BOT_ATTACHMENT, payload);
   }
 
+  documentDelivery(payload: BotDocumentDelivery): Promise<string> {
+    return this.publish(BOT_DOCUMENT_DELIVERY, payload);
+  }
+
   private async publish(
     type: EventType,
-    payload: BotUserStarted | BotMessage | BotCallback | BotAttachment,
+    payload: BotUserStarted | BotMessage | BotCallback | BotAttachment | BotDocumentDelivery,
   ): Promise<string> {
     const { id, fields } = encodeEvent(type, payload, this.options.source ?? 'bot', new Date());
     // MAXLEN ~ : приблизительное усечение дешевле точного, стрим не растёт бесконечно.

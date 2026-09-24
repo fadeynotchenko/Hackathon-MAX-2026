@@ -12,6 +12,7 @@ from .drafts import (
     DocumentSummary,
     DocumentView,
     confirm_fields,
+    copy_document,
     create_draft,
     delete_document,
     get_document,
@@ -28,6 +29,7 @@ from .files import (
     render_document,
     send_document_to_chat,
 )
+from .journal import DocumentFact, Fact, SendState, document_history, record_delivery
 from .requisites import REQUISITE_FIELDS
 from .templates import TemplateView, ensure_builtin_templates, get_template, list_templates
 
@@ -39,15 +41,20 @@ __all__ = [
     "STATUS_READY",
     "CompanyProfileView",
     "CounterpartyView",
+    "DocumentFact",
     "DocumentFileView",
     "DocumentSummary",
     "DocumentView",
+    "Fact",
+    "SendState",
     "TemplateView",
     "confirm_fields",
+    "copy_document",
     "create_counterparty",
     "create_draft",
     "delete_counterparty",
     "delete_document",
+    "document_history",
     "ensure_builtin_templates",
     "get_company_profile",
     "get_document",
@@ -58,6 +65,7 @@ __all__ = [
     "list_templates",
     "load_document_file",
     "load_file_by_token",
+    "record_delivery",
     "render_document",
     "save_company_profile",
     "send_document_to_chat",

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -21,6 +22,7 @@ from core.domain.exceptions import AppError, ConflictError, NotFoundError
 from core.events import DocumentReady, EventBus
 from core.files import DocumentStorage, FilesConfig, PdfUnavailableError, build_docx, convert_to_pdf
 from core.usecases.documents.drafts import DocumentView, get_document
+from core.usecases.documents.journal import Fact, record
 
 DOCX = "docx"
 PDF = "pdf"
@@ -46,15 +48,15 @@ def source_hash(document: DocumentView) -> str:
     return hashlib.sha256(f"{document.title}\n{document.preview}".encode()).hexdigest()
 
 
-def to_view(record: DocumentFile, *, current_source: str) -> DocumentFileView:
+def to_view(row: DocumentFile, *, current_source: str) -> DocumentFileView:
     return DocumentFileView(
-        format=record.format,
-        filename=record.filename,
-        size=record.size,
-        sha256=record.sha256,
-        stale=record.source_sha256 != current_source,
-        created_at=record.created_at,
-        updated_at=record.updated_at,
+        format=row.format,
+        filename=row.filename,
+        size=row.size,
+        sha256=row.sha256,
+        stale=row.source_sha256 != current_source,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
@@ -68,8 +70,8 @@ async def list_document_files(
 ) -> list[DocumentFileView]:
     document = await get_document(session, user_id=user_id, document_id=document_id)
     current = source_hash(document)
-    records = await DocumentFileRepository(session).list_for_document(document_id)
-    return [to_view(record, current_source=current) for record in records]
+    rows = await DocumentFileRepository(session).list_for_document(document_id)
+    return [to_view(row, current_source=current) for row in rows]
 
 
 async def render_document(
@@ -84,6 +86,7 @@ async def render_document(
             code="document.not_ready",
         )
 
+    started = time.monotonic()
     docx_bytes = build_docx(document.title, document.preview)
     if fmt == PDF:
         try:
@@ -102,10 +105,11 @@ async def render_document(
     else:
         data = docx_bytes
 
+    elapsed_ms = int((time.monotonic() - started) * 1000)
     stored = DocumentStorage(cfg.documents_dir).save(
         document_id=document_id, extension=fmt, data=data
     )
-    record = await DocumentFileRepository(session).upsert(
+    file = await DocumentFileRepository(session).upsert(
         document_id=document_id,
         fmt=fmt,
         filename=build_filename(document.title, fmt),
@@ -114,18 +118,27 @@ async def render_document(
         sha256=stored.sha256,
         source_sha256=source_hash(document),
     )
-    return to_view(record, current_source=source_hash(document))
+    await record(
+        session,
+        user_id=user_id,
+        kind=Fact.RENDERED,
+        document_id=document_id,
+        template_kind=document.template.kind,
+        fmt=fmt,
+        duration_ms=elapsed_ms,
+    )
+    return to_view(file, current_source=source_hash(document))
 
 
 async def load_document_file(
     session: AsyncSession, *, user_id: int, document_id: int, fmt: str, cfg: FilesConfig
 ) -> tuple[DocumentFileView, bytes]:
     document = await get_document(session, user_id=user_id, document_id=document_id)
-    record = await DocumentFileRepository(session).get(document_id, fmt)
+    row = await DocumentFileRepository(session).get(document_id, fmt)
     storage = DocumentStorage(cfg.documents_dir)
-    if record is None or not storage.exists(record.path):
+    if row is None or not storage.exists(row.path):
         raise NotFoundError("Файл не собран", code="document.file_not_found")
-    return to_view(record, current_source=source_hash(document)), storage.read(record.path)
+    return to_view(row, current_source=source_hash(document)), storage.read(row.path)
 
 
 async def send_document_to_chat(
@@ -171,6 +184,15 @@ async def send_document_to_chat(
             text=(text or "").strip()
             or f"{document.title}: файл во вложении. Проверьте реквизиты перед отправкой.",
         )
+    )
+    await record(
+        session,
+        user_id=user_id,
+        kind=Fact.SENT,
+        document_id=document_id,
+        template_kind=document.template.kind,
+        fmt=fmt,
+        event_id=event_id,
     )
     return file, event_id
 

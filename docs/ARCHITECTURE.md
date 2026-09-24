@@ -20,6 +20,8 @@
 
 Вложение, присланное боту, едет по шву ссылкой (`bot.attachment`), а не байтами:
 стрим — не файловое хранилище, файл ядро скачивает само (`core.files.inbound`).
+Отправив файл из `document.ready`, бот отвечает `bot.document_delivery` с UUID
+того события — так в журнале фактов отправка сшивается с доставкой.
 
 | Граница       | Контракт                                                                                                  | Где проверяется                                              |
 | ------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
@@ -71,14 +73,15 @@ Python в core импортирует только пакет `core` (`import-li
 
 Четыре вида «моделей» — это разные роли, не дубли:
 
-| Что                              | Где                                         | Жизненный цикл                                      |
-| -------------------------------- | ------------------------------------------- | --------------------------------------------------- |
-| `MaxUser`, `InitData`            | `core.domain.initdata`                      | подписанный payload платформы; форма задана MAX     |
-| `User`, `RefreshToken`, `JobRun` | `core.db.models`                            | персистентность; форма задана миграциями            |
-| `UserUpsert`                     | `core.db.repositories.user_repository`      | команда записи: что обновлять при конфликте         |
-| `UserProfile`, `IssuedSession`   | `core.usecases.users`, `core.usecases.auth` | выход сценария: то, что можно показать наружу       |
-| `NotifyUser`, `BotUserStarted`   | `core.events.contracts`                     | payload событий; их схема уезжает в `contracts/`    |
-| `UserProfileSchema` и прочие     | `core.api.schemas`                          | wire-контракт OpenAPI; из него генерируются TS-типы |
+| Что                                | Где                                         | Жизненный цикл                                             |
+| ---------------------------------- | ------------------------------------------- | ---------------------------------------------------------- |
+| `MaxUser`, `InitData`              | `core.domain.initdata`                      | подписанный payload платформы; форма задана MAX            |
+| `User`, `RefreshToken`, `JobRun`   | `core.db.models`                            | персистентность; форма задана миграциями                   |
+| `DocumentEvent`, `UserActivityDay` | `core.db.models`                            | журнал фактов: только пополняется, основа истории и метрик |
+| `UserUpsert`                       | `core.db.repositories.user_repository`      | команда записи: что обновлять при конфликте                |
+| `UserProfile`, `IssuedSession`     | `core.usecases.users`, `core.usecases.auth` | выход сценария: то, что можно показать наружу              |
+| `NotifyUser`, `BotUserStarted`     | `core.events.contracts`                     | payload событий; их схема уезжает в `contracts/`           |
+| `UserProfileSchema` и прочие       | `core.api.schemas`                          | wire-контракт OpenAPI; из него генерируются TS-типы        |
 
 Граница `usecases → api` проходит по dataclass-результатам: ORM-объект в роутер
 не попадает, поэтому ленивая загрузка вне сессии невозможна по построению.

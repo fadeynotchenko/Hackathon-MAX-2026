@@ -44,8 +44,15 @@ INVOICE = BuiltinTemplate(
     kind="invoice",
     description="Счёт с реквизитами продавца, банком и суммой к оплате.",
     fields=(
-        FieldSpec("number", "Номер счёта", FieldType.TEXT, group=SUBJECT, max_length=32),
-        FieldSpec("date", "Дата счёта", FieldType.DATE, group=SUBJECT),
+        FieldSpec(
+            "number",
+            "Номер счёта",
+            FieldType.TEXT,
+            group=SUBJECT,
+            max_length=32,
+            carry_over=False,
+        ),
+        FieldSpec("date", "Дата счёта", FieldType.DATE, group=SUBJECT, carry_over=False),
         *_SELLER_REQUISITES,
         *_BANK_REQUISITES,
         FieldSpec("client_name", "Название клиента", FieldType.TEXT, group=CLIENT),
@@ -63,7 +70,14 @@ INVOICE = BuiltinTemplate(
             group=SUBJECT,
             hint="«Без НДС» или, например, «20% — 20 000,00»",
         ),
-        FieldSpec("due_date", "Оплатить до", FieldType.DATE, required=False, group=SUBJECT),
+        FieldSpec(
+            "due_date",
+            "Оплатить до",
+            FieldType.DATE,
+            required=False,
+            group=SUBJECT,
+            carry_over=False,
+        ),
         FieldSpec("seller_director", "Подписант", FieldType.NAME, required=False, group=SELLER),
     ),
     body="""Счёт на оплату № {{number}} от {{date}}
@@ -92,7 +106,7 @@ OFFER = BuiltinTemplate(
     kind="offer",
     description="Предложение клиенту: состав работ, сумма и срок действия.",
     fields=(
-        FieldSpec("date", "Дата предложения", FieldType.DATE, group=SUBJECT),
+        FieldSpec("date", "Дата предложения", FieldType.DATE, group=SUBJECT, carry_over=False),
         FieldSpec("seller_name", "Название продавца", FieldType.TEXT, group=SELLER),
         FieldSpec("seller_phone", "Телефон", FieldType.PHONE, required=False, group=SELLER),
         FieldSpec("seller_email", "Почта", FieldType.EMAIL, required=False, group=SELLER),
@@ -101,7 +115,13 @@ OFFER = BuiltinTemplate(
         FieldSpec("scope", "Состав работ", FieldType.MULTILINE, group=SUBJECT),
         FieldSpec("total", "Стоимость", FieldType.MONEY, group=SUBJECT),
         FieldSpec("term", "Срок выполнения", FieldType.TEXT, required=False, group=SUBJECT),
-        FieldSpec("valid_until", "Предложение действует до", FieldType.DATE, group=SUBJECT),
+        FieldSpec(
+            "valid_until",
+            "Предложение действует до",
+            FieldType.DATE,
+            group=SUBJECT,
+            carry_over=False,
+        ),
     ),
     body="""Коммерческое предложение от {{date}}
 
@@ -127,8 +147,15 @@ SERVICE_CONTRACT = BuiltinTemplate(
     kind="contract",
     description="Рамочный договор услуг: стороны, предмет, стоимость и срок.",
     fields=(
-        FieldSpec("number", "Номер договора", FieldType.TEXT, group=SUBJECT, max_length=32),
-        FieldSpec("date", "Дата договора", FieldType.DATE, group=SUBJECT),
+        FieldSpec(
+            "number",
+            "Номер договора",
+            FieldType.TEXT,
+            group=SUBJECT,
+            max_length=32,
+            carry_over=False,
+        ),
+        FieldSpec("date", "Дата договора", FieldType.DATE, group=SUBJECT, carry_over=False),
         FieldSpec("city", "Город", FieldType.TEXT, group=SUBJECT),
         *_SELLER_REQUISITES,
         FieldSpec("seller_director", "Подписант продавца", FieldType.NAME, group=SELLER),

@@ -366,3 +366,77 @@ async def test_templates_can_be_filtered_by_slug(
     response = await client.get("/api/v1/templates?slug=invoice", headers=headers)
     assert [item["slug"] for item in response.json()] == ["invoice"]
     assert (await client.get("/api/v1/templates?slug=нет-такого", headers=headers)).json() == []
+
+
+READY_OFFER_JSON = {
+    "date": {"value": "24.09.2026"},
+    "seller_name": {"value": "ООО «Ромашка»"},
+    "client_name": {"value": "ООО «Клиент»"},
+    "subject": {"value": "Разработка"},
+    "scope": {"value": "Бэкенд и бот"},
+    "total": {"value": "450 000"},
+    "valid_until": {"value": "31.10.2026"},
+}
+
+
+async def test_history_summary_and_copy(
+    client: AsyncClient, session: AsyncSession, redis, make_init_data
+) -> None:
+    await _seed(session)
+    headers = await _auth(client, make_init_data)
+    offer = (await client.get("/api/v1/templates?slug=offer", headers=headers)).json()[0]
+    document = (
+        await client.post("/api/v1/documents", headers=headers, json={"template_id": offer["id"]})
+    ).json()
+    await client.patch(
+        f"/api/v1/documents/{document['id']}/fields",
+        headers=headers,
+        json={"values": READY_OFFER_JSON},
+    )
+    sent = await client.post(
+        f"/api/v1/documents/{document['id']}/send", headers=headers, json={"format": "docx"}
+    )
+    assert sent.status_code == 202, sent.text
+
+    history = await client.get(f"/api/v1/documents/{document['id']}/history", headers=headers)
+    assert history.status_code == 200
+    assert [fact["kind"] for fact in history.json()] == ["created", "ready", "rendered", "sent"]
+    assert history.json()[-1]["format"] == "docx"
+
+    (summary,) = (await client.get("/api/v1/documents", headers=headers)).json()
+    assert summary["client"] == "ООО «Клиент»"
+    assert summary["sent"]["format"] == "docx" and summary["sent"]["delivery"] == "pending"
+
+    copy = await client.post(
+        f"/api/v1/documents/{document['id']}/copy",
+        headers=headers,
+        json={"title": "КП на второй этап"},
+    )
+    assert copy.status_code == 201, copy.text
+    body = copy.json()
+    assert body["title"] == "КП на второй этап" and body["status"] == "draft"
+    assert "date" not in body["values"] and "valid_until" not in body["values"]
+    assert body["values"]["scope"]["value"] == "Бэкенд и бот"
+    assert set(body["missing"]) == {"date", "valid_until"}
+    no_body = await client.post(f"/api/v1/documents/{document['id']}/copy", headers=headers)
+    assert no_body.status_code == 201 and no_body.json()["title"] == document["title"]
+
+
+async def test_history_of_foreign_document_is_hidden(
+    client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    await _seed(session)
+    owner = await _auth(client, make_init_data, user_id=1)
+    stranger = await _auth(client, make_init_data, user_id=2)
+    offer = (await client.get("/api/v1/templates?slug=offer", headers=owner)).json()[0]
+    document = (
+        await client.post("/api/v1/documents", headers=owner, json={"template_id": offer["id"]})
+    ).json()
+
+    for method, path in (
+        ("GET", f"/api/v1/documents/{document['id']}/history"),
+        ("POST", f"/api/v1/documents/{document['id']}/copy"),
+    ):
+        response = await client.request(method, path, headers=stranger)
+        assert response.status_code == 404, path
+        assert response.json()["code"] == "document.not_found"

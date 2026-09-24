@@ -26,6 +26,7 @@ BOT_USER_STARTED = "bot.user_started"
 BOT_MESSAGE = "bot.message"
 BOT_CALLBACK = "bot.callback"
 BOT_ATTACHMENT = "bot.attachment"
+BOT_DOCUMENT_DELIVERY = "bot.document_delivery"
 
 
 class EventPayload(BaseModel):
@@ -116,6 +117,20 @@ class BotAttachment(EventPayload):
     username: str | None = None
 
 
+class BotDocumentDelivery(EventPayload):
+    """Бот → ядро: чем закончилась доставка файла из ``document.ready``.
+
+    ``event_id`` — UUID того самого события: по нему ядро сшивает доставку с
+    отправкой в журнале фактов. ``error`` — код отказа при ``failed``."""
+
+    max_user_id: int = Field(gt=0)
+    document_id: int = Field(gt=0)
+    event_id: str = Field(min_length=1, max_length=64)
+    format: Literal["docx", "pdf"]
+    status: Literal["delivered", "failed"]
+    error: str | None = Field(default=None, max_length=64)
+
+
 # Реестр: имя события → модель payload. Используется экспортом схем и тестами.
 EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     NOTIFY_USER: NotifyUser,
@@ -124,4 +139,5 @@ EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     BOT_MESSAGE: BotMessage,
     BOT_CALLBACK: BotCallback,
     BOT_ATTACHMENT: BotAttachment,
+    BOT_DOCUMENT_DELIVERY: BotDocumentDelivery,
 }

@@ -58,6 +58,9 @@ class FieldSpec:
     group: str = ""
     hint: str = ""
     max_length: int | None = None
+    # Переносится ли значение в копию документа. Номер и даты у нового счёта
+    # свои: скопированный номер ушёл бы контрагенту дублем.
+    carry_over: bool = True
 
 
 @dataclass(frozen=True)

@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import JSON, BigInteger, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Date,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -206,3 +216,48 @@ class ChatState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class DocumentEvent(Base):
+    """Факт из жизни документа: создан, готов, собран, отправлен, доставлен,
+    отклонено значение. Из фактов собираются история пользователя и метрики.
+
+    Журнал только пополняется. Удаление документа факты не стирает (document_id
+    станет NULL): воронка и счётчик пойманных ошибок не должны переписывать
+    прошлое, а персональных данных здесь нет — только вид, формат, код и время.
+    """
+
+    __tablename__ = "document_events"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32))
+    # Вид шаблона (invoice, offer, contract): метрики по видам переживают удаление документа.
+    template_kind: Mapped[str | None] = mapped_column(String(32))
+    format: Mapped[str | None] = mapped_column(String(8))
+    # Код отказа: field.inn_invalid у отклонённого значения, max_api.403 у недоставки.
+    code: Mapped[str | None] = mapped_column(String(64))
+    # Откуда пришло: источник отклонённого значения или «copy» у документа-копии.
+    source: Mapped[str | None] = mapped_column(String(16))
+    # UUID события document.ready: по нему доставка сшивается с отправкой.
+    event_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now(), index=True)
+
+
+class UserActivityDay(Base):
+    """День, когда пользователь что-то делал: вход в мини-апп или реплика боту.
+
+    Одна строка на пользователя и день — из них считаются активные за день и
+    неделю; last_login_at в users хранит только последний вход.
+    """
+
+    __tablename__ = "user_activity_days"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    day: Mapped[date] = mapped_column(Date, primary_key=True, index=True)

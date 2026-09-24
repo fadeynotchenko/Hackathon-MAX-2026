@@ -172,6 +172,66 @@
       "title": "BotCallback",
       "type": "object"
     },
+    "bot.document_delivery": {
+      "additionalProperties": false,
+      "description": "Бот → ядро: чем закончилась доставка файла из ``document.ready``.\n\n``event_id`` — UUID того самого события: по нему ядро сшивает доставку с\nотправкой в журнале фактов. ``error`` — код отказа при ``failed``.",
+      "properties": {
+        "document_id": {
+          "exclusiveMinimum": 0,
+          "title": "Document Id",
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "event_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "docx",
+            "pdf"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "max_user_id": {
+          "exclusiveMinimum": 0,
+          "title": "Max User Id",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "delivered",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_user_id",
+        "document_id",
+        "event_id",
+        "format",
+        "status"
+      ],
+      "title": "BotDocumentDelivery",
+      "type": "object"
+    },
     "bot.message": {
       "additionalProperties": false,
       "description": "Бот → ядро: пользователь написал боту текст, а не команду.",

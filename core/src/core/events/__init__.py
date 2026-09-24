@@ -3,6 +3,7 @@ from .config import EventsConfig, get_events_config
 from .contracts import (
     BOT_ATTACHMENT,
     BOT_CALLBACK,
+    BOT_DOCUMENT_DELIVERY,
     BOT_MESSAGE,
     BOT_USER_STARTED,
     DOCUMENT_READY,
@@ -11,6 +12,7 @@ from .contracts import (
     NOTIFY_USER,
     BotAttachment,
     BotCallback,
+    BotDocumentDelivery,
     BotMessage,
     BotUserStarted,
     DocumentReady,
@@ -22,6 +24,7 @@ from .contracts import (
 __all__ = [
     "BOT_ATTACHMENT",
     "BOT_CALLBACK",
+    "BOT_DOCUMENT_DELIVERY",
     "BOT_MESSAGE",
     "BOT_USER_STARTED",
     "DOCUMENT_READY",
@@ -30,6 +33,7 @@ __all__ = [
     "NOTIFY_USER",
     "BotAttachment",
     "BotCallback",
+    "BotDocumentDelivery",
     "BotMessage",
     "BotUserStarted",
     "DocumentReady",

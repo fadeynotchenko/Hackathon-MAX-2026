@@ -80,11 +80,12 @@ function documentSetup(options: {
     del: vi.fn().mockResolvedValue(1),
   };
   vi.stubGlobal('fetch', options.fetchImpl);
+  const documentDelivery = vi.fn().mockResolvedValue('evt-report');
   const handlers = coreEventHandlers(
     { api: { uploadFile, sendMessageToUser } } as never,
     redis as never,
     silentLogger(),
-    { coreApiUrl: 'http://api:8000' },
+    { coreApiUrl: 'http://api:8000', publisher: { documentDelivery } },
   );
   const event = {
     id: 'evt-doc-1',
@@ -104,7 +105,14 @@ function documentSetup(options: {
     source: 'api',
     streamId: '1-0',
   };
-  return { uploadFile, sendMessageToUser, redis, handler: handlers[DOCUMENT_READY]!, event };
+  return {
+    uploadFile,
+    sendMessageToUser,
+    redis,
+    documentDelivery,
+    handler: handlers[DOCUMENT_READY]!,
+    event,
+  };
 }
 
 describe('document.ready handler', () => {
@@ -131,12 +139,46 @@ describe('document.ready handler', () => {
     });
   });
 
+  it('reports the delivery to core with the document.ready event id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([0x50, 0x4b])));
+    const { handler, event, documentDelivery } = documentSetup({ fetchImpl: fetchMock as never });
+
+    await handler(event);
+
+    expect(documentDelivery).toHaveBeenCalledWith({
+      max_user_id: 5,
+      document_id: 42,
+      event_id: 'evt-doc-1',
+      format: 'docx',
+      status: 'delivered',
+      error: null,
+    });
+  });
+
+  it('reports a failed upload with the MAX status code', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([0x50, 0x4b])));
+    const { handler, event, documentDelivery } = documentSetup({
+      fetchImpl: fetchMock as never,
+      uploadImpl: () => Promise.reject(Object.assign(new Error('forbidden'), { status: 403 })),
+    });
+
+    await expect(handler(event)).rejects.toBeInstanceOf(HandlerRejected);
+    expect(documentDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'failed', error: 'max_api.403' }),
+    );
+  });
+
   it('gives up on a burnt token instead of retrying forever', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('no', { status: 404 }));
-    const { handler, event, uploadFile } = documentSetup({ fetchImpl: fetchMock as never });
+    const { handler, event, uploadFile, documentDelivery } = documentSetup({
+      fetchImpl: fetchMock as never,
+    });
 
     await expect(handler(event)).rejects.toBeInstanceOf(HandlerRejected);
     expect(uploadFile).not.toHaveBeenCalled();
+    expect(documentDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'failed', error: 'document.token_invalid' }),
+    );
   });
 
   it('retries when core is unreachable', async () => {

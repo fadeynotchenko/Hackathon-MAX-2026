@@ -60,7 +60,10 @@ async function main(): Promise<void> {
     stream: config.EVENTS_STREAM_TO_BOT,
     group: 'bot',
     consumer: `${hostname()}-${process.pid}`,
-    handlers: coreEventHandlers(bot, consumerRedis, log, { coreApiUrl: config.CORE_INTERNAL_URL }),
+    handlers: coreEventHandlers(bot, consumerRedis, log, {
+      coreApiUrl: config.CORE_INTERNAL_URL,
+      publisher,
+    }),
   });
   await consumer.start();
 

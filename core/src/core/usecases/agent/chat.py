@@ -42,11 +42,13 @@ from core.usecases.documents import (
     DocumentView,
     TemplateView,
     confirm_fields,
+    copy_document,
     create_draft,
     get_document,
     list_templates,
     send_document_to_chat,
 )
+from core.usecases.users import mark_active
 
 DISABLED_TEXT = (
     "Помощник сейчас выключен. Документ можно заполнить в мини-приложении — "
@@ -192,6 +194,7 @@ def _readable_kind(attachment: ChatAttachment) -> MediaKind | None:
 
 
 async def _ensure_user(session: AsyncSession, sender: ChatSender) -> int:
+    now = datetime.now(UTC)
     user = await UserRepository(session).upsert_from_max(
         UserUpsert(
             max_user_id=sender.max_user_id,
@@ -201,8 +204,9 @@ async def _ensure_user(session: AsyncSession, sender: ChatSender) -> int:
             via="bot",
         ),
         touch_login=False,
-        now=datetime.now(UTC),
+        now=now,
     )
+    await mark_active(session, user.id, now=now)
     return user.id
 
 
@@ -467,7 +471,29 @@ async def handle_chat_action(
                 bus=deps.bus,
                 tokens=deps.tokens,
             )
-            return ChatReply(f"Собираю «{file.filename}», пришлю следующим сообщением.")
+            return ChatReply(
+                f"Собираю «{file.filename}», пришлю следующим сообщением.",
+                (
+                    (
+                        ChatButton("На основе этого", f"doc:copy:{args[0]}"),
+                        ChatButton("Новый документ", "doc:new"),
+                    ),
+                ),
+            )
+
+        if action == "copy" and len(args) == 1 and args[0].isdigit():
+            document = await copy_document(session, user_id=user_id, document_id=int(args[0]))
+            await chat.set_active_document(user_id, document.id)
+            rest = (
+                f"Осталось заполнить: {_missing_text(document)}."
+                if document.missing
+                else "Проверьте значения."
+            )
+            return ChatReply(
+                f"Взял за основу «{document.title}»: стороны и условия те же, реквизиты — "
+                f"свежие из карточек. {rest}",
+                _document_buttons(document),
+            )
     except AppError as exc:
         return ChatReply(exc.public_message)
     return ChatReply(UNKNOWN_BUTTON_TEXT)

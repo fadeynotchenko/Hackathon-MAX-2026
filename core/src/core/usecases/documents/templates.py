@@ -36,6 +36,7 @@ def _specs_from_json(raw: list[dict[str, object]]) -> tuple[FieldSpec, ...]:
             group=str(item.get("group", "")),
             hint=str(item.get("hint", "")),
             max_length=int(item["max_length"]) if item.get("max_length") is not None else None,
+            carry_over=bool(item.get("carry_over", True)),
         )
         for item in raw
     )

@@ -161,6 +161,25 @@
         "title": "ConfirmFieldsRequest",
         "type": "object"
       },
+      "CopyDocumentRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Название копии; пусто — как у исходного",
+            "title": "Title"
+          }
+        },
+        "title": "CopyDocumentRequest",
+        "type": "object"
+      },
       "CounterpartyRequest": {
         "properties": {
           "name": {
@@ -284,6 +303,72 @@
           "is_admin"
         ],
         "title": "DevInitDataResponse",
+        "type": "object"
+      },
+      "DocumentFactSchema": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Код отказа: отклонённое значение или недоставка",
+            "title": "Code"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "kind": {
+            "enum": [
+              "created",
+              "ready",
+              "rendered",
+              "sent",
+              "delivered",
+              "delivery_failed",
+              "rejected"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Источник отклонённого значения; copy у копии",
+            "title": "Source"
+          }
+        },
+        "required": [
+          "kind",
+          "format",
+          "code",
+          "source",
+          "at"
+        ],
+        "title": "DocumentFactSchema",
         "type": "object"
       },
       "DocumentFileSchema": {
@@ -429,6 +514,18 @@
       },
       "DocumentSummarySchema": {
         "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Кому: карточка контрагента или название клиента",
+            "title": "Client"
+          },
           "counterparty_name": {
             "anyOf": [
               {
@@ -440,9 +537,25 @@
             ],
             "title": "Counterparty Name"
           },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "sent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SendStateSchema"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Последняя отправка; пусто — не отправлялся"
           },
           "status": {
             "title": "Status",
@@ -468,7 +581,10 @@
           "status",
           "template_title",
           "counterparty_name",
-          "updated_at"
+          "client",
+          "updated_at",
+          "created_at",
+          "sent"
         ],
         "title": "DocumentSummarySchema",
         "type": "object"
@@ -546,6 +662,12 @@
       },
       "FieldSpecSchema": {
         "properties": {
+          "carry_over": {
+            "default": true,
+            "description": "Значение переносится в копию документа (номер и даты — нет)",
+            "title": "Carry Over",
+            "type": "boolean"
+          },
           "group": {
             "title": "Group",
             "type": "string"
@@ -875,6 +997,44 @@
           "filename"
         ],
         "title": "SendDocumentResponse",
+        "type": "object"
+      },
+      "SendStateSchema": {
+        "properties": {
+          "delivery": {
+            "description": "Чем кончилась доставка: бот ещё не ответил, файл в чате, не доставлен",
+            "enum": [
+              "pending",
+              "delivered",
+              "failed"
+            ],
+            "title": "Delivery",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "sent_at": {
+            "description": "Когда файл последний раз отправлен в чат",
+            "format": "date-time",
+            "title": "Sent At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sent_at",
+          "format",
+          "delivery"
+        ],
+        "title": "SendStateSchema",
         "type": "object"
       },
       "SessionResponse": {
@@ -2753,6 +2913,85 @@
         ]
       }
     },
+    "/api/v1/documents/{document_id}/copy": {
+      "post": {
+        "operationId": "copy_document",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CopyDocumentRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Новый документ на основе этого: без номера и дат, со свежими реквизитами",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/api/v1/documents/{document_id}/fields": {
       "patch": {
         "operationId": "set_document_fields",
@@ -2958,6 +3197,72 @@
           }
         },
         "summary": "Собранные файлы документа",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/history": {
+      "get": {
+        "operationId": "document_history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentFactSchema"
+                  },
+                  "title": "Response Document History",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Путь документа: создан, готов, собран, отправлен, доставлен",
         "tags": [
           "documents"
         ]

@@ -31,10 +31,12 @@ from core.db.repositories import DownloadTokenRepository
 from core.events import (
     BOT_ATTACHMENT,
     BOT_CALLBACK,
+    BOT_DOCUMENT_DELIVERY,
     BOT_MESSAGE,
     BOT_USER_STARTED,
     BotAttachment,
     BotCallback,
+    BotDocumentDelivery,
     BotMessage,
     BotUserStarted,
     Event,
@@ -56,6 +58,7 @@ from core.usecases.agent import (
     handle_chat_attachment,
     handle_chat_message,
 )
+from core.usecases.documents import record_delivery
 from core.usecases.users import register_user_from_bot
 
 CONSUMER_GROUP = "core"
@@ -170,11 +173,30 @@ def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
 
         await _once(deps, event, work)
 
+    async def on_delivery(event: Event) -> None:
+        bind_context(request_id=event.id)
+        data = BotDocumentDelivery.model_validate(event.payload)
+
+        async def work() -> None:
+            async with get_session() as session:
+                await record_delivery(
+                    session,
+                    max_user_id=data.max_user_id,
+                    document_id=data.document_id,
+                    event_id=data.event_id,
+                    fmt=data.format,
+                    delivered=data.status == "delivered",
+                    error=data.error,
+                )
+
+        await _once(deps, event, work)
+
     return {
         BOT_USER_STARTED: on_user_started,
         BOT_MESSAGE: on_message,
         BOT_CALLBACK: on_callback,
         BOT_ATTACHMENT: on_attachment,
+        BOT_DOCUMENT_DELIVERY: on_delivery,
     }
 
 

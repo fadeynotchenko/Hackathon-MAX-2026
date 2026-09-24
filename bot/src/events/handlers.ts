@@ -16,6 +16,7 @@ import {
   type InlineButton,
 } from './codec.js';
 import { HandlerRejected, type Handler } from './consumer.js';
+import type { EventPublisher } from './publisher.js';
 
 // Коды MAX Bot API, при которых повторять доставку бессмысленно.
 const PERMANENT_STATUSES = new Set([400, 403, 404]);
@@ -33,6 +34,9 @@ export function buttonsKeyboard(rows: InlineButton[][]) {
 
 export interface CoreEventDeps {
   coreApiUrl: string;
+  // Куда сообщить ядру, чем кончилась доставка файла: без отчёта история и
+  // метрики не отличат «отправлено» от «дошло».
+  publisher?: Pick<EventPublisher, 'documentDelivery'>;
 }
 
 export function coreEventHandlers(
@@ -83,6 +87,25 @@ export function coreEventHandlers(
 
     [DOCUMENT_READY]: async (event) => {
       const data = DocumentReady.parse(event.payload);
+      // Сбой отчёта — не повод слать файл второй раз: только запись в лог.
+      const report = async (status: 'delivered' | 'failed', error: string | null) => {
+        if (!deps.publisher) return;
+        try {
+          await deps.publisher.documentDelivery({
+            max_user_id: data.max_user_id,
+            document_id: data.document_id,
+            event_id: event.id,
+            format: data.format,
+            status,
+            error,
+          });
+        } catch (err) {
+          log.warn(
+            { event: 'document.delivery_report_failed', event_id: event.id, err },
+            'delivery report not published',
+          );
+        }
+      };
       const marker = await redis.set(
         `events:delivered:${event.id}`,
         '1',
@@ -109,6 +132,7 @@ export function coreEventHandlers(
       if (!response.ok) {
         // Токен одноразовый: 404 значит «уже использован или истёк», повтор не поможет.
         if (response.status === 404) {
+          await report('failed', 'document.token_invalid');
           throw new HandlerRejected(
             `ядро не отдало файл: ${response.status}`,
             'document.token_invalid',
@@ -133,6 +157,7 @@ export function coreEventHandlers(
         // Токен уже сгорел на скачивании, повторять событие нечем: помечаем
         // окончательным, пользователь нажмёт «отправить» ещё раз.
         const status = (err as { status?: number }).status;
+        await report('failed', status === undefined ? 'document.send_failed' : `max_api.${status}`);
         throw new HandlerRejected(
           `не удалось отправить документ: ${status ?? (err as Error).message}`,
           'document.send_failed',
@@ -140,6 +165,7 @@ export function coreEventHandlers(
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
+      await report('delivered', null);
 
       log.info(
         {

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.db.repositories import UserRepository, UserUpsert
 from core.events.contracts import BotUserStarted
 from core.logs import biz_info
+from core.usecases.users.activity import mark_active
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ async def register_user_from_bot(
     Идемпотентно: повторная доставка того же события даёт тот же результат.
     Аватар бот не знает, поэтому его не трогает (UserUpsert.photo_url = KEEP).
     """
+    current = now or datetime.now(UTC)
     user = await UserRepository(session).upsert_from_max(
         UserUpsert(
             max_user_id=data.max_user_id,
@@ -32,8 +34,9 @@ async def register_user_from_bot(
             via="bot",
         ),
         touch_login=False,
-        now=now or datetime.now(UTC),
+        now=current,
     )
+    await mark_active(session, user.id, now=current)
     biz_info(
         logger,
         "users.synced_from_bot",

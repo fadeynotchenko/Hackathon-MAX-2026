@@ -14,6 +14,7 @@ from core.domain.initdata import InitDataError, validate_init_data
 from core.logs import biz_info, biz_warn
 from core.usecases.auth.config import AuthConfig
 from core.usecases.auth.session import IssuedSession, issue_session
+from core.usecases.users.activity import mark_active
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ async def login_with_init_data(
     )
     # Вход — естественный момент подчистить мусор этого же пользователя.
     await RefreshTokenRepository(session).delete_expired_for_user(user.id, before=current)
+    await mark_active(session, user.id, now=current)
     issued = await issue_session(
         session, user, cfg=cfg, admin_ids=admin_ids, family_id=str(uuid.uuid4()), now=current
     )

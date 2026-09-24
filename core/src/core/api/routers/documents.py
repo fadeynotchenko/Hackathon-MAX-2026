@@ -9,7 +9,9 @@ from core.api.dependencies import CurrentUserDep, RedisDep, SessionDep, StateDep
 from core.api.schemas.common import ErrorResponse, OkResponse
 from core.api.schemas.documents import (
     ConfirmFieldsRequest,
+    CopyDocumentRequest,
     CreateDocumentRequest,
+    DocumentFactSchema,
     DocumentFileSchema,
     DocumentSchema,
     DocumentSummarySchema,
@@ -22,8 +24,10 @@ from core.db.repositories import DownloadTokenRepository
 from core.domain.documents import FieldValue
 from core.usecases.documents import (
     confirm_fields,
+    copy_document,
     create_draft,
     delete_document,
+    document_history,
     get_document,
     list_document_files,
     list_documents,
@@ -81,6 +85,43 @@ async def get_all(current: CurrentUserDep, session: SessionDep) -> list[Document
 )
 async def get_one(document_id: int, current: CurrentUserDep, session: SessionDep) -> DocumentSchema:
     document = await get_document(session, user_id=current.id, document_id=document_id)
+    return DocumentSchema.model_validate(document)
+
+
+@router.get(
+    "/{document_id}/history",
+    response_model=list[DocumentFactSchema],
+    responses=_ERRORS,
+    operation_id="document_history",
+    summary="Путь документа: создан, готов, собран, отправлен, доставлен",
+)
+async def history(
+    document_id: int, current: CurrentUserDep, session: SessionDep
+) -> list[DocumentFactSchema]:
+    facts = await document_history(session, user_id=current.id, document_id=document_id)
+    return [DocumentFactSchema.model_validate(fact) for fact in facts]
+
+
+@router.post(
+    "/{document_id}/copy",
+    response_model=DocumentSchema,
+    status_code=status.HTTP_201_CREATED,
+    responses=_ERRORS,
+    operation_id="copy_document",
+    summary="Новый документ на основе этого: без номера и дат, со свежими реквизитами",
+)
+async def copy(
+    document_id: int,
+    current: CurrentUserDep,
+    session: SessionDep,
+    payload: CopyDocumentRequest | None = None,
+) -> DocumentSchema:
+    document = await copy_document(
+        session,
+        user_id=current.id,
+        document_id=document_id,
+        title=payload.title if payload else None,
+    )
     return DocumentSchema.model_validate(document)
 
 

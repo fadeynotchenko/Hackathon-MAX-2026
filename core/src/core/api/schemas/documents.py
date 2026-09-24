@@ -20,6 +20,9 @@ class FieldSpecSchema(BaseModel):
     group: str
     hint: str
     max_length: int | None
+    carry_over: bool = Field(
+        default=True, description="Значение переносится в копию документа (номер и даты — нет)"
+    )
 
 
 class TemplateSchema(BaseModel):
@@ -77,6 +80,16 @@ class DocumentSchema(BaseModel):
     updated_at: datetime
 
 
+class SendStateSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sent_at: datetime = Field(description="Когда файл последний раз отправлен в чат")
+    format: str | None
+    delivery: Literal["pending", "delivered", "failed"] = Field(
+        description="Чем кончилась доставка: бот ещё не ответил, файл в чате, не доставлен"
+    )
+
+
 class DocumentSummarySchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,7 +98,28 @@ class DocumentSummarySchema(BaseModel):
     status: str
     template_title: str
     counterparty_name: str | None
+    client: str | None = Field(description="Кому: карточка контрагента или название клиента")
     updated_at: datetime
+    created_at: datetime
+    sent: SendStateSchema | None = Field(description="Последняя отправка; пусто — не отправлялся")
+
+
+class DocumentFactSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: Literal[
+        "created", "ready", "rendered", "sent", "delivered", "delivery_failed", "rejected"
+    ]
+    format: str | None
+    code: str | None = Field(description="Код отказа: отклонённое значение или недоставка")
+    source: str | None = Field(description="Источник отклонённого значения; copy у копии")
+    at: datetime
+
+
+class CopyDocumentRequest(BaseModel):
+    title: str | None = Field(
+        default=None, max_length=255, description="Название копии; пусто — как у исходного"
+    )
 
 
 class DocumentFileSchema(BaseModel):

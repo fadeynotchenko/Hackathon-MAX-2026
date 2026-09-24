@@ -16,6 +16,7 @@ export const BOT_USER_STARTED = 'bot.user_started';
 export const BOT_MESSAGE = 'bot.message';
 export const BOT_CALLBACK = 'bot.callback';
 export const BOT_ATTACHMENT = 'bot.attachment';
+export const BOT_DOCUMENT_DELIVERY = 'bot.document_delivery';
 
 // Кнопка под сообщением: нажатие уходит обратно в ядро событием bot.callback.
 export const InlineButton = z.strictObject({
@@ -93,6 +94,18 @@ export const BotAttachment = z.strictObject({
 });
 export type BotAttachment = z.infer<typeof BotAttachment>;
 
+// Бот → ядро: чем закончилась доставка файла из document.ready. event_id — UUID
+// того события: по нему ядро сшивает доставку с отправкой в журнале фактов.
+export const BotDocumentDelivery = z.strictObject({
+  max_user_id: z.number().int().positive(),
+  document_id: z.number().int().positive(),
+  event_id: z.string().min(1).max(64),
+  format: z.enum(['docx', 'pdf']),
+  status: z.enum(['delivered', 'failed']),
+  error: z.string().max(64).nullable().default(null),
+});
+export type BotDocumentDelivery = z.infer<typeof BotDocumentDelivery>;
+
 export const EVENT_PAYLOADS = {
   [NOTIFY_USER]: NotifyUser,
   [DOCUMENT_READY]: DocumentReady,
@@ -100,6 +113,7 @@ export const EVENT_PAYLOADS = {
   [BOT_MESSAGE]: BotMessage,
   [BOT_CALLBACK]: BotCallback,
   [BOT_ATTACHMENT]: BotAttachment,
+  [BOT_DOCUMENT_DELIVERY]: BotDocumentDelivery,
 } as const;
 
 export type EventType = keyof typeof EVENT_PAYLOADS;

@@ -273,3 +273,42 @@ async def test_event_in_progress_is_not_redelivered(redis) -> None:
     await _consume(redis, stream, {"bot.test": slow}, stale_after_ms=0, concurrency=2, timeout=0.5)
     assert calls == 1
     assert await _pending(redis, stream) == 0
+
+
+async def test_delivery_report_is_stitched_to_the_send(
+    db: None, session: AsyncSession, redis, files_config: FilesConfig
+) -> None:
+    from core.db.repositories import DownloadTokenRepository
+    from core.events import BOT_DOCUMENT_DELIVERY, BotDocumentDelivery, Event
+    from core.usecases.documents import document_history, send_document_to_chat
+    from tests.usecases.test_document_files import _ready_document
+    from tests.usecases.test_documents import make_user
+
+    user_id = await make_user(session, max_user_id=4242)
+    document_id = await _ready_document(session, user_id)
+    _, event_id = await send_document_to_chat(
+        session,
+        user_id=user_id,
+        max_user_id=4242,
+        document_id=document_id,
+        fmt="docx",
+        cfg=files_config,
+        bus=EventBus(redis, stream_to_bot="test:to_bot", source="api-test", maxlen=100),
+        tokens=DownloadTokenRepository(redis),
+    )
+    await session.commit()
+
+    report = BotDocumentDelivery(
+        max_user_id=4242,
+        document_id=document_id,
+        event_id=event_id,
+        format="docx",
+        status="failed",
+        error="max_api.403",
+    )
+    await _handlers(redis, files=files_config)[BOT_DOCUMENT_DELIVERY](
+        Event(type=BOT_DOCUMENT_DELIVERY, payload=report.model_dump(), source="bot", id="evt-r")
+    )
+
+    facts = await document_history(session, user_id=user_id, document_id=document_id)
+    assert (facts[-1].kind, facts[-1].code) == ("delivery_failed", "max_api.403")

@@ -1,8 +1,9 @@
-"""Черновик документа: создать, заполнить, посмотреть предпросмотр.
+"""Черновик документа: создать, заполнить, посмотреть предпросмотр, взять за основу.
 
 Сценарии каналонейтральны: их одинаково зовут роутер мини-аппа и обработчик
 сообщения бота. Значения всегда проходят через ``core.domain.documents``, поэтому
 источник (форма, распознанное фото, агент) на правила проверки не влияет.
+Создание, переход в «готов» и отклонённые значения ложатся в журнал фактов.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from core.domain.documents import (
     validate_fields,
 )
 from core.domain.exceptions import NotFoundError
+from core.usecases.documents.journal import COPY_SOURCE, Fact, SendState, last_sends, record
 from core.usecases.documents.requisites import CLIENT_PREFIX, SELLER_PREFIX
 from core.usecases.documents.templates import TemplateView, get_template, to_view
 
@@ -60,7 +62,11 @@ class DocumentSummary:
     status: str
     template_title: str
     counterparty_name: str | None
+    # Кому документ: карточка контрагента или название клиента из полей.
+    client: str | None
     updated_at: datetime
+    created_at: datetime
+    sent: SendState | None
 
 
 def dump_values(values: Mapping[str, FieldValue]) -> dict[str, dict[str, object]]:
@@ -166,6 +172,50 @@ async def create_draft(
         title=title.strip() or template.title,
         values=dump_values(validated.values),
     )
+    await record(
+        session,
+        user_id=user_id,
+        kind=Fact.CREATED,
+        document_id=document.id,
+        template_kind=template.kind,
+    )
+    return _view(document, template)
+
+
+async def copy_document(
+    session: AsyncSession, *, user_id: int, document_id: int, title: str | None = None
+) -> DocumentView:
+    """Новый черновик на основе прошлого документа: те же условия и стороны.
+
+    Реквизиты сторон берутся заново из профиля и карточки контрагента — они могли
+    измениться с прошлого раза. Поля с ``carry_over=False`` (номер, даты) не
+    переносятся: у нового документа они свои."""
+    source = await _load(session, user_id=user_id, document_id=document_id)
+    template = to_view(source.template)
+    carried = {spec.key for spec in template.fields if spec.carry_over}
+    values = {key: v for key, v in load_values(source.values).items() if key in carried}
+    values |= await _prefill(
+        session,
+        user_id=user_id,
+        specs=template.fields,
+        counterparty_id=source.counterparty_id,
+    )
+    validated = validate_fields(template.fields, values)
+    document = await DocumentRepository(session).create(
+        user_id,
+        template_id=template.id,
+        counterparty_id=source.counterparty_id,
+        title=(title or "").strip() or source.title,
+        values=dump_values(validated.values),
+    )
+    await record(
+        session,
+        user_id=user_id,
+        kind=Fact.CREATED,
+        document_id=document.id,
+        template_kind=template.kind,
+        source=COPY_SOURCE,
+    )
     return _view(document, template)
 
 
@@ -181,6 +231,50 @@ async def get_document(session: AsyncSession, *, user_id: int, document_id: int)
     return _view(document, to_view(document.template))
 
 
+async def _save(
+    session: AsyncSession,
+    document: Document,
+    template: TemplateView,
+    values: Mapping[str, FieldValue],
+    *,
+    incoming: Mapping[str, FieldValue] | None = None,
+) -> tuple[Document, tuple[FieldError, ...]]:
+    """Сохранить значения и записать факты: переход в «готов» и отклонённое.
+
+    Статус считается по тому, что сохранено: отклонённое значение в документ не
+    попадает и готовность не портит. Отклонённым считается только пришедшее
+    сейчас (``incoming``): ошибка уже лежащего значения — не новая пойманная."""
+    was_ready = document.status == STATUS_READY
+    validated = validate_fields(template.fields, values)
+    ready = validate_fields(template.fields, validated.values).ready
+    saved = await DocumentRepository(session).save_values(
+        document,
+        dump_values(validated.values),
+        status=STATUS_READY if ready else STATUS_DRAFT,
+    )
+    if ready and not was_ready:
+        await record(
+            session,
+            user_id=saved.user_id,
+            kind=Fact.READY,
+            document_id=saved.id,
+            template_kind=template.kind,
+        )
+    for error in validated.errors:
+        if incoming is None or error.key not in incoming:
+            continue
+        await record(
+            session,
+            user_id=saved.user_id,
+            kind=Fact.REJECTED,
+            document_id=saved.id,
+            template_kind=template.kind,
+            code=error.code,
+            source=incoming[error.key].source.value,
+        )
+    return saved, validated.errors
+
+
 async def set_fields(
     session: AsyncSession,
     *,
@@ -194,15 +288,10 @@ async def set_fields(
     document = await _load(session, user_id=user_id, document_id=document_id)
     template = to_view(document.template)
     merged = load_values(document.values) | dict(values)
-    validated = validate_fields(template.fields, merged)
     if title is not None and title.strip():
         document.title = title.strip()
-    saved = await DocumentRepository(session).save_values(
-        document,
-        dump_values(validated.values),
-        status=STATUS_READY if validated.ready else STATUS_DRAFT,
-    )
-    return _view(saved, template, rejected=validated.errors)
+    saved, errors = await _save(session, document, template, merged, incoming=values)
+    return _view(saved, template, rejected=errors)
 
 
 async def confirm_fields(
@@ -225,12 +314,7 @@ async def confirm_fields(
         key: replace(value, confirmed=True) if key in wanted else value
         for key, value in values.items()
     }
-    validated = validate_fields(template.fields, confirmed)
-    saved = await DocumentRepository(session).save_values(
-        document,
-        dump_values(validated.values),
-        status=STATUS_READY if validated.ready else STATUS_DRAFT,
-    )
+    saved, _errors = await _save(session, document, template, confirmed)
     return _view(saved, template)
 
 
@@ -244,10 +328,19 @@ async def delete_document(session: AsyncSession, *, user_id: int, document_id: i
     await DocumentRepository(session).delete(document)
 
 
+def _client(document: Document) -> str | None:
+    if document.counterparty is not None:
+        return document.counterparty.name
+    name = document.values.get(f"{CLIENT_PREFIX}name") or {}
+    return str(name.get("value") or "") or None
+
+
 async def list_documents(
     session: AsyncSession, *, user_id: int, limit: int = 50
 ) -> list[DocumentSummary]:
+    """История: что, кому и когда отправлено, чем кончилась доставка."""
     documents = await DocumentRepository(session).list_for_user(user_id, limit=limit)
+    sends = await last_sends(session, [document.id for document in documents])
     return [
         DocumentSummary(
             id=document.id,
@@ -255,7 +348,10 @@ async def list_documents(
             status=document.status,
             template_title=document.template.title,
             counterparty_name=document.counterparty.name if document.counterparty else None,
+            client=_client(document),
             updated_at=document.updated_at,
+            created_at=document.created_at,
+            sent=sends.get(document.id),
         )
         for document in documents
     ]

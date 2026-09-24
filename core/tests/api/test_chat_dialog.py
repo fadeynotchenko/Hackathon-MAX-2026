@@ -39,8 +39,13 @@ def _event(event_type: str, payload: dict, event_id: str = "evt-1") -> Event:
 
 
 async def _replies(redis) -> list[NotifyUser]:
+    """Ответы пользователю; события document.ready в том же стриме пропускаются."""
     entries = await redis.xrange("test:to_bot")
-    return [NotifyUser.model_validate_json(fields["payload"]) for _, fields in entries]
+    return [
+        NotifyUser.model_validate_json(fields["payload"])
+        for _, fields in entries
+        if fields["type"] == "notify.user"
+    ]
 
 
 def _message(text: str) -> dict:
@@ -365,3 +370,56 @@ def test_attachment_contract_accepts_only_https_links() -> None:
         BotAttachment(max_user_id=1, chat_id=1, kind="image", url="http://i.max.test/p")
     with pytest.raises(ValidationError):
         BotAttachment(max_user_id=1, chat_id=1, kind="video", url="https://i.max.test/p")
+
+
+async def test_sent_document_can_be_taken_as_a_base(
+    db: None, session: AsyncSession, redis, tmp_path
+) -> None:
+    await ensure_builtin_templates(session)
+    await session.commit()
+    llm = FakeLLM(
+        json_replies=[
+            {"intent": "new", "template": "offer"},
+            {
+                "date": "24.09.2026",
+                "seller_name": "ООО «Ромашка»",
+                "client_name": "ООО «Клиент»",
+                "subject": "Сайт",
+                "scope": "Вёрстка",
+                "total": "90 000",
+                "valid_until": "31.10.2026",
+            },
+        ]
+    )
+    handlers = _handlers(redis, llm=llm, files=FilesConfig(tmp_path / "documents", "soffice", 5))
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("КП на сайт"), "evt-1"))
+    confirm = (await _replies(redis))[0].buttons[0][0].payload  # type: ignore[index]
+    await handlers[BOT_CALLBACK](
+        _event(
+            BOT_CALLBACK,
+            BotCallback(max_user_id=USER, chat_id=1, payload=confirm).model_dump(),
+            "evt-2",
+        )
+    )
+    send = (await _replies(redis))[1].buttons[0][0].payload  # type: ignore[index]
+    await handlers[BOT_CALLBACK](
+        _event(
+            BOT_CALLBACK,
+            BotCallback(max_user_id=USER, chat_id=1, payload=send).model_dump(),
+            "evt-3",
+        )
+    )
+    sending = next(reply for reply in await _replies(redis) if "Собираю" in reply.text)
+    base = sending.buttons[0][0]  # type: ignore[index]
+    assert base.text == "На основе этого" and base.payload.startswith("doc:copy:")
+
+    await handlers[BOT_CALLBACK](
+        _event(
+            BOT_CALLBACK,
+            BotCallback(max_user_id=USER, chat_id=1, payload=base.payload).model_dump(),
+            "evt-4",
+        )
+    )
+    copied = (await _replies(redis))[-1]
+    assert copied.text.startswith("Взял за основу «Коммерческое предложение»")
+    assert "Осталось заполнить: Дата предложения, Предложение действует до." in copied.text

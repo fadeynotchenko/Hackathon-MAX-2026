@@ -315,6 +315,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Новый документ на основе этого: без номера и дат, со свежими реквизитами */
+        post: operations["copy_document"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}/fields": {
         parameters: {
             query?: never;
@@ -358,6 +375,23 @@ export interface paths {
         };
         /** Собранные файлы документа */
         get: operations["list_document_files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Путь документа: создан, готов, собран, отправлен, доставлен */
+        get: operations["document_history"];
         put?: never;
         post?: never;
         delete?: never;
@@ -556,6 +590,14 @@ export interface components {
              */
             keys?: string[] | null;
         };
+        /** CopyDocumentRequest */
+        CopyDocumentRequest: {
+            /**
+             * Title
+             * @description Название копии; пусто — как у исходного
+             */
+            title?: string | null;
+        };
         /** CounterpartyRequest */
         CounterpartyRequest: {
             /** Name */
@@ -611,6 +653,31 @@ export interface components {
             is_admin: boolean;
             /** Max User Id */
             max_user_id: number;
+        };
+        /** DocumentFactSchema */
+        DocumentFactSchema: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Code
+             * @description Код отказа: отклонённое значение или недоставка
+             */
+            code: string | null;
+            /** Format */
+            format: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "created" | "ready" | "rendered" | "sent" | "delivered" | "delivery_failed" | "rejected";
+            /**
+             * Source
+             * @description Источник отклонённого значения; copy у копии
+             */
+            source: string | null;
         };
         /** DocumentFileSchema */
         DocumentFileSchema: {
@@ -682,10 +749,22 @@ export interface components {
         };
         /** DocumentSummarySchema */
         DocumentSummarySchema: {
+            /**
+             * Client
+             * @description Кому: карточка контрагента или название клиента
+             */
+            client: string | null;
             /** Counterparty Name */
             counterparty_name: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Id */
             id: number;
+            /** @description Последняя отправка; пусто — не отправлялся */
+            sent: components["schemas"]["SendStateSchema"] | null;
             /** Status */
             status: string;
             /** Template Title */
@@ -734,6 +813,12 @@ export interface components {
         };
         /** FieldSpecSchema */
         FieldSpecSchema: {
+            /**
+             * Carry Over
+             * @description Значение переносится в копию документа (номер и даты — нет)
+             * @default true
+             */
+            carry_over: boolean;
             /** Group */
             group: string;
             /** Hint */
@@ -880,6 +965,23 @@ export interface components {
             filename: string;
             /** Format */
             format: string;
+        };
+        /** SendStateSchema */
+        SendStateSchema: {
+            /**
+             * Delivery
+             * @description Чем кончилась доставка: бот ещё не ответил, файл в чате, не доставлен
+             * @enum {string}
+             */
+            delivery: "pending" | "delivered" | "failed";
+            /** Format */
+            format: string | null;
+            /**
+             * Sent At
+             * Format: date-time
+             * @description Когда файл последний раз отправлен в чат
+             */
+            sent_at: string;
         };
         /** SessionResponse */
         SessionResponse: {
@@ -2186,6 +2288,59 @@ export interface operations {
             };
         };
     };
+    copy_document: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CopyDocumentRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_document_fields: {
         parameters: {
             query?: never;
@@ -2308,6 +2463,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentFileSchema"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentFactSchema"][];
                 };
             };
             /** @description Unauthorized */
