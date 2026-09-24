@@ -44,6 +44,9 @@ class ValueSource(StrEnum):
     COUNTERPARTY = "counterparty"
     OCR = "ocr"
     AGENT = "agent"
+    # Поставлено системой при создании (дата счёта — сегодня): не угадано моделью,
+    # видно в форме и правится как обычное значение.
+    DEFAULT = "default"
 
 
 UNCONFIRMED_SOURCES = frozenset({ValueSource.OCR, ValueSource.AGENT})
@@ -61,6 +64,8 @@ class FieldSpec:
     # Переносится ли значение в копию документа. Номер и даты у нового счёта
     # свои: скопированный номер ушёл бы контрагенту дублем.
     carry_over: bool = True
+    # Пустое поле при создании документа получает сегодняшнюю дату по Москве.
+    today_by_default: bool = False
 
 
 @dataclass(frozen=True)

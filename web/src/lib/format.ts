@@ -93,6 +93,7 @@ export const SOURCE_LABEL: Record<ValueSource, string> = {
   counterparty: 'Из карточки клиента',
   ocr: 'С фото',
   agent: 'От помощника',
+  default: 'По умолчанию',
 };
 
 // Группы полей шаблона → разделы формы. Порядок — как в сценарии: кому,

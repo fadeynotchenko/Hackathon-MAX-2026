@@ -132,3 +132,25 @@ async def test_chat_picks_the_organization_named_in_the_message(session: AsyncSe
         "слова правовой формы — не имя организации"
     )
     assert named_organization(orgs, "от Ромашки и Нотченко") is None, "двоих не угадываем"
+
+
+async def test_new_invoice_is_dated_today_by_the_system(session: AsyncSession) -> None:
+    from datetime import UTC, datetime
+
+    from core.domain.calendar import local_day
+    from core.domain.documents import ValueSource
+
+    user_id = await make_user(session)
+    await ensure_builtin_templates(session)
+    invoice = await _invoice(session, user_id)
+    offer = (await list_templates(session, user_id=user_id, slug="offer"))[0].id
+    today = local_day(datetime.now(UTC)).isoformat()
+
+    draft = await create_draft(session, user_id=user_id, template_id=invoice)
+    date = draft.values["date"]
+    assert (date.value, date.source, date.confirmed) == (today, ValueSource.DEFAULT, True)
+    assert "date" not in draft.missing, "бот не спрашивает дату, которую поставил сам"
+    copy = await copy_document(session, user_id=user_id, document_id=draft.id)
+    assert copy.values["date"].value == today, "у копии дата своя — сегодняшняя"
+    other = await create_draft(session, user_id=user_id, template_id=offer)
+    assert "date" not in other.values, "дату ставим только там, где шаблон просит"

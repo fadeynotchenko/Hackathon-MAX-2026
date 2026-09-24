@@ -1287,7 +1287,7 @@ export interface components {
          *     черновик, ручной ввод и справочники — нет.
          * @enum {string}
          */
-        ValueSource: "manual" | "profile" | "counterparty" | "ocr" | "agent";
+        ValueSource: "manual" | "profile" | "counterparty" | "ocr" | "agent" | "default";
         /** VoiceFillResponse */
         VoiceFillResponse: {
             document: components["schemas"]["DocumentSchema"];

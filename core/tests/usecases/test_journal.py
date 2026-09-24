@@ -217,7 +217,8 @@ async def test_copy_takes_terms_but_not_number_and_dates(session: AsyncSession) 
     copy = await copy_document(session, user_id=user_id, document_id=source.id)
 
     assert copy.id != source.id and copy.title == "Счёт №7"
-    assert "number" not in copy.values and "date" not in copy.values
+    assert "number" not in copy.values
+    assert copy.values["date"].source is ValueSource.DEFAULT, "дата копии своя, не из источника"
     assert copy.values["item"].value == "Сопровождение сайта"
     assert copy.values["total"].confirmed is False, "непроверенное остаётся непроверенным"
     assert copy.values["seller_name"].value == "ООО «Новое»", (

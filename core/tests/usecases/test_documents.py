@@ -83,7 +83,7 @@ async def test_draft_is_prefilled_from_profile_and_counterparty(session: AsyncSe
     assert document.values["seller_inn"].value == "7707083893"
     assert document.values["client_name"].source is ValueSource.COUNTERPARTY
     assert document.status == STATUS_DRAFT
-    assert set(document.missing) == {"number", "date", "item", "total"}
+    assert set(document.missing) == {"number", "item", "total"}, "дату счёта ставит система"
     assert BLANK in document.preview, "незаполненное поле видно прочерком"
     assert "ПАО Сбербанк" in document.preview
 

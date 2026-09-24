@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import Document
 from core.db.repositories import CounterpartyRepository, DocumentRepository
+from core.domain.calendar import local_day
 from core.domain.documents import (
     FieldError,
     FieldSpec,
@@ -153,6 +154,10 @@ async def _prefill(
             filled = requisites.get(spec.key.removeprefix(prefix))
             if filled:
                 values[spec.key] = FieldValue(filled, source=source)
+    today = local_day(datetime.now(UTC)).isoformat()
+    for spec in specs:
+        if spec.today_by_default and spec.key not in values:
+            values[spec.key] = FieldValue(today, source=ValueSource.DEFAULT)
     return values, seller.id if seller is not None else None
 
 

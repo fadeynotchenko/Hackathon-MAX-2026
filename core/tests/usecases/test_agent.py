@@ -180,7 +180,7 @@ async def test_repeated_profile_values_stay_confirmed_and_list_goes_in_order(
     assert (seller.source, seller.confirmed) == (ValueSource.PROFILE, True)
     prompt = llm.calls[0][1][0].content
     waiting = prompt.split("Ещё не заполнено:\n", 1)[1]
-    assert waiting.startswith("1. number: Номер счёта\n2. date: Дата счёта"), (
+    assert waiting.startswith("1. number: Номер счёта\n2. seller_bank: Банк"), (
         "ответ столбиком модель разносит по этому порядку"
     )
 

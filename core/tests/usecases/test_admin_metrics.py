@@ -131,6 +131,7 @@ async def test_metrics_are_built_from_facts_by_moscow_days(session: AsyncSession
         "counterparty": 1,
         "ocr": 1,
         "agent": 1,
+        "default": 0,
     }
     assert metrics.autofill.total == 8 and metrics.autofill.automatic_share == 0.625
     assert metrics.rejections == {"field.inn_invalid": 2, "field.bic_invalid": 1}
