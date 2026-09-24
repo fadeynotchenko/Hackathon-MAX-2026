@@ -18,7 +18,13 @@ import type { DocumentSummary } from '@/api/client';
 import { Page } from '@/components/Page';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
-import { documentState, formatRelative, kindStyle, pluralize } from '@/lib/format';
+import {
+  type DocumentState,
+  documentState,
+  formatRelative,
+  kindStyle,
+  pluralize,
+} from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
 const NO_CLIENT = 'Без клиента';
@@ -34,6 +40,13 @@ function matches(doc: DocumentSummary, query: string): boolean {
     .split(/\s+/)
     .every((word) => haystack.includes(word));
 }
+
+const STATUS_TONE: Record<DocumentState['tone'], string> = {
+  draft: '',
+  ready: 'themed',
+  sent: 'themed',
+  failed: 'negative',
+};
 
 export function ArchivePage() {
   const { api } = useAuth();
@@ -144,19 +157,19 @@ export function ArchivePage() {
                   <CellSimple
                     key={doc.id}
                     title={doc.title}
-                    subtitle={`${doc.template_title} · ${formatRelative(doc.updated_at)}`}
+                    // Вид документа уже на значке, статус — первым словом подписи:
+                    // так строка не переносится и название видно целиком.
+                    subtitle={
+                      <>
+                        <span className={STATUS_TONE[status.tone]}>{status.label}</span>
+                        {` · ${formatRelative(doc.updated_at)}`}
+                      </>
+                    }
+                    innerClassNames={{ title: 'ellipsis', subtitle: 'ellipsis' }}
                     before={
                       <Avatar.Container size={40} form="squircle">
                         <Avatar.Text gradient={style.gradient}>{style.short}</Avatar.Text>
                       </Avatar.Container>
-                    }
-                    after={
-                      <Typography.Text
-                        variant="description"
-                        className={`nowrap ${status.tone === 'failed' ? 'negative' : status.tone === 'draft' ? 'faint' : 'themed'}`}
-                      >
-                        {status.label}
-                      </Typography.Text>
                     }
                     showChevron
                     onClick={() => navigate(`/documents/${doc.id}`)}

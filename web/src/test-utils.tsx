@@ -71,6 +71,7 @@ export function makeDocument(overrides: Partial<DocumentView> = {}): DocumentVie
     status: 'draft',
     template: makeTemplate(),
     counterparty_id: null,
+    organization_id: null,
     values: {
       seller_name: {
         value: 'ООО «Мастер»',

@@ -77,7 +77,7 @@ describe('format helpers', () => {
   it('maps start params from bot buttons to screens', () => {
     expect(startRoute('archive')).toBe('/archive');
     expect(startRoute('doc_42')).toBe('/documents/42');
-    expect(startRoute('company')).toBe('/profile/company');
+    expect(startRoute('company')).toBe('/profile/organizations');
     expect(startRoute('unknown')).toBeNull();
     expect(startRoute(null)).toBeNull();
   });

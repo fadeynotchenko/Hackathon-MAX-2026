@@ -14,7 +14,7 @@ export interface FieldInputProps {
   required?: boolean | undefined;
   hint?: string | undefined;
   error?: string | null | undefined;
-  // Откуда значение: «Из профиля», «С фото — проверьте».
+  // Откуда значение: «Из организации», «С фото — проверьте».
   source?: { label: string; draft: boolean } | null | undefined;
 }
 

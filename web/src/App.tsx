@@ -15,9 +15,10 @@ import { FillPage } from '@/pages/document/FillPage';
 import { ReviewPage } from '@/pages/document/ReviewPage';
 import { SentPage } from '@/pages/document/SentPage';
 import { GatePage } from '@/pages/GatePage';
-import { CompanyPage } from '@/pages/profile/CompanyPage';
 import { CounterpartiesPage } from '@/pages/profile/CounterpartiesPage';
 import { CounterpartyPage } from '@/pages/profile/CounterpartyPage';
+import { OrganizationPage } from '@/pages/profile/OrganizationPage';
+import { OrganizationsPage } from '@/pages/profile/OrganizationsPage';
 import { ProfilePage } from '@/pages/profile/ProfilePage';
 
 function StartRedirect() {
@@ -50,7 +51,11 @@ export function App() {
         <Route path="/documents/:documentId/sent" element={<SentPage />} />
         <Route path="/archive" element={<ArchivePage />} />
         <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/profile/company" element={<CompanyPage />} />
+        <Route path="/profile/organizations" element={<OrganizationsPage />} />
+        <Route path="/profile/organizations/new" element={<OrganizationPage />} />
+        <Route path="/profile/organizations/:organizationId" element={<OrganizationPage />} />
+        {/* Старые ссылки из бота и закладок вели на единственную «мою организацию». */}
+        <Route path="/profile/company" element={<Navigate to="/profile/organizations" replace />} />
         <Route path="/profile/counterparties" element={<CounterpartiesPage />} />
         <Route path="/profile/counterparties/new" element={<CounterpartyPage />} />
         <Route path="/profile/counterparties/:counterpartyId" element={<CounterpartyPage />} />

@@ -103,7 +103,7 @@ describe('document form state', () => {
     });
     const [client, , total, seller] = doc.template.fields;
     expect(sourceOf(doc, total!)).toEqual({ label: 'С фото · проверьте', draft: true });
-    expect(sourceOf(doc, seller!)).toEqual({ label: 'Из профиля', draft: false });
+    expect(sourceOf(doc, seller!)).toEqual({ label: 'Из организации', draft: false });
     expect(sourceOf(doc, client!)).toBeNull();
   });
 

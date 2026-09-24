@@ -17,7 +17,7 @@ export function TemplatePage() {
   const navigate = useNavigate();
   const templateId = Number(useParams().templateId);
   const state = useAsync(
-    () => Promise.all([api.template(templateId), api.company()]),
+    () => Promise.all([api.template(templateId), api.organizations()]),
     [api, templateId],
   );
   const back = () => navigate('/create');
@@ -37,8 +37,8 @@ export function TemplatePage() {
     );
   }
 
-  const [template, company] = state.data;
-  const hasCompany = Boolean(company.name);
+  const [template, organizations] = state.data;
+  const hasOrganization = organizations.length > 0;
   return (
     <Page
       title={template.title}
@@ -53,7 +53,7 @@ export function TemplatePage() {
       <div className="section">
         <TemplateThumb kind={template.kind} large />
       </div>
-      {!hasCompany ? (
+      {!hasOrganization ? (
         <div className="section">
           <Banner tone="warning" title="Реквизиты вашей организации не заполнены">
             Заполните их один раз — дальше они подставятся во все документы.
@@ -62,7 +62,9 @@ export function TemplatePage() {
                 size="small"
                 variant="secondary"
                 onClick={() =>
-                  navigate('/profile/company', { state: { returnTo: `/create/${template.id}` } })
+                  navigate('/profile/organizations/new', {
+                    state: { returnTo: `/create/${template.id}` },
+                  })
                 }
               >
                 Заполнить реквизиты
@@ -79,9 +81,9 @@ export function TemplatePage() {
           header={
             <CellHeader
               after={
-                group === 'Продавец' && hasCompany ? (
+                group === 'Продавец' && hasOrganization ? (
                   <Typography.Text variant="description" color="tertiary">
-                    из профиля
+                    из организации
                   </Typography.Text>
                 ) : null
               }

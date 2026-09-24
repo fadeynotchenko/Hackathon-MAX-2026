@@ -179,8 +179,8 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
           return (
             <CellList key={group} mode="island" filled header={<CellHeader>{title}</CellHeader>}>
               <CellSimple
-                title={doc.values['seller_name']?.value ?? 'Реквизиты из профиля'}
-                subtitle="Из профиля «Моя организация» · нажмите, чтобы изменить"
+                title={doc.values['seller_name']?.value ?? 'Реквизиты организации'}
+                subtitle="Из «Моих организаций» · нажмите, чтобы изменить"
                 showChevron
                 onClick={() => setSellerOpen(true)}
               />

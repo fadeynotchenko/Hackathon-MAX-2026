@@ -106,24 +106,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/company": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Реквизиты моей компании */
-        get: operations["get_company_profile"];
-        /** Сохранить реквизиты моей компании */
-        put: operations["save_company_profile"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/counterparties": {
         parameters: {
             query?: never;
@@ -485,6 +467,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Мои организации: основная первой */
+        get: operations["list_organizations"];
+        put?: never;
+        /** Завести свою организацию; первая становится основной */
+        post: operations["create_organization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Изменить организацию или сделать её основной */
+        put: operations["update_organization"];
+        post?: never;
+        /** Удалить организацию; основной станет следующая */
+        delete: operations["delete_organization"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/requisites/recognize": {
         parameters: {
             query?: never;
@@ -633,24 +651,6 @@ export interface components {
             /** Total */
             total: number;
         };
-        /** CompanyProfileRequest */
-        CompanyProfileRequest: {
-            /** Name */
-            name: string;
-            /** Values */
-            values?: {
-                [key: string]: string;
-            };
-        };
-        /** CompanyProfileSchema */
-        CompanyProfileSchema: {
-            /** Name */
-            name: string;
-            /** Values */
-            values: {
-                [key: string]: string;
-            };
-        };
         /** ConfirmFieldsRequest */
         ConfirmFieldsRequest: {
             /**
@@ -703,6 +703,11 @@ export interface components {
         CreateDocumentRequest: {
             /** Counterparty Id */
             counterparty_id?: number | null;
+            /**
+             * Organization Id
+             * @description От какой своей организации; пусто — от основной
+             */
+            organization_id?: number | null;
             /** Template Id */
             template_id: number;
             /**
@@ -862,6 +867,11 @@ export interface components {
              * @description Обязательные поля, которые ещё не заполнены
              */
             missing: string[];
+            /**
+             * Organization Id
+             * @description Своя организация, чьи реквизиты стоят продавцом
+             */
+            organization_id: number | null;
             /** Preview */
             preview: string;
             /** Ready */
@@ -1062,6 +1072,49 @@ export interface components {
              * @constant
              */
             ok: true;
+        };
+        /** OrganizationRequest */
+        OrganizationRequest: {
+            /**
+             * Is Default
+             * @description Сделать основной
+             * @default false
+             */
+            is_default: boolean;
+            /** Name */
+            name: string;
+            /** Values */
+            values?: {
+                [key: string]: string;
+            };
+        };
+        /** OrganizationSchema */
+        OrganizationSchema: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Inn */
+            inn: string | null;
+            /**
+             * Is Default
+             * @description Основная: от неё документ, если организацию не выбрали
+             */
+            is_default: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Values */
+            values: {
+                [key: string]: string;
+            };
         };
         /** RecognizedRequisitesSchema */
         RecognizedRequisitesSchema: {
@@ -1516,86 +1569,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_company_profile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CompanyProfileSchema"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    save_company_profile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CompanyProfileRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CompanyProfileSchema"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -2936,6 +2909,188 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_organizations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSchema"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_organization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_organization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_organization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

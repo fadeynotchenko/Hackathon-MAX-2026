@@ -89,7 +89,7 @@ export function inputKind(type: FieldType): InputKind {
 
 export const SOURCE_LABEL: Record<ValueSource, string> = {
   manual: 'Вручную',
-  profile: 'Из профиля',
+  profile: 'Из организации',
   counterparty: 'Из карточки клиента',
   ocr: 'С фото',
   agent: 'От помощника',
@@ -135,11 +135,13 @@ export function kindStyle(kind: string | undefined): KindStyle {
   return (kind && KIND_STYLE[kind]) || { short: 'ДК', plural: 'Другие', gradient: 'orange' };
 }
 
-// Состояние документа одной строкой: черновик → готов → отправлен → в чате.
-export function documentState(doc: Pick<DocumentSummary, 'status' | 'sent'>): {
+export interface DocumentState {
   label: string;
   tone: 'draft' | 'ready' | 'sent' | 'failed';
-} {
+}
+
+// Состояние документа одной строкой: черновик → готов → отправлен → в чате.
+export function documentState(doc: Pick<DocumentSummary, 'status' | 'sent'>): DocumentState {
   if (doc.sent) {
     const format = doc.sent.format ? ` ${doc.sent.format.toUpperCase()}` : '';
     if (doc.sent.delivery === 'delivered') return { label: `В чате${format}`, tone: 'sent' };

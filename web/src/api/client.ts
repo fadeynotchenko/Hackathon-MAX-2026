@@ -23,7 +23,8 @@ export type DocumentView = components['schemas']['DocumentSchema'];
 export type DocumentSummary = components['schemas']['DocumentSummarySchema'];
 export type DocumentFact = components['schemas']['DocumentFactSchema'];
 export type DocumentFile = components['schemas']['DocumentFileSchema'];
-export type CompanyProfile = components['schemas']['CompanyProfileSchema'];
+export type Organization = components['schemas']['OrganizationSchema'];
+export type OrganizationRequest = components['schemas']['OrganizationRequest'];
 export type Counterparty = components['schemas']['CounterpartySchema'];
 export type CounterpartyRequest = components['schemas']['CounterpartyRequest'];
 export type RecognizedRequisites = components['schemas']['RecognizedRequisitesSchema'];
@@ -210,6 +211,7 @@ export class ApiClient {
   createDocument(body: {
     template_id: number;
     counterparty_id?: number | null;
+    organization_id?: number | null;
     title?: string;
   }): Promise<DocumentView> {
     return this.request<DocumentView>('/api/v1/documents', { method: 'POST', body });
@@ -275,12 +277,23 @@ export class ApiClient {
   }
 
   // Реквизиты сторон.
-  company(): Promise<CompanyProfile> {
-    return this.request<CompanyProfile>('/api/v1/company');
+  organizations(): Promise<Organization[]> {
+    return this.request<Organization[]>('/api/v1/organizations');
   }
 
-  saveCompany(body: CompanyProfile): Promise<CompanyProfile> {
-    return this.request<CompanyProfile>('/api/v1/company', { method: 'PUT', body });
+  createOrganization(body: OrganizationRequest): Promise<Organization> {
+    return this.request<Organization>('/api/v1/organizations', { method: 'POST', body });
+  }
+
+  updateOrganization(organizationId: number, body: OrganizationRequest): Promise<Organization> {
+    return this.request<Organization>(`/api/v1/organizations/${organizationId}`, {
+      method: 'PUT',
+      body,
+    });
+  }
+
+  deleteOrganization(organizationId: number): Promise<void> {
+    return this.request<void>(`/api/v1/organizations/${organizationId}`, { method: 'DELETE' });
   }
 
   counterparties(): Promise<Counterparty[]> {

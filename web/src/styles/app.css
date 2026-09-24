@@ -122,6 +122,12 @@ body {
   white-space: nowrap;
 }
 
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Таб-бар: «Создать · Архив · Профиль» на корневых экранах. */
 .tabbar {
   position: fixed;
@@ -418,10 +424,10 @@ body {
   flex: none;
 }
 
-/* История документа. */
-.timeline {
-  display: flex;
-  flex-direction: column;
+/* История документа: две строки на событие — нормальной высоте MAX UI (56px)
+   не хватает воздуха, события слипались. */
+.history-cell {
+  padding-block: var(--spacing-size-l);
 }
 
 /* Экран результата: иконка, заголовок, пояснение. */

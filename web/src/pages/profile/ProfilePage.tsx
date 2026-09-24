@@ -1,4 +1,4 @@
-// Вкладка «Профиль»: кто вошёл, реквизиты своей организации и клиенты —
+// Вкладка «Профиль»: кто вошёл, свои организации и клиенты —
 // всё, что подставляется в документы. Каталог шаблонов живёт во вкладке
 // «Создать», здесь на него только ссылка.
 import { Avatar, Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
@@ -13,17 +13,18 @@ import { useAsync } from '@/lib/useAsync';
 export function ProfilePage() {
   const { api, user, logout } = useAuth();
   const navigate = useNavigate();
-  const state = useAsync(() => Promise.all([api.company(), api.counterparties()]), [api]);
+  const state = useAsync(() => Promise.all([api.organizations(), api.counterparties()]), [api]);
   if (!user) return null;
 
-  const [company, counterparties] = state.data ?? [null, null];
-  const companySubtitle = !company
+  const [organizations, counterparties] = state.data ?? [null, null];
+  const main = organizations?.find((item) => item.is_default) ?? organizations?.[0];
+  const organizationsSubtitle = !organizations
     ? '…'
-    : company.name
-      ? [company.name, company.values['inn'] ? `ИНН ${company.values['inn']}` : null]
-          .filter(Boolean)
-          .join(' · ')
-      : 'Не заполнено — заполните один раз';
+    : !main
+      ? 'Не заполнено — заполните один раз'
+      : organizations.length === 1
+        ? main.name
+        : `${main.name} и ещё ${organizations.length - 1}`;
 
   return (
     <Page title="Профиль" tabs>
@@ -45,18 +46,19 @@ export function ProfilePage() {
 
       <CellList mode="island" filled header={<CellHeader>Для документов</CellHeader>}>
         <CellSimple
-          title="Моя организация"
-          subtitle={companySubtitle}
+          title="Мои организации"
+          subtitle={organizationsSubtitle}
+          innerClassNames={{ subtitle: 'ellipsis' }}
           before={<IconBuilding />}
           after={
-            company && !company.name ? (
+            organizations && organizations.length === 0 ? (
               <Typography.Text variant="description" className="negative">
                 Заполнить
               </Typography.Text>
             ) : null
           }
           showChevron
-          onClick={() => navigate('/profile/company')}
+          onClick={() => navigate('/profile/organizations')}
         />
         <CellSimple
           title="Клиенты"

@@ -1,9 +1,10 @@
-// «Для кого документ?» — карточка клиента выбирается до создания: сервер
-// подставляет её реквизиты при создании черновика, поменять клиента у готового
-// черновика API не умеет.
-import { Avatar, CellAction, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
+// «Для кого документ?» — карточка клиента и своя организация выбираются до
+// создания: сервер подставляет их реквизиты при создании черновика, поменять
+// стороны у готового черновика API не умеет. Выбранная организация живёт в адресе
+// (?org=), чтобы пережить поход в форму нового клиента и обратно.
+import { Avatar, CellAction, CellHeader, CellList, CellSimple, Radio } from '@maxhub/max-ui';
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Banner } from '@/components/Banner';
 import { IconEdit, IconPlus } from '@/components/icons';
@@ -19,6 +20,12 @@ export function ClientPage() {
   const location = useLocation();
   const templateId = Number(useParams().templateId);
   const counterparties = useAsync(() => api.counterparties(), [api]);
+  const organizations = useAsync(() => api.organizations(), [api]);
+  const [params, setParams] = useSearchParams();
+  const organizationId =
+    Number(params.get('org')) ||
+    (organizations.data?.find((item) => item.is_default)?.id ?? null);
+  const chooseOrganization = (id: number) => setParams({ org: String(id) }, { replace: true });
   const [creating, setCreating] = useState<number | 'none' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const autoCreated = useRef(false);
@@ -30,6 +37,7 @@ export function ClientPage() {
       const document = await api.createDocument({
         template_id: templateId,
         counterparty_id: counterpartyId,
+        organization_id: organizationId,
       });
       void navigate(`/documents/${document.id}/fill`, { replace: true });
     } catch (err) {
@@ -49,22 +57,54 @@ export function ClientPage() {
   }, [created]);
 
   const back = () => navigate(`/create/${templateId}`);
+  const manyOrganizations = (organizations.data?.length ?? 0) > 1;
   const busy = creating !== null;
 
   return (
-    <Page title="Для кого документ?" subtitle="Реквизиты клиента подставятся сами" onBack={back}>
+    <Page
+      title={manyOrganizations ? 'Стороны документа' : 'Для кого документ?'}
+      subtitle="Реквизиты подставятся сами"
+      onBack={back}
+    >
       {error ? (
         <div className="section">
           <Banner tone="error" title={error} />
         </div>
       ) : null}
-      <CellList mode="island" filled>
+      {organizations.data && manyOrganizations ? (
+        <CellList mode="island" filled header={<CellHeader>От кого</CellHeader>}>
+          {organizations.data.map((item) => (
+            <CellSimple
+              key={item.id}
+              title={item.name}
+              subtitle={item.inn ? `ИНН ${item.inn}` : undefined}
+              innerClassNames={{ title: 'ellipsis' }}
+              after={
+                <Radio
+                  name="organization"
+                  value={String(item.id)}
+                  checked={organizationId === item.id}
+                  onChange={() => chooseOrganization(item.id)}
+                />
+              }
+              onClick={() => chooseOrganization(item.id)}
+            />
+          ))}
+        </CellList>
+      ) : null}
+      <CellList
+        mode="island"
+        filled
+        header={manyOrganizations ? <CellHeader>Для кого</CellHeader> : undefined}
+      >
         <CellAction
           before={<IconPlus />}
           disabled={busy}
           onClick={() =>
             navigate('/profile/counterparties/new', {
-              state: { returnTo: `/create/${templateId}/client` },
+              state: {
+                returnTo: `/create/${templateId}/client${organizationId ? `?org=${organizationId}` : ''}`,
+              },
             })
           }
         >

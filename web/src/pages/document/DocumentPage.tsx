@@ -162,7 +162,8 @@ export function DocumentPage() {
           history.map((fact, index) => (
             <CellSimple
               key={`${fact.kind}-${fact.at}-${index}`}
-              height="compact"
+              className="history-cell"
+              separator={index < history.length - 1}
               title={
                 fact.kind === 'created' && fact.source === 'copy'
                   ? 'Создан на основе другого'
