@@ -1,9 +1,14 @@
-"""Диалог с помощником в чате бота: сообщение или нажатая кнопка → ответ с кнопками.
+"""Диалог с помощником в чате бота: сообщение, вложение или нажатая кнопка → ответ с кнопками.
 
 Сценарий не знает про MAX и Redis: на вход — кто написал и что, на выход —
 текст и кнопки, которые канал доставит сам. Документ, над которым идёт работа,
 запоминается в ``chat_states``: пользователь пишет «поменяй срок на 10 дней»,
 не называя документ.
+
+Вложение (фото, скан, голосовое) приходит ссылкой, байты сценарий получает
+через ``ChatActionDeps.download``. Голосовое расшифровывается и дальше живёт
+как обычное сообщение. Фото без текущего документа откладывается: помощник
+спрашивает, для какого документа его распознать, и берёт файл по нажатию.
 
 Кнопки несут действие строкой ``doc:<действие>[:<id>[:<формат>]]``: нажатие
 приходит обратно в ядро, и права проверяются заново — строка из кнопки не
@@ -12,8 +17,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import PurePosixPath
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,9 +32,11 @@ from core.db.repositories import (
 )
 from core.domain.documents import render_context
 from core.domain.exceptions import AppError, NotFoundError
+from core.domain.media import AUDIBLE, MediaKind
 from core.events import EventBus
-from core.files import FilesConfig
+from core.files import FilesConfig, InboundFileError, InboundFileTooLargeError, fetch_media
 from core.llm import ChatMessage, LLMClient, LLMError
+from core.usecases.agent.recognize import fill_from_file, transcribe
 from core.usecases.agent.service import AgentFillResult, answer_question, fill_from_message
 from core.usecases.documents import (
     DocumentView,
@@ -47,7 +56,22 @@ ASK_TEMPLATE_TEXT = (
     "Какой документ подготовить? Выберите ниже или опишите словами, например: "
     "«Счёт на 120 000 для ООО Ромашка за разработку сайта»."
 )
+ASK_MEDIA_TEMPLATE_TEXT = (
+    "Для какого документа взять данные из вложения? Выберите ниже — распознаю и покажу, что нашёл."
+)
 UNKNOWN_BUTTON_TEXT = "Эта кнопка больше не работает. Напишите, что нужно сделать."
+LLM_DOWN_TEXT = "Помощник не отвечает, попробуйте ещё раз чуть позже."
+DOWNLOAD_FAILED_TEXT = "Не получилось скачать вложение из MAX, пришлите его ещё раз."
+UNSUPPORTED_FILE_TEXT = "Такой файл не прочитать. Подойдёт фото, PDF, DOCX или голосовое."
+
+# Сколько отложенное фото ждёт выбора документа: дальше ссылка MAX может протухнуть,
+# а пользователь — забыть, что присылал.
+PENDING_MEDIA_TTL = timedelta(minutes=30)
+TRANSCRIPT_PREVIEW_LENGTH = 500
+_READABLE_SUFFIXES = frozenset(
+    {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".pdf", ".docx"}
+)
+_AUDIBLE_SUFFIXES = frozenset({".ogg", ".oga", ".opus", ".mp3", ".m4a", ".mp4", ".wav", ".weba"})
 
 ROUTE_INSTRUCTIONS = """Определи, чего хочет пользователь в чате с помощником по документам.
 intent:
@@ -56,6 +80,8 @@ intent:
 - question — вопрос о текущем документе, ничего менять не надо.
 Если текущего документа нет, запрос на заполнение означает new.
 template — вид нового документа из списка ниже или пустая строка, если вид не ясен."""
+
+MediaFetcher = Callable[[str], Awaitable[bytes]]
 
 
 @dataclass(frozen=True)
@@ -79,12 +105,34 @@ class ChatReply:
 
 
 @dataclass(frozen=True)
+class ChatAttachment:
+    """Вложение из чата: вид по MAX (image, file, audio), ссылка и подпись к нему."""
+
+    kind: str
+    url: str
+    filename: str | None = None
+    caption: str | None = None
+
+
+@dataclass(frozen=True)
 class ChatActionDeps:
-    """Всё, что нужно кнопке «прислать файл»: сборка, событие боту, одноразовый токен."""
+    """Всё, что нужно кнопкам и вложениям: сборка файла, событие боту, одноразовый
+    токен, модель и скачивание вложения (``fetch`` подменяют тесты)."""
 
     files: FilesConfig
     bus: EventBus
     tokens: DownloadTokenRepository
+    llm: LLMClient | None = None
+    fetch: MediaFetcher | None = None
+
+    async def download(self, url: str) -> bytes:
+        if self.fetch is not None:
+            return await self.fetch(url)
+        return await fetch_media(
+            url,
+            max_bytes=self.files.media_max_bytes,
+            timeout_seconds=self.files.media_timeout_seconds,
+        )
 
 
 def _template_buttons(templates: list[TemplateView]) -> tuple[tuple[ChatButton, ...], ...]:
@@ -120,6 +168,27 @@ def _fill_text(result: AgentFillResult) -> str:
     lines = [f"{document.template.title} «{document.title}»", result.reply]
     lines += [f"— {labels[key]}: {context[key]}" for key in result.filled if context.get(key)]
     return "\n".join(lines)
+
+
+def _download_error_text(exc: InboundFileError, files: FilesConfig) -> str:
+    if isinstance(exc, InboundFileTooLargeError):
+        return f"Файл больше {files.media_max_bytes // (1024 * 1024)} МБ, пришлите поменьше."
+    return DOWNLOAD_FAILED_TEXT
+
+
+def _readable_kind(attachment: ChatAttachment) -> MediaKind | None:
+    """Вид вложения по данным MAX, до скачивания: файл с чужим расширением не качаем.
+    Окончательно тип проверяет домен по содержимому."""
+    if attachment.kind == "image":
+        return MediaKind.IMAGE
+    if attachment.kind == "audio":
+        return MediaKind.AUDIO
+    suffix = PurePosixPath((attachment.filename or "").lower()).suffix
+    if suffix in _READABLE_SUFFIXES:
+        return MediaKind.DOCUMENT
+    if suffix in _AUDIBLE_SUFFIXES:
+        return MediaKind.AUDIO
+    return None
 
 
 async def _ensure_user(session: AsyncSession, sender: ChatSender) -> int:
@@ -174,6 +243,12 @@ async def _route(
     return str(raw.get("intent", "fill")), str(raw.get("template", ""))
 
 
+async def _start_document(session: AsyncSession, user_id: int, template_id: int) -> DocumentView:
+    document = await create_draft(session, user_id=user_id, template_id=template_id)
+    await ChatStateRepository(session).set_active_document(user_id, document.id)
+    return document
+
+
 async def handle_chat_message(
     session: AsyncSession, *, sender: ChatSender, text: str, llm: LLMClient | None
 ) -> ChatReply:
@@ -194,18 +269,157 @@ async def handle_chat_message(
             template = next((t for t in templates if t.slug == slug), None)
             if template is None:
                 return ChatReply(ASK_TEMPLATE_TEXT, _template_buttons(templates))
-            active = await create_draft(session, user_id=user_id, template_id=template.id)
-            await ChatStateRepository(session).set_active_document(user_id, active.id)
+            active = await _start_document(session, user_id, template.id)
+            # Документ начат словами: отложенное раньше фото к нему уже не относится.
+            await ChatStateRepository(session).set_pending_media(user_id, None)
 
         result = await fill_from_message(
             session, user_id=user_id, document_id=active.id, message=text, llm=llm
         )
     except LLMError:
         # Сбой маршрутизации — та же временная недоступность, что и у заполнения.
-        return ChatReply("Помощник не отвечает, попробуйте ещё раз чуть позже.")
+        return ChatReply(LLM_DOWN_TEXT)
     except AppError as exc:
         return ChatReply(exc.public_message)
     return ChatReply(_fill_text(result), _document_buttons(result.document))
+
+
+async def _document_for_caption(
+    session: AsyncSession, user_id: int, caption: str, llm: LLMClient
+) -> DocumentView | None:
+    """Подпись к фото без текущего документа может назвать его вид: «счёт для них»."""
+    templates = await list_templates(session, user_id=user_id)
+    _intent, slug = await _route(llm, caption, None, templates)
+    template = next((t for t in templates if t.slug == slug), None)
+    if template is None:
+        return None
+    return await _start_document(session, user_id, template.id)
+
+
+async def _recognize_into(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    document_id: int,
+    url: str,
+    caption: str,
+    deps: ChatActionDeps,
+) -> ChatReply:
+    data = await deps.download(url)
+    result = await fill_from_file(
+        session,
+        user_id=user_id,
+        document_id=document_id,
+        data=data,
+        llm=deps.llm,
+        max_bytes=deps.files.media_max_bytes,
+        request=caption,
+    )
+    return ChatReply(_fill_text(result), _document_buttons(result.document))
+
+
+async def _hear(
+    session: AsyncSession, *, sender: ChatSender, attachment: ChatAttachment, deps: ChatActionDeps
+) -> ChatReply:
+    data = await deps.download(attachment.url)
+    transcript = await transcribe(data=data, llm=deps.llm, max_bytes=deps.files.media_max_bytes)
+    reply = await handle_chat_message(session, sender=sender, text=transcript, llm=deps.llm)
+    heard = transcript[:TRANSCRIPT_PREVIEW_LENGTH]
+    if len(transcript) > TRANSCRIPT_PREVIEW_LENGTH:
+        heard += "…"
+    return ChatReply(f"Расслышал: «{heard}»\n\n{reply.text}", reply.buttons)
+
+
+async def handle_chat_attachment(
+    session: AsyncSession, *, sender: ChatSender, attachment: ChatAttachment, deps: ChatActionDeps
+) -> ChatReply:
+    user_id = await _ensure_user(session, sender)
+    llm = deps.llm
+    if llm is None:
+        return ChatReply(DISABLED_TEXT)
+    kind = _readable_kind(attachment)
+    if kind is None:
+        return ChatReply(UNSUPPORTED_FILE_TEXT)
+    try:
+        if kind in AUDIBLE:
+            return await _hear(session, sender=sender, attachment=attachment, deps=deps)
+        caption = (attachment.caption or "").strip()
+        active = await _active_document(session, user_id)
+        if active is None and caption:
+            active = await _document_for_caption(session, user_id, caption, llm)
+        if active is None:
+            await ChatStateRepository(session).set_pending_media(
+                user_id,
+                {
+                    "kind": attachment.kind,
+                    "url": attachment.url,
+                    "filename": attachment.filename,
+                    "caption": caption,
+                    "at": datetime.now(UTC).isoformat(),
+                },
+            )
+            templates = await list_templates(session, user_id=user_id)
+            return ChatReply(ASK_MEDIA_TEMPLATE_TEXT, _template_buttons(templates))
+        return await _recognize_into(
+            session,
+            user_id=user_id,
+            document_id=active.id,
+            url=attachment.url,
+            caption=caption,
+            deps=deps,
+        )
+    except InboundFileError as exc:
+        return ChatReply(_download_error_text(exc, deps.files))
+    except LLMError:
+        return ChatReply(LLM_DOWN_TEXT)
+    except AppError as exc:
+        return ChatReply(exc.public_message)
+
+
+async def _take_fresh_pending(chat: ChatStateRepository, user_id: int) -> dict[str, object] | None:
+    pending = await chat.take_pending_media(user_id)
+    if pending is None:
+        return None
+    try:
+        at = datetime.fromisoformat(str(pending.get("at")))
+    except ValueError:
+        return None
+    if datetime.now(UTC) - at > PENDING_MEDIA_TTL:
+        return None
+    return pending
+
+
+async def _new_from_button(
+    session: AsyncSession, *, user_id: int, slug: str, deps: ChatActionDeps
+) -> ChatReply:
+    chat = ChatStateRepository(session)
+    templates = await list_templates(session, user_id=user_id, slug=slug)
+    if not templates:
+        return ChatReply(UNKNOWN_BUTTON_TEXT)
+    document = await _start_document(session, user_id, templates[0].id)
+    started = f"Начал «{document.template.title}»."
+    pending = await _take_fresh_pending(chat, user_id)
+    if pending is not None and deps.llm is not None:
+        try:
+            return await _recognize_into(
+                session,
+                user_id=user_id,
+                document_id=document.id,
+                url=str(pending["url"]),
+                caption=str(pending.get("caption") or ""),
+                deps=deps,
+            )
+        except InboundFileError as exc:
+            return ChatReply(
+                f"{started} {_download_error_text(exc, deps.files)}", _document_buttons(document)
+            )
+        except AppError as exc:
+            return ChatReply(f"{started} {exc.public_message}", _document_buttons(document))
+    return ChatReply(
+        f"{started} Напишите данные одним сообщением, надиктуйте голосовым или пришлите "
+        f"фото карточки: {_missing_text(document)}.",
+        _document_buttons(document),
+    )
 
 
 async def handle_chat_action(
@@ -224,21 +438,13 @@ async def handle_chat_action(
     try:
         if action == "new" and not args:
             await chat.set_active_document(user_id, None)
+            await chat.set_pending_media(user_id, None)
             return ChatReply(
                 ASK_TEMPLATE_TEXT, _template_buttons(await list_templates(session, user_id=user_id))
             )
 
         if action == "new" and len(args) == 1:
-            templates = await list_templates(session, user_id=user_id, slug=args[0])
-            if not templates:
-                return ChatReply(UNKNOWN_BUTTON_TEXT)
-            document = await create_draft(session, user_id=user_id, template_id=templates[0].id)
-            await chat.set_active_document(user_id, document.id)
-            return ChatReply(
-                f"Начал «{document.template.title}». Напишите данные одним сообщением: "
-                f"{_missing_text(document)}.",
-                _document_buttons(document),
-            )
+            return await _new_from_button(session, user_id=user_id, slug=args[0], deps=deps)
 
         if action == "confirm" and len(args) == 1 and args[0].isdigit():
             document = await confirm_fields(session, user_id=user_id, document_id=int(args[0]))

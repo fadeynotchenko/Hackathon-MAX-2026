@@ -7,6 +7,9 @@
 Регистрация пользователя идемпотентна сама по себе. Диалог — нет: повторная
 доставка сообщения снова позвала бы модель и прислала второй ответ, поэтому
 обработанные ``Event.id`` запоминаются в Redis, как это делает бот.
+
+Вложения (фото, сканы, голосовые) приходят ссылкой MAX: байты сценарий скачивает
+сам через ``ChatActionDeps.download`` — событие остаётся маленьким.
 """
 
 from __future__ import annotations
@@ -22,9 +25,11 @@ from redis.asyncio import Redis
 from core.db import get_session
 from core.db.repositories import DownloadTokenRepository
 from core.events import (
+    BOT_ATTACHMENT,
     BOT_CALLBACK,
     BOT_MESSAGE,
     BOT_USER_STARTED,
+    BotAttachment,
     BotCallback,
     BotMessage,
     BotUserStarted,
@@ -39,9 +44,12 @@ from core.llm import LLMClient
 from core.logs import bind_context
 from core.usecases.agent import (
     ChatActionDeps,
+    ChatAttachment,
     ChatReply,
     ChatSender,
+    MediaFetcher,
     handle_chat_action,
+    handle_chat_attachment,
     handle_chat_message,
 )
 from core.usecases.users import register_user_from_bot
@@ -50,6 +58,8 @@ CONSUMER_GROUP = "core"
 PROCESSED_KEY = "events:processed:"
 # Дольше, чем событие может висеть pending до исчерпания доставок.
 PROCESSED_TTL_SECONDS = 7 * 24 * 3600
+# Предел текста сообщения в контракте notify.user (и в MAX).
+MESSAGE_LIMIT = 4000
 
 
 @dataclass(frozen=True)
@@ -58,6 +68,7 @@ class WorkerDeps:
     bus: EventBus
     files: FilesConfig
     llm: LLMClient | None
+    fetch: MediaFetcher | None = None
 
 
 async def on_user_started(event: Event) -> None:
@@ -73,6 +84,15 @@ def _buttons(reply: ChatReply) -> list[list[InlineButton]]:
     return [[InlineButton(text=b.text, payload=b.payload) for b in row] for row in reply.buttons]
 
 
+async def _reply(deps: WorkerDeps, max_user_id: int, reply: ChatReply) -> None:
+    """Длинный ответ (расшифровка голосового плюс заполненные поля) обрезается, а не
+    роняет событие: payload длиннее контракта не прошёл бы проверку NotifyUser."""
+    text = reply.text
+    if len(text) > MESSAGE_LIMIT:
+        text = text[: MESSAGE_LIMIT - 1] + "…"
+    await deps.bus.notify_user(max_user_id, text, buttons=_buttons(reply))
+
+
 async def _once(deps: WorkerDeps, event: Event, work: Callable[[], Awaitable[None]]) -> None:
     """Выполнить работу один раз на Event.id; при сбое снять отметку, чтобы повтор был возможен."""
     key = f"{PROCESSED_KEY}{event.id}"
@@ -86,6 +106,14 @@ async def _once(deps: WorkerDeps, event: Event, work: Callable[[], Awaitable[Non
 
 
 def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
+    action_deps = ChatActionDeps(
+        files=deps.files,
+        bus=deps.bus,
+        tokens=DownloadTokenRepository(deps.redis),
+        llm=deps.llm,
+        fetch=deps.fetch,
+    )
+
     async def on_message(event: Event) -> None:
         bind_context(request_id=event.id)
         data = BotMessage.model_validate(event.payload)
@@ -98,16 +126,13 @@ def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
                 reply = await handle_chat_message(
                     session, sender=sender, text=data.text, llm=deps.llm
                 )
-            await deps.bus.notify_user(data.max_user_id, reply.text, buttons=_buttons(reply))
+            await _reply(deps, data.max_user_id, reply)
 
         await _once(deps, event, work)
 
     async def on_callback(event: Event) -> None:
         bind_context(request_id=event.id)
         data = BotCallback.model_validate(event.payload)
-        action_deps = ChatActionDeps(
-            files=deps.files, bus=deps.bus, tokens=DownloadTokenRepository(deps.redis)
-        )
 
         async def work() -> None:
             async with get_session() as session:
@@ -117,7 +142,24 @@ def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
                     payload=data.payload,
                     deps=action_deps,
                 )
-            await deps.bus.notify_user(data.max_user_id, reply.text, buttons=_buttons(reply))
+            await _reply(deps, data.max_user_id, reply)
+
+        await _once(deps, event, work)
+
+    async def on_attachment(event: Event) -> None:
+        bind_context(request_id=event.id)
+        data = BotAttachment.model_validate(event.payload)
+        sender = ChatSender(data.max_user_id, data.first_name, data.last_name, data.username)
+        attachment = ChatAttachment(
+            kind=data.kind, url=data.url, filename=data.filename, caption=data.text
+        )
+
+        async def work() -> None:
+            async with get_session() as session:
+                reply = await handle_chat_attachment(
+                    session, sender=sender, attachment=attachment, deps=action_deps
+                )
+            await _reply(deps, data.max_user_id, reply)
 
         await _once(deps, event, work)
 
@@ -125,6 +167,7 @@ def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
         BOT_USER_STARTED: on_user_started,
         BOT_MESSAGE: on_message,
         BOT_CALLBACK: on_callback,
+        BOT_ATTACHMENT: on_attachment,
     }
 
 

@@ -1,4 +1,4 @@
-"""Адаптер GigaChat на подменённом транспорте: OAuth, кеш токена, повтор на 401."""
+"""Адаптер GigaChat на подменённом транспорте: OAuth, кеш токена, повтор на 401, вложения."""
 
 from __future__ import annotations
 
@@ -9,7 +9,15 @@ from pathlib import Path
 import httpx
 import pytest
 
-from core.llm import ChatMessage, GigaChatClient, GigaChatConfig, LLMError, LLMUnavailableError
+from core.llm import (
+    Attachment,
+    ChatMessage,
+    GigaChatClient,
+    GigaChatConfig,
+    LLMError,
+    LLMInputError,
+    LLMUnavailableError,
+)
 
 CFG = GigaChatConfig(
     auth_key="dGVzdDp0ZXN0",
@@ -24,16 +32,35 @@ MESSAGES = [ChatMessage("user", "Привет")]
 
 
 class FakeGigaChat:
-    """Минимальная копия двух ручек GigaChat, которые использует адаптер."""
+    """Минимальная копия ручек GigaChat, которые использует адаптер."""
 
-    def __init__(self, *, chat_statuses: list[int] | None = None, content: str = "Ответ") -> None:
+    def __init__(
+        self,
+        *,
+        chat_statuses: list[int] | None = None,
+        content: str = "Ответ",
+        upload_status: int = 200,
+        delete_status: int = 200,
+    ) -> None:
         self.chat_statuses = list(chat_statuses or [])
         self.content = content
+        self.upload_status = upload_status
+        self.delete_status = delete_status
         self.token_calls: list[httpx.Request] = []
         self.chat_calls: list[httpx.Request] = []
+        self.uploads: list[httpx.Request] = []
+        self.deleted: list[str] = []
         self.issued = 0
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/files":
+            self.uploads.append(request)
+            if self.upload_status != 200:
+                return httpx.Response(self.upload_status, json={"message": "unsupported"})
+            return httpx.Response(200, json={"id": f"file-{len(self.uploads)}", "object": "file"})
+        if request.url.path.endswith("/delete"):
+            self.deleted.append(request.url.path.split("/")[-2])
+            return httpx.Response(self.delete_status, json={"deleted": True})
         if request.url.path == "/api/v2/oauth":
             self.token_calls.append(request)
             self.issued += 1
@@ -109,3 +136,49 @@ async def test_non_json_answer_is_a_bad_response() -> None:
     with pytest.raises(LLMError) as exc:
         await api.client().complete_json(MESSAGES, schema={"type": "object"})
     assert not isinstance(exc.value, LLMUnavailableError)
+
+
+PHOTO = Attachment(b"\xff\xd8\xff\xe0 jpeg", "image/jpeg", "photo.jpg")
+
+
+async def test_attachment_is_uploaded_referenced_and_deleted() -> None:
+    api = FakeGigaChat(content='{"inn": "7707083893"}')
+    messages = [ChatMessage("system", "Правила"), ChatMessage("user", "Фото", (PHOTO,))]
+
+    data = await api.client().complete_json(messages, schema={"type": "object"})
+
+    assert data == {"inn": "7707083893"}
+    (upload,) = api.uploads
+    assert upload.headers["Authorization"] == "Bearer token-1"
+    body = upload.content
+    assert b'name="purpose"' in body and b"general" in body
+    assert b'filename="photo.jpg"' in body and b"Content-Type: image/jpeg" in body
+    payload = json.loads(api.chat_calls[0].content)
+    assert payload["messages"][0] == {"role": "system", "content": "Правила"}
+    assert payload["messages"][1]["attachments"] == ["file-1"]
+    assert api.deleted == ["file-1"], "файл у провайдера живёт один запрос"
+
+
+async def test_uploaded_file_is_deleted_even_if_chat_fails() -> None:
+    api = FakeGigaChat(chat_statuses=[503])
+    with pytest.raises(LLMUnavailableError):
+        await api.client().complete([ChatMessage("user", "Фото", (PHOTO,))])
+    assert api.deleted == ["file-1"]
+
+
+async def test_rejected_file_is_an_input_error() -> None:
+    api = FakeGigaChat(upload_status=400)
+    with pytest.raises(LLMInputError):
+        await api.client().complete([ChatMessage("user", "Фото", (PHOTO,))])
+    assert api.chat_calls == [] and api.deleted == []
+
+
+async def test_failed_cleanup_does_not_break_the_answer() -> None:
+    api = FakeGigaChat(delete_status=500)
+    answer = await api.client().complete([ChatMessage("user", "Фото", (PHOTO,))])
+    assert answer == "Ответ" and api.deleted == ["file-1"]
+
+
+def test_attachment_bytes_stay_out_of_repr() -> None:
+    scan = Attachment(b"passport 4510 123456", "image/png", "scan.png")
+    assert "4510" not in repr(scan) and "scan.png" in repr(scan)

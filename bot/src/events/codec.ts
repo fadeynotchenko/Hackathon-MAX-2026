@@ -15,6 +15,7 @@ export const DOCUMENT_READY = 'document.ready';
 export const BOT_USER_STARTED = 'bot.user_started';
 export const BOT_MESSAGE = 'bot.message';
 export const BOT_CALLBACK = 'bot.callback';
+export const BOT_ATTACHMENT = 'bot.attachment';
 
 // Кнопка под сообщением: нажатие уходит обратно в ядро событием bot.callback.
 export const InlineButton = z.strictObject({
@@ -76,12 +77,29 @@ export const BotCallback = z.strictObject({
 });
 export type BotCallback = z.infer<typeof BotCallback>;
 
+// Бот → ядро: пользователь прислал фото, файл или голосовое. Байты не в событии:
+// ядро скачивает файл по ссылке MAX само. text — подпись к вложению.
+export const BotAttachment = z.strictObject({
+  max_user_id: z.number().int().positive(),
+  chat_id: z.number().int(),
+  kind: z.enum(['image', 'file', 'audio']),
+  url: z.string().min(9).max(2048).startsWith('https://'),
+  filename: z.string().max(255).nullable().default(null),
+  size: z.number().int().nonnegative().nullable().default(null),
+  text: z.string().max(4000).nullable().default(null),
+  first_name: z.string().default(''),
+  last_name: z.string().nullable().default(null),
+  username: z.string().nullable().default(null),
+});
+export type BotAttachment = z.infer<typeof BotAttachment>;
+
 export const EVENT_PAYLOADS = {
   [NOTIFY_USER]: NotifyUser,
   [DOCUMENT_READY]: DocumentReady,
   [BOT_USER_STARTED]: BotUserStarted,
   [BOT_MESSAGE]: BotMessage,
   [BOT_CALLBACK]: BotCallback,
+  [BOT_ATTACHMENT]: BotAttachment,
 } as const;
 
 export type EventType = keyof typeof EVENT_PAYLOADS;

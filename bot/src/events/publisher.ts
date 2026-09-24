@@ -3,10 +3,12 @@ import type { Redis } from 'ioredis';
 
 import type { Logger } from '../logger.js';
 import {
+  BOT_ATTACHMENT,
   BOT_CALLBACK,
   BOT_MESSAGE,
   BOT_USER_STARTED,
   encodeEvent,
+  type BotAttachment,
   type BotCallback,
   type BotMessage,
   type BotUserStarted,
@@ -38,9 +40,13 @@ export class EventPublisher {
     return this.publish(BOT_CALLBACK, payload);
   }
 
+  attachment(payload: BotAttachment): Promise<string> {
+    return this.publish(BOT_ATTACHMENT, payload);
+  }
+
   private async publish(
     type: EventType,
-    payload: BotUserStarted | BotMessage | BotCallback,
+    payload: BotUserStarted | BotMessage | BotCallback | BotAttachment,
   ): Promise<string> {
     const { id, fields } = encodeEvent(type, payload, this.options.source ?? 'bot', new Date());
     // MAXLEN ~ : приблизительное усечение дешевле точного, стрим не растёт бесконечно.

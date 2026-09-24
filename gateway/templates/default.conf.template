@@ -16,6 +16,8 @@ limit_req_zone $binary_remote_addr zone=api_general:10m rate=50r/s;
 # Вход выполняется при каждом открытии мини-аппа, а за одним NAT (офис, зал
 # хакатона) сидят десятки людей: лимит считается на IP, поэтому щедрый.
 limit_req_zone $binary_remote_addr zone=api_auth:10m rate=2r/s;
+# Тяжёлые ручки: каждый запрос — вызов модели, распознавание файла или сборка PDF.
+limit_req_zone $binary_remote_addr zone=api_heavy:10m rate=2r/s;
 limit_conn_zone $binary_remote_addr zone=conn_per_ip:10m;
 # 429, а не дефолтный 503: клиент (web/src/api/client.ts) отличает лимит от аварии.
 limit_req_status 429;
@@ -92,6 +94,19 @@ server {
         client_max_body_size 5m;
         proxy_pass $api_upstream;
         include /etc/nginx/snippets/proxy_common.conf;
+
+        # Помощник, распознавание фото и голосовых, сборка и отправка файла: своя
+        # зона частоты, а тело — до 11 МБ (фото с телефона больше 5 МБ). Предел
+        # приложения MEDIA_MAX_BYTES (10 МБ) ниже, поэтому 413 отвечает API с
+        # понятным текстом, а nginx отсекает только совсем лишнее.
+        location ~ ^/api/v1/(documents/[0-9]+/(agent/[a-z-]+|render|send)|requisites/recognize)$ {
+            limit_req zone=api_heavy burst=30 nodelay;
+            limit_conn conn_per_ip 50;
+            include /etc/nginx/snippets/security_headers.conf;
+            client_max_body_size 11m;
+            proxy_pass $api_upstream;
+            include /etc/nginx/snippets/proxy_common.conf;
+        }
     }
 
     # Вебхук MAX → бот. Подпись проверяет сам бот (x-max-bot-api-secret);

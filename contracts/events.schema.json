@@ -37,6 +37,113 @@
   },
   "envelope_version": 1,
   "events": {
+    "bot.attachment": {
+      "additionalProperties": false,
+      "description": "Бот → ядро: пользователь прислал фото, файл или голосовое.\n\nБайты в событие не кладутся, как и в ``document.ready``: ссылку на файл\nдаёт MAX, ядро скачивает его само. ``text`` — подпись к вложению.",
+      "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "integer"
+        },
+        "filename": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Filename"
+        },
+        "first_name": {
+          "default": "",
+          "title": "First Name",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "image",
+            "file",
+            "audio"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "last_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Name"
+        },
+        "max_user_id": {
+          "exclusiveMinimum": 0,
+          "title": "Max User Id",
+          "type": "integer"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "url": {
+          "maxLength": 2048,
+          "minLength": 9,
+          "pattern": "^https://",
+          "title": "Url",
+          "type": "string"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        }
+      },
+      "required": [
+        "max_user_id",
+        "chat_id",
+        "kind",
+        "url"
+      ],
+      "title": "BotAttachment",
+      "type": "object"
+    },
     "bot.callback": {
       "additionalProperties": false,
       "description": "Бот → ядро: пользователь нажал кнопку, которую ядро прислало в notify.user.",

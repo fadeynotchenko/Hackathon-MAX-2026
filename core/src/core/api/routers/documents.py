@@ -103,6 +103,7 @@ async def patch_fields(
             source=item.source,
             confidence=item.confidence,
             confirmed=item.confirmed,
+            fragment=item.fragment,
         )
         for key, item in payload.values.items()
     }

@@ -4,7 +4,14 @@
 только от протокола ``LLMClient``; провайдер выбирается здесь, в одном месте.
 """
 
-from .client import ChatMessage, LLMClient, LLMError, LLMUnavailableError
+from .client import (
+    Attachment,
+    ChatMessage,
+    LLMClient,
+    LLMError,
+    LLMInputError,
+    LLMUnavailableError,
+)
 from .config import GigaChatConfig
 from .gigachat import GigaChatClient
 
@@ -15,11 +22,13 @@ def build_llm_client(cfg: GigaChatConfig) -> LLMClient | None:
 
 
 __all__ = [
+    "Attachment",
     "ChatMessage",
     "GigaChatClient",
     "GigaChatConfig",
     "LLMClient",
     "LLMError",
+    "LLMInputError",
     "LLMUnavailableError",
     "build_llm_client",
 ]

@@ -189,7 +189,7 @@ class ChatState(Base):
     """Состояние диалога с ботом: над каким документом пользователь сейчас работает.
 
     Отдельная таблица, а не колонка в users: колонка дала бы циклический внешний
-    ключ users ↔ documents, а здесь же будет жить остальное состояние диалога.
+    ключ users ↔ documents, а здесь же живёт остальное состояние диалога.
     """
 
     __tablename__ = "chat_states"
@@ -198,6 +198,9 @@ class ChatState(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    # Фото или скан, присланный до выбора документа: ссылка MAX, а не байты —
+    # файл перекачивается, когда пользователь выберет, куда его распознать.
+    pending_media: Mapped[dict[str, object] | None] = mapped_column(JsonDict)
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()
     )

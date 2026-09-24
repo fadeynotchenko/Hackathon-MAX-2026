@@ -1,6 +1,7 @@
 from .bus import Event, EventBus, EventDecodeError, EventHandler, consume_stream, publish_event
 from .config import EventsConfig, get_events_config
 from .contracts import (
+    BOT_ATTACHMENT,
     BOT_CALLBACK,
     BOT_MESSAGE,
     BOT_USER_STARTED,
@@ -8,6 +9,7 @@ from .contracts import (
     ENVELOPE_VERSION,
     EVENT_PAYLOADS,
     NOTIFY_USER,
+    BotAttachment,
     BotCallback,
     BotMessage,
     BotUserStarted,
@@ -18,6 +20,7 @@ from .contracts import (
 )
 
 __all__ = [
+    "BOT_ATTACHMENT",
     "BOT_CALLBACK",
     "BOT_MESSAGE",
     "BOT_USER_STARTED",
@@ -25,6 +28,7 @@ __all__ = [
     "ENVELOPE_VERSION",
     "EVENT_PAYLOADS",
     "NOTIFY_USER",
+    "BotAttachment",
     "BotCallback",
     "BotMessage",
     "BotUserStarted",

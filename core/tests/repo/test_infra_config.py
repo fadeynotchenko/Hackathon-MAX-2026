@@ -78,6 +78,17 @@ def test_nginx_rate_limits_and_429(nginx_template: str) -> None:
     assert "location = /api/v1/auth/max" in nginx_template, "вход по initData — своя зона лимитов"
 
 
+def test_nginx_limits_heavy_and_upload_routes(nginx_template: str) -> None:
+    """Распознавание принимает фото больше общего лимита тела, но в своей зоне частоты."""
+    assert re.search(r"zone=api_heavy:\d+m\s+rate=\d+r/s", nginx_template)
+    upload = nginx_template.split("requisites/recognize)$ {", 1)[1].split("}", 1)[0]
+    assert "limit_req zone=api_heavy" in upload
+    sizes = re.findall(r"client_max_body_size (\d+)m;", upload)
+    assert sizes and int(sizes[0]) * 1024 * 1024 > 10485760, (
+        "gateway не должен резать файл раньше MEDIA_MAX_BYTES"
+    )
+
+
 def test_nginx_routes_webhook_and_api(nginx_template: str) -> None:
     assert "location = ${BOT_WEBHOOK_PATH}" in nginx_template
     assert "proxy_pass $bot_upstream" in nginx_template

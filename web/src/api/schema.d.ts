@@ -264,6 +264,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/agent/recognize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Заполнить поля документа с фото или скана */
+        post: operations["agent_recognize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/agent/voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Заполнить поля документа голосовым */
+        post: operations["agent_voice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}/confirm": {
         parameters: {
             query?: never;
@@ -394,6 +428,23 @@ export interface paths {
         get: operations["get_me"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/requisites/recognize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Реквизиты организации с фото для карточки контрагента или своей компании */
+        post: operations["recognize_requisites"];
         delete?: never;
         options?: never;
         head?: never;
@@ -711,6 +762,11 @@ export interface components {
              * @default true
              */
             confirmed: boolean;
+            /**
+             * Fragment
+             * @description Строка с фото или скана, откуда прочитано значение
+             */
+            fragment?: string | null;
             /** @default manual */
             source: components["schemas"]["ValueSource"];
             /** Value */
@@ -769,6 +825,26 @@ export interface components {
              * @constant
              */
             ok: true;
+        };
+        /** RecognizedRequisitesSchema */
+        RecognizedRequisitesSchema: {
+            /**
+             * Errors
+             * @description Прочитанные значения, не прошедшие проверку реквизитов
+             */
+            errors: components["schemas"]["FieldErrorSchema"][];
+            /**
+             * Kind
+             * @description Что во вложении: «карточка предприятия», «счёт на оплату»
+             */
+            kind: string;
+            /**
+             * Values
+             * @description Реквизит → значение с фрагментом; ничего не сохранено
+             */
+            values: {
+                [key: string]: components["schemas"]["FieldValueSchema"];
+            };
         };
         /** RenderRequest */
         RenderRequest: {
@@ -905,6 +981,30 @@ export interface components {
          * @enum {string}
          */
         ValueSource: "manual" | "profile" | "counterparty" | "ocr" | "agent";
+        /** VoiceFillResponse */
+        VoiceFillResponse: {
+            document: components["schemas"]["DocumentSchema"];
+            /**
+             * Filled
+             * @description Поля, которые помощник заполнил
+             */
+            filled: string[];
+            /**
+             * Rejected
+             * @description Предложенные значения, не прошедшие проверку
+             */
+            rejected: components["schemas"]["FieldErrorSchema"][];
+            /**
+             * Reply
+             * @description Ответ помощника для показа в чате
+             */
+            reply: string;
+            /**
+             * Transcript
+             * @description Что помощник расслышал в голосовом
+             */
+            transcript: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -1838,6 +1938,201 @@ export interface operations {
             };
         };
     };
+    agent_recognize: {
+        parameters: {
+            query?: {
+                /** @description Слова пользователя к файлу, например «это реквизиты покупателя» */
+                hint?: string;
+            };
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Фото (JPG, PNG) или скан (PDF, DOCX) */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+                "application/pdf": string;
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                "image/bmp": string;
+                "image/jpeg": string;
+                "image/png": string;
+                "image/tiff": string;
+                "image/webp": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentFillResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    agent_voice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Голосовое: OGG, MP3, M4A, WEBM, WAV */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+                "audio/mp4": string;
+                "audio/mpeg": string;
+                "audio/ogg": string;
+                "audio/wav": string;
+                "audio/webm": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceFillResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     confirm_document_fields: {
         parameters: {
             query?: never;
@@ -2235,6 +2530,95 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    recognize_requisites: {
+        parameters: {
+            query?: {
+                /** @description Слова пользователя к файлу, например «это реквизиты покупателя» */
+                hint?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Фото или скан карточки предприятия, счёта */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+                "application/pdf": string;
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                "image/bmp": string;
+                "image/jpeg": string;
+                "image/png": string;
+                "image/tiff": string;
+                "image/webp": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecognizedRequisitesSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

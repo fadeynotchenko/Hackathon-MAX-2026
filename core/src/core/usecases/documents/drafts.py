@@ -70,6 +70,7 @@ def dump_values(values: Mapping[str, FieldValue]) -> dict[str, dict[str, object]
             "source": value.source.value,
             "confidence": value.confidence,
             "confirmed": value.confirmed,
+            "fragment": value.fragment,
         }
         for key, value in values.items()
     }
@@ -79,11 +80,13 @@ def load_values(raw: Mapping[str, dict[str, object]]) -> dict[str, FieldValue]:
     out: dict[str, FieldValue] = {}
     for key, item in raw.items():
         confidence = item.get("confidence")
+        fragment = item.get("fragment")
         out[key] = FieldValue(
             value=str(item.get("value", "")),
             source=ValueSource(str(item.get("source", ValueSource.MANUAL))),
             confidence=float(confidence) if confidence is not None else None,
             confirmed=bool(item.get("confirmed", True)),
+            fragment=str(fragment) if fragment else None,
         )
     return out
 

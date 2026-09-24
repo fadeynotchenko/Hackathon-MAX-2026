@@ -9,3 +9,11 @@ class FileRenderError(RuntimeError):
 
 class PdfUnavailableError(FileRenderError):
     """LibreOffice не установлен или не отозвался: PDF временно недоступен."""
+
+
+class InboundFileError(RuntimeError):
+    """Вложение, присланное боту, не скачалось: ссылка протухла, хранилище не ответило."""
+
+
+class InboundFileTooLargeError(InboundFileError):
+    """Вложение больше лимита на распознавание: дальше качать бессмысленно."""

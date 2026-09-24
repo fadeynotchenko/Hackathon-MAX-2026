@@ -633,6 +633,19 @@
             "title": "Confirmed",
             "type": "boolean"
           },
+          "fragment": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Строка с фото или скана, откуда прочитано значение",
+            "title": "Fragment"
+          },
           "source": {
             "$ref": "#/components/schemas/ValueSource",
             "default": "manual"
@@ -763,6 +776,38 @@
           }
         },
         "title": "OkResponse",
+        "type": "object"
+      },
+      "RecognizedRequisitesSchema": {
+        "properties": {
+          "errors": {
+            "description": "Прочитанные значения, не прошедшие проверку реквизитов",
+            "items": {
+              "$ref": "#/components/schemas/FieldErrorSchema"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "kind": {
+            "description": "Что во вложении: «карточка предприятия», «счёт на оплату»",
+            "title": "Kind",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FieldValueSchema"
+            },
+            "description": "Реквизит → значение с фрагментом; ничего не сохранено",
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind",
+          "values",
+          "errors"
+        ],
+        "title": "RecognizedRequisitesSchema",
         "type": "object"
       },
       "RenderRequest": {
@@ -1093,6 +1138,48 @@
         ],
         "title": "ValueSource",
         "type": "string"
+      },
+      "VoiceFillResponse": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentSchema"
+          },
+          "filled": {
+            "description": "Поля, которые помощник заполнил",
+            "items": {
+              "type": "string"
+            },
+            "title": "Filled",
+            "type": "array"
+          },
+          "rejected": {
+            "description": "Предложенные значения, не прошедшие проверку",
+            "items": {
+              "$ref": "#/components/schemas/FieldErrorSchema"
+            },
+            "title": "Rejected",
+            "type": "array"
+          },
+          "reply": {
+            "description": "Ответ помощника для показа в чате",
+            "title": "Reply",
+            "type": "string"
+          },
+          "transcript": {
+            "description": "Что помощник расслышал в голосовом",
+            "title": "Transcript",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reply",
+          "filled",
+          "rejected",
+          "document",
+          "transcript"
+        ],
+        "title": "VoiceFillResponse",
+        "type": "object"
       }
     }
   },
@@ -2281,6 +2368,319 @@
         ]
       }
     },
+    "/api/v1/documents/{document_id}/agent/recognize": {
+      "post": {
+        "operationId": "agent_recognize",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Слова пользователя к файлу, например «это реквизиты покупателя»",
+            "in": "query",
+            "name": "hint",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Слова пользователя к файлу, например «это реквизиты покупателя»",
+              "maxLength": 500,
+              "title": "Hint",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/pdf": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/bmp": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/tiff": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "Фото (JPG, PNG) или скан (PDF, DOCX)",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentFillResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Заполнить поля документа с фото или скана",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/agent/voice": {
+      "post": {
+        "operationId": "agent_voice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "audio/mp4": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "audio/mpeg": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "audio/ogg": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "audio/wav": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "audio/webm": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "Голосовое: OGG, MP3, M4A, WEBM, WAV",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceFillResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Заполнить поля документа голосовым",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/v1/documents/{document_id}/confirm": {
       "post": {
         "operationId": "confirm_document_fields",
@@ -2806,6 +3206,156 @@
         "summary": "Профиль текущего пользователя",
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/api/v1/requisites/recognize": {
+      "post": {
+        "operationId": "recognize_requisites",
+        "parameters": [
+          {
+            "description": "Слова пользователя к файлу, например «это реквизиты покупателя»",
+            "in": "query",
+            "name": "hint",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Слова пользователя к файлу, например «это реквизиты покупателя»",
+              "maxLength": 500,
+              "title": "Hint",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/pdf": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/bmp": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/tiff": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "Фото или скан карточки предприятия, счёта",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecognizedRequisitesSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Реквизиты организации с фото для карточки контрагента или своей компании",
+        "tags": [
+          "agent"
         ]
       }
     },

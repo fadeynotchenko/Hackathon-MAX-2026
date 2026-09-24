@@ -14,13 +14,14 @@ from core.events import BOT_USER_STARTED, BotUserStarted, EventBus, consume_stre
 from core.files import FilesConfig
 
 
-def _handlers(redis, *, llm=None, files: FilesConfig | None = None) -> dict:
+def _handlers(redis, *, llm=None, files: FilesConfig | None = None, fetch=None) -> dict:
     return build_handlers(
         WorkerDeps(
             redis=redis,
             bus=EventBus(redis, stream_to_bot="test:to_bot", source="api-test", maxlen=100),
             files=files or FilesConfig(Path("unused"), "soffice", 5),
             llm=llm,
+            fetch=fetch,
         )
     )
 

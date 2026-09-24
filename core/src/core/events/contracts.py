@@ -25,6 +25,7 @@ DOCUMENT_READY = "document.ready"
 BOT_USER_STARTED = "bot.user_started"
 BOT_MESSAGE = "bot.message"
 BOT_CALLBACK = "bot.callback"
+BOT_ATTACHMENT = "bot.attachment"
 
 
 class EventPayload(BaseModel):
@@ -97,6 +98,24 @@ class BotCallback(EventPayload):
     payload: str = Field(min_length=1, max_length=128)
 
 
+class BotAttachment(EventPayload):
+    """Бот → ядро: пользователь прислал фото, файл или голосовое.
+
+    Байты в событие не кладутся, как и в ``document.ready``: ссылку на файл
+    даёт MAX, ядро скачивает его само. ``text`` — подпись к вложению."""
+
+    max_user_id: int = Field(gt=0)
+    chat_id: int
+    kind: Literal["image", "file", "audio"]
+    url: str = Field(min_length=9, max_length=2048, pattern=r"^https://")
+    filename: str | None = Field(default=None, max_length=255)
+    size: int | None = Field(default=None, ge=0)
+    text: str | None = Field(default=None, max_length=4000)
+    first_name: str = ""
+    last_name: str | None = None
+    username: str | None = None
+
+
 # Реестр: имя события → модель payload. Используется экспортом схем и тестами.
 EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     NOTIFY_USER: NotifyUser,
@@ -104,4 +123,5 @@ EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     BOT_USER_STARTED: BotUserStarted,
     BOT_MESSAGE: BotMessage,
     BOT_CALLBACK: BotCallback,
+    BOT_ATTACHMENT: BotAttachment,
 }

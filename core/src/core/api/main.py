@@ -191,6 +191,7 @@ def create_app(
         templates.router,
         documents.router,
         agent.router,
+        agent.requisites_router,
         counterparties.router,
     ):
         app.include_router(router, prefix=API_V1_PREFIX)

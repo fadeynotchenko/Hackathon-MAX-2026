@@ -123,3 +123,135 @@ async def test_send_uses_text_approved_by_user(
     assert DocumentReady.model_validate_json(fields["payload"]).text == (
         "Добрый день! Направляем предложение."
     )
+
+
+PHOTO = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+VOICE = b"OggS\x00\x02" + b"\x00" * 64
+
+
+async def test_photo_is_recognized_into_document(
+    app, client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    await _seed(session)
+    headers = await _auth(client, make_init_data)
+    document = await _invoice(client, headers)
+    llm = FakeLLM(
+        json_reply={
+            "kind": "карточка предприятия",
+            "values": [
+                {
+                    "key": "client_inn",
+                    "value": "7707083893",
+                    "fragment": "ИНН 7707083893",
+                    "confidence": 0.95,
+                }
+            ],
+        }
+    )
+    app.state.api = replace(app.state.api, llm=llm)
+
+    response = await client.post(
+        f"/api/v1/documents/{document['id']}/agent/recognize?hint=это покупатель",
+        headers=headers | {"Content-Type": "image/jpeg"},
+        content=PHOTO,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["filled"] == ["client_inn"]
+    value = body["document"]["values"]["client_inn"]
+    assert value["source"] == "ocr" and value["confirmed"] is False
+    assert value["fragment"] == "ИНН 7707083893" and value["confidence"] == 0.95
+    assert body["reply"].startswith("Во вложении — карточка предприятия.")
+    assert llm.calls[0][1][1].content == "это покупатель"
+
+
+async def test_upload_limits_and_formats_are_enforced(
+    app, client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    await _seed(session)
+    headers = await _auth(client, make_init_data)
+    document = await _invoice(client, headers)
+    llm = FakeLLM()
+    app.state.api = replace(
+        app.state.api,
+        llm=llm,
+        files_config=replace(app.state.api.files_config, media_max_bytes=100),
+    )
+    url = f"/api/v1/documents/{document['id']}/agent/recognize"
+
+    too_large = await client.post(url, headers=headers, content=PHOTO + b"\x00" * 200)
+    gif = await client.post(url, headers=headers, content=b"GIF89a\x01\x00\x01\x00")
+    empty = await client.post(url, headers=headers, content=b"")
+
+    assert (too_large.status_code, too_large.json()["code"]) == (413, "media.too_large")
+    assert (gif.status_code, gif.json()["code"]) == (415, "media.unsupported")
+    assert (empty.status_code, empty.json()["code"]) == (422, "media.empty")
+    assert llm.calls == [], "до модели доходит только годный файл"
+
+
+async def test_recognition_needs_auth_and_agent(
+    client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    anonymous = await client.post("/api/v1/requisites/recognize", content=PHOTO)
+    assert anonymous.status_code == 401
+    headers = await _auth(client, make_init_data)
+    disabled = await client.post("/api/v1/requisites/recognize", headers=headers, content=PHOTO)
+    assert (disabled.status_code, disabled.json()["code"]) == (503, "agent.unavailable")
+
+
+async def test_requisites_are_recognized_for_the_card_form(
+    app, client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    headers = await _auth(client, make_init_data)
+    app.state.api = replace(
+        app.state.api,
+        llm=FakeLLM(
+            json_reply={
+                "kind": "карточка предприятия",
+                "values": [
+                    {"key": "name", "value": "ООО «Ромашка»", "fragment": "", "confidence": 1},
+                    {"key": "kpp", "value": "12345", "fragment": "КПП 12345", "confidence": 0.4},
+                ],
+            }
+        ),
+    )
+
+    response = await client.post(
+        "/api/v1/requisites/recognize",
+        headers=headers | {"Content-Type": "image/jpeg"},
+        content=PHOTO,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["kind"] == "карточка предприятия"
+    assert body["values"]["name"]["value"] == "ООО «Ромашка»"
+    assert body["values"]["name"]["fragment"] is None
+    assert [e["code"] for e in body["errors"]] == ["field.kpp_invalid"]
+    counterparties = (await client.get("/api/v1/counterparties", headers=headers)).json()
+    assert counterparties == [], "распознавание карточку не заводит"
+
+
+async def test_voice_fills_document(
+    app, client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    await _seed(session)
+    headers = await _auth(client, make_init_data)
+    document = await _invoice(client, headers)
+    app.state.api = replace(
+        app.state.api,
+        llm=FakeLLM(json_replies=[{"text": "Сумма 50 000"}, {"total": "50 000"}]),
+    )
+
+    response = await client.post(
+        f"/api/v1/documents/{document['id']}/agent/voice",
+        headers=headers | {"Content-Type": "audio/ogg"},
+        content=VOICE,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["transcript"] == "Сумма 50 000"
+    assert body["filled"] == ["total"]
+    assert body["document"]["values"]["total"]["value"] == "50000.00"

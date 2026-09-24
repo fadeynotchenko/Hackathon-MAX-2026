@@ -42,6 +42,11 @@ class FieldValueSchema(BaseModel):
     source: ValueSource = ValueSource.MANUAL
     confidence: float | None = Field(default=None, ge=0, le=1)
     confirmed: bool = True
+    fragment: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Строка с фото или скана, откуда прочитано значение",
+    )
 
 
 class FieldErrorSchema(BaseModel):
@@ -145,6 +150,22 @@ class AgentFillResponse(BaseModel):
         description="Предложенные значения, не прошедшие проверку"
     )
     document: DocumentSchema
+
+
+class VoiceFillResponse(AgentFillResponse):
+    transcript: str = Field(description="Что помощник расслышал в голосовом")
+
+
+class RecognizedRequisitesSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str = Field(description="Что во вложении: «карточка предприятия», «счёт на оплату»")
+    values: dict[str, FieldValueSchema] = Field(
+        description="Реквизит → значение с фрагментом; ничего не сохранено"
+    )
+    errors: list[FieldErrorSchema] = Field(
+        description="Прочитанные значения, не прошедшие проверку реквизитов"
+    )
 
 
 class AgentAskRequest(BaseModel):

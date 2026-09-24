@@ -66,6 +66,9 @@ class FieldValue:
     source: ValueSource = ValueSource.MANUAL
     confidence: float | None = None
     confirmed: bool = True
+    # Откуда прочитано: строка с фото или скана. Показывается рядом со значением,
+    # чтобы человек сверял его с оригиналом, а не верил распознаванию на слово.
+    fragment: str | None = None
 
     @property
     def needs_confirmation(self) -> bool:

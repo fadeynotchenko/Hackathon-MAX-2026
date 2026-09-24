@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.documents import FieldError, FieldValue, ValueSource
 from core.domain.exceptions import AppError
-from core.llm import ChatMessage, LLMClient, LLMError, LLMUnavailableError
+from core.llm import ChatMessage, LLMClient, LLMError, LLMInputError, LLMUnavailableError
 from core.usecases.agent.prompts import (
     ASK_INSTRUCTIONS,
     COVER_INSTRUCTIONS,
@@ -38,7 +38,7 @@ class AgentFillResult:
     reply: str
 
 
-def _require(llm: LLMClient | None) -> LLMClient:
+def require_llm(llm: LLMClient | None) -> LLMClient:
     if llm is None:
         raise AppError(
             "Помощник сейчас выключен, заполните поля вручную",
@@ -48,7 +48,14 @@ def _require(llm: LLMClient | None) -> LLMClient:
     return llm
 
 
-def _map_llm_error(exc: LLMError) -> AppError:
+def map_llm_error(exc: LLMError) -> AppError:
+    if isinstance(exc, LLMInputError):
+        return AppError(
+            "Файл не удалось прочитать: пришлите фото JPG или PNG, PDF или DOCX",
+            code="media.rejected",
+            status_code=415,
+            log_message=str(exc),
+        )
     if isinstance(exc, LLMUnavailableError):
         return AppError(
             "Помощник не отвечает, попробуйте позже или заполните поля вручную",
@@ -64,15 +71,26 @@ def _map_llm_error(exc: LLMError) -> AppError:
     )
 
 
-def _compose_fill_reply(
-    document: DocumentView, filled: tuple[str, ...], rejected: tuple[FieldError, ...]
+def compose_fill_reply(
+    document: DocumentView,
+    filled: tuple[str, ...],
+    rejected: tuple[FieldError, ...],
+    *,
+    kept: tuple[str, ...] = (),
+    source: str = "В сообщении",
 ) -> str:
     labels = {spec.key: spec.label for spec in document.template.fields}
     parts: list[str] = []
     if filled:
         parts.append("Заполнил: " + ", ".join(labels[key] for key in filled) + ".")
     else:
-        parts.append("В сообщении не нашёл значений для полей документа.")
+        parts.append(f"{source} не нашёл значений для полей документа.")
+    if kept:
+        parts.append(
+            "Оставил как было, хотя во вложении другое: "
+            + ", ".join(labels[key] for key in kept)
+            + "."
+        )
     if rejected:
         parts.append("Не принял: " + "; ".join(error.message for error in rejected) + ".")
     if document.missing:
@@ -90,7 +108,7 @@ async def fill_from_message(
     message: str,
     llm: LLMClient | None,
 ) -> AgentFillResult:
-    model = _require(llm)
+    model = require_llm(llm)
     document = await get_document(session, user_id=user_id, document_id=document_id)
     fields = document.template.fields
     prompt = (
@@ -103,7 +121,7 @@ async def fill_from_message(
             schema=fields_schema(fields),
         )
     except LLMError as exc:
-        raise _map_llm_error(exc) from exc
+        raise map_llm_error(exc) from exc
 
     known = {spec.key for spec in fields}
     proposals = {
@@ -118,7 +136,7 @@ async def fill_from_message(
         document=updated,
         filled=filled,
         rejected=rejected,
-        reply=_compose_fill_reply(updated, filled, rejected),
+        reply=compose_fill_reply(updated, filled, rejected),
     )
 
 
@@ -130,7 +148,7 @@ async def answer_question(
     question: str,
     llm: LLMClient | None,
 ) -> str:
-    model = _require(llm)
+    model = require_llm(llm)
     document = await get_document(session, user_id=user_id, document_id=document_id)
     try:
         answer = await model.complete(
@@ -141,14 +159,14 @@ async def answer_question(
             max_tokens=MAX_ANSWER_TOKENS,
         )
     except LLMError as exc:
-        raise _map_llm_error(exc) from exc
+        raise map_llm_error(exc) from exc
     return answer.strip()
 
 
 async def draft_cover_letter(
     session: AsyncSession, *, user_id: int, document_id: int, llm: LLMClient | None
 ) -> str:
-    model = _require(llm)
+    model = require_llm(llm)
     document = await get_document(session, user_id=user_id, document_id=document_id)
     try:
         text = await model.complete(
@@ -159,5 +177,5 @@ async def draft_cover_letter(
             max_tokens=MAX_ANSWER_TOKENS,
         )
     except LLMError as exc:
-        raise _map_llm_error(exc) from exc
+        raise map_llm_error(exc) from exc
     return text.strip()
