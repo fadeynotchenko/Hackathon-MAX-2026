@@ -145,3 +145,49 @@ def test_storage_refuses_to_leave_its_root(tmp_path: Path) -> None:
     assert not storage.exists("../../etc/passwd")
     with pytest.raises(ValueError, match="выходит за пределы"):
         storage.read("../../etc/passwd")
+
+
+async def test_send_rebuilds_a_file_missing_on_disk(
+    session: AsyncSession, redis, files_config: FilesConfig
+) -> None:
+    """Запись о файле без самого файла (база из бэкапа, файлы — нет): отправка
+    пересобирает его, а не отдаёт боту токен на 404."""
+    from core.db.repositories import DocumentFileRepository, DownloadTokenRepository
+    from core.events import EventBus
+    from core.usecases.documents import document_history, send_document_to_chat
+
+    user_id = await make_user(session, max_user_id=77)
+    document_id = await _ready_document(session, user_id)
+    await render_document(
+        session, user_id=user_id, document_id=document_id, fmt=DOCX, cfg=files_config
+    )
+    row = await DocumentFileRepository(session).get(document_id, DOCX)
+    assert row is not None
+    storage = DocumentStorage(files_config.documents_dir)
+    bus = EventBus(redis, stream_to_bot="test:to_bot", source="test", maxlen=100)
+    tokens = DownloadTokenRepository(redis)
+
+    async def send() -> None:
+        await send_document_to_chat(
+            session,
+            user_id=user_id,
+            max_user_id=77,
+            document_id=document_id,
+            fmt=DOCX,
+            cfg=files_config,
+            bus=bus,
+            tokens=tokens,
+        )
+
+    await send()
+    (files_config.documents_dir / row.path).unlink()
+    await send()
+
+    rendered = [
+        fact.kind
+        for fact in await document_history(session, user_id=user_id, document_id=document_id)
+        if fact.kind == "rendered"
+    ]
+    assert len(rendered) == 2, "свежий файл не пересобирается, пропавший — пересобирается"
+    row = await DocumentFileRepository(session).get(document_id, DOCX)
+    assert row is not None and storage.exists(row.path)

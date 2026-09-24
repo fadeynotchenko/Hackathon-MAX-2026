@@ -155,16 +155,22 @@ async def send_document_to_chat(
 ) -> tuple[DocumentFileView, str]:
     """Собрать файл при необходимости и поставить событие на доставку ботом.
 
-    Пересборка происходит, если файла нет или он устарел: иначе пользователь
-    получил бы в чат прошлую редакцию документа, выглядящую как свежая.
+    Пересборка происходит, если файл не собран, устарел или пропал с диска:
+    иначе пользователь получил бы в чат прошлую редакцию, выглядящую как свежая,
+    а бот — 404 на запись в базе без файла (например, после восстановления базы
+    из бэкапа, в который файлы не входят).
     """
     document = await get_document(session, user_id=user_id, document_id=document_id)
-    files = {
-        f.format: f
-        for f in await list_document_files(session, user_id=user_id, document_id=document_id)
-    }
-    file = files.get(fmt)
-    if file is None or file.stale:
+    current = source_hash(document)
+    row = await DocumentFileRepository(session).get(document_id, fmt)
+    fresh = (
+        row is not None
+        and row.source_sha256 == current
+        and DocumentStorage(cfg.documents_dir).exists(row.path)
+    )
+    if row is not None and fresh:
+        file = to_view(row, current_source=current)
+    else:
         file = await render_document(
             session, user_id=user_id, document_id=document_id, fmt=fmt, cfg=cfg
         )
