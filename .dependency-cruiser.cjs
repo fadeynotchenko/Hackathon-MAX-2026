@@ -70,7 +70,12 @@ module.exports = {
       comment: 'Прод-код не импортирует devDependencies — в образе их нет.',
       from: {
         path: '^(bot|web)/src',
-        pathNot: ['\\.test\\.(ts|tsx)$', '\\.d\\.ts$', '(^|/)test-setup\\.ts$'],
+        pathNot: [
+          '\\.test\\.(ts|tsx)$',
+          '\\.d\\.ts$',
+          '(^|/)test-setup\\.ts$',
+          '(^|/)test-utils\\.tsx?$',
+        ],
       },
       to: { dependencyTypes: ['npm-dev'], dependencyTypesNot: ['type-only'] },
     },
@@ -86,7 +91,13 @@ module.exports = {
       comment: 'Файл, который никто не импортирует, — либо мёртвый код, либо забытый entrypoint.',
       from: {
         orphan: true,
-        pathNot: ['\\.d\\.ts$', '\\.test\\.(ts|tsx)$', '(^|/)main\\.tsx?$', 'vite-env\\.d\\.ts$'],
+        pathNot: [
+          '\\.d\\.ts$',
+          '\\.test\\.(ts|tsx)$',
+          '(^|/)test-utils\\.tsx?$',
+          '(^|/)main\\.tsx?$',
+          'vite-env\\.d\\.ts$',
+        ],
       },
       to: {},
     },

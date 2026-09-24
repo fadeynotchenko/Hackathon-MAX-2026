@@ -1,20 +1,21 @@
+import '@maxhub/max-ui/dist/styles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 
 import { App } from '@/App';
 import { AuthProvider } from '@/auth/AuthProvider';
-import { watchTheme } from '@/max/webapp';
+import { Theme } from '@/components/Theme';
 import '@/styles/app.css';
-
-watchTheme();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
+    <Theme>
+      <BrowserRouter>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </BrowserRouter>
+    </Theme>
   </StrictMode>,
 );

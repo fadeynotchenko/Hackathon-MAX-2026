@@ -1,13 +1,18 @@
 // Сводка и отправка сообщения пользователю через бота. Доступна только админам:
-// сервер отвечает 403, а навигация не показывает ссылку остальным.
+// сервер отвечает 403, а профиль не показывает ссылку остальным.
+import { Button, CellHeader, CellList, CellSimple, Input, Textarea } from '@maxhub/max-ui';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { ApiError, type AdminStats } from '@/api/client';
-import { Screen } from '@/components/Screen';
+import { Banner } from '@/components/Banner';
+import { Page, Section } from '@/components/Page';
+import { Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
+import { useBack } from '@/lib/useBack';
 
 export function AdminPage() {
   const { api } = useAuth();
+  const back = useBack('/profile');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [maxUserId, setMaxUserId] = useState('');
@@ -54,47 +59,43 @@ export function AdminPage() {
   };
 
   return (
-    <Screen title="Администрирование">
-      <div className="card">
-        {error ? <p className="status status--error">{error}</p> : null}
-        {stats ? (
-          <>
-            <p>Пользователей: {stats.users_total}</p>
-            <p>Активны за сутки: {stats.users_active_24h}</p>
-          </>
-        ) : (
-          !error && <p className="hint">Загрузка…</p>
-        )}
-      </div>
-      <form className="card" onSubmit={(e) => void submit(e)}>
-        <label htmlFor="max-user-id">ID пользователя в MAX</label>
-        <input
-          id="max-user-id"
-          className="field"
-          inputMode="numeric"
-          pattern="[0-9]+"
-          value={maxUserId}
-          onChange={(e) => setMaxUserId(e.target.value)}
-          required
-        />
-        <label htmlFor="notify-text">Текст</label>
-        <textarea
-          id="notify-text"
-          className="field"
-          rows={3}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          required
-        />
-        <button className="button" type="submit" disabled={sending}>
-          Отправить через бота
-        </button>
-        {result ? (
-          <p className={result.ok ? 'status' : 'status status--error'} role="status">
-            {result.text}
-          </p>
-        ) : null}
-      </form>
-    </Screen>
+    <Page title="Администрирование" onBack={back}>
+      {error ? (
+        <div className="section">
+          <Banner tone="error" title={error} />
+        </div>
+      ) : null}
+      {!stats && !error ? <Loading /> : null}
+      {stats ? (
+        <CellList mode="island" filled header={<CellHeader>Сводка</CellHeader>}>
+          <CellSimple title="Пользователей" after={String(stats.users_total)} />
+          <CellSimple title="Активны за сутки" after={String(stats.users_active_24h)} />
+        </CellList>
+      ) : null}
+      <Section title="Сообщение через бота">
+        <form className="fields" onSubmit={(e) => void submit(e)}>
+          <Input
+            aria-label="ID пользователя в MAX"
+            hint="ID пользователя в MAX"
+            inputMode="numeric"
+            pattern="[0-9]+"
+            value={maxUserId}
+            onChange={(e) => setMaxUserId(e.target.value)}
+            required
+          />
+          <Textarea
+            aria-label="Текст сообщения"
+            rows={3}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            required
+          />
+          <Button type="submit" size="large" stretched loading={sending}>
+            Отправить через бота
+          </Button>
+          {result ? <Banner tone={result.ok ? 'success' : 'error'} title={result.text} /> : null}
+        </form>
+      </Section>
+    </Page>
   );
 }

@@ -63,6 +63,7 @@ async function main(): Promise<void> {
     handlers: coreEventHandlers(bot, consumerRedis, log, {
       coreApiUrl: config.CORE_INTERNAL_URL,
       publisher,
+      ...(config.MAX_MINI_APP_NAME ? { miniAppName: config.MAX_MINI_APP_NAME } : {}),
     }),
   });
   await consumer.start();

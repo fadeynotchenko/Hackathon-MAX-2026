@@ -79,7 +79,7 @@ export default tseslint.config(
   },
   {
     // В тестах заглушки часто объявляются async ради сигнатуры, без await внутри.
-    files: ['**/*.test.{ts,tsx}', '**/test-setup.ts'],
+    files: ['**/*.test.{ts,tsx}', '**/test-setup.ts', '**/test-utils.tsx'],
     rules: {
       'no-console': 'off',
       '@typescript-eslint/require-await': 'off',

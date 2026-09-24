@@ -25,6 +25,21 @@ const DELIVERED_TTL_SECONDS = 7 * 24 * 3600;
 // Файл документа небольшой (DOCX/PDF на страницу), но сеть может залипнуть.
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 
+// Кнопка под готовым файлом: карточка документа в мини-аппе — история
+// отправок, «на основе этого», повторная отправка.
+export function documentKeyboard(miniAppName: string, documentId: number) {
+  return Keyboard.inlineKeyboard([
+    [
+      {
+        type: 'open_app',
+        text: 'Открыть в приложении',
+        web_app: miniAppName,
+        payload: `doc_${documentId}`,
+      },
+    ],
+  ]);
+}
+
 // Кнопки из ядра — только callback: действие решает ядро, бот лишь возвращает payload.
 export function buttonsKeyboard(rows: InlineButton[][]) {
   return Keyboard.inlineKeyboard(
@@ -34,6 +49,9 @@ export function buttonsKeyboard(rows: InlineButton[][]) {
 
 export interface CoreEventDeps {
   coreApiUrl: string;
+  // Имя мини-аппа: у файла в чате появляется кнопка «Открыть в приложении»,
+  // которая ведёт прямо на карточку документа (start_param doc_<id>).
+  miniAppName?: string;
   // Куда сообщить ядру, чем кончилась доставка файла: без отчёта история и
   // метрики не отличат «отправлено» от «дошло».
   publisher?: Pick<EventPublisher, 'documentDelivery'>;
@@ -151,7 +169,10 @@ export function coreEventHandlers(
         await writeFile(path, buffer);
         const attachment = await bot.api.uploadFile({ source: path });
         await bot.api.sendMessageToUser(data.max_user_id, data.text, {
-          attachments: [attachment.toJson()],
+          attachments: [
+            attachment.toJson(),
+            ...(deps.miniAppName ? [documentKeyboard(deps.miniAppName, data.document_id)] : []),
+          ],
         });
       } catch (err) {
         // Токен уже сгорел на скачивании, повторять событие нечем: помечаем

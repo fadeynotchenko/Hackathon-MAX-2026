@@ -13,16 +13,6 @@ export interface MaxUser {
   photo_url?: string;
 }
 
-export interface MaxThemeParams {
-  bg_color?: string;
-  text_color?: string;
-  hint_color?: string;
-  link_color?: string;
-  button_color?: string;
-  button_text_color?: string;
-  secondary_bg_color?: string;
-}
-
 export interface MaxInitDataUnsafe {
   query_id?: string;
   auth_date?: number;
@@ -32,6 +22,17 @@ export interface MaxInitDataUnsafe {
   chat?: { id: number; type: string };
 }
 
+export type ColorScheme = 'light' | 'dark';
+export type Platform = 'ios' | 'android';
+
+// Системная кнопка «Назад» в шапке клиента MAX.
+export interface MaxBackButton {
+  show?: () => void;
+  hide?: () => void;
+  onClick?: (handler: () => void) => void;
+  offClick?: (handler: () => void) => void;
+}
+
 // Подмножество API моста, которым пользуется приложение. Методы объявлены
 // опциональными: разные версии клиента MAX отдают разный набор.
 export interface MaxWebApp {
@@ -39,12 +40,17 @@ export interface MaxWebApp {
   initDataUnsafe: MaxInitDataUnsafe;
   platform?: string;
   version?: string;
-  colorScheme?: 'light' | 'dark';
-  themeParams?: MaxThemeParams;
+  colorScheme?: ColorScheme;
   ready?: () => void;
   expand?: () => void;
-  HapticFeedback?: { impactOccurred: (style: 'light' | 'medium' | 'heavy') => void };
+  close?: () => void;
+  BackButton?: MaxBackButton;
+  HapticFeedback?: {
+    impactOccurred?: (style: 'light' | 'medium' | 'heavy') => void;
+    notificationOccurred?: (type: 'success' | 'warning' | 'error') => void;
+  };
   onEvent?: (event: string, handler: () => void) => void;
+  offEvent?: (event: string, handler: () => void) => void;
 }
 
 declare global {
@@ -68,40 +74,65 @@ export function isInsideMax(): boolean {
   return Boolean(getWebApp()?.initData);
 }
 
+// Параметр запуска из ссылки ?startapp= или кнопки бота open_app с payload.
+export function getStartParam(): string | null {
+  return getWebApp()?.initDataUnsafe.start_param || null;
+}
+
 export function markReady(): void {
   const bridge = getWebApp();
   bridge?.ready?.();
   bridge?.expand?.();
 }
 
+// Вернуться в чат: готовый файл бот уже прислал туда.
+export function closeApp(): boolean {
+  const close = getWebApp()?.close;
+  if (!close) return false;
+  close();
+  return true;
+}
+
 export function haptic(style: 'light' | 'medium' | 'heavy' = 'light'): void {
-  getWebApp()?.HapticFeedback?.impactOccurred(style);
+  getWebApp()?.HapticFeedback?.impactOccurred?.(style);
 }
 
-const THEME_VARS: Array<[keyof MaxThemeParams, string]> = [
-  ['bg_color', '--max-bg'],
-  ['text_color', '--max-text'],
-  ['hint_color', '--max-hint'],
-  ['link_color', '--max-link'],
-  ['button_color', '--max-button'],
-  ['button_text_color', '--max-button-text'],
-  ['secondary_bg_color', '--max-bg-secondary'],
-];
+export function hapticResult(type: 'success' | 'warning' | 'error'): void {
+  getWebApp()?.HapticFeedback?.notificationOccurred?.(type);
+}
 
-// Цвета темы клиента → CSS-переменные. Дефолты живут в styles/tokens.css,
-// поэтому вне MAX страница выглядит как светлая тема.
-export function applyTheme(root: HTMLElement = document.documentElement): void {
+// Тема клиента. Вне MAX — undefined: провайдер MAX UI возьмёт системную.
+export function getColorScheme(): ColorScheme | undefined {
+  return getWebApp()?.colorScheme;
+}
+
+// Платформа для компонентов MAX UI: они повторяют нативные iOS и Android.
+export function getPlatform(): Platform | undefined {
+  const platform = getWebApp()?.platform?.toLowerCase();
+  if (platform === 'ios') return 'ios';
+  if (platform === 'android') return 'android';
+  return undefined;
+}
+
+// Подписка на смену темы в клиенте (событие themeChanged моста); возвращает отписку.
+export function onThemeChange(handler: () => void): () => void {
   const bridge = getWebApp();
-  const params = bridge?.themeParams ?? {};
-  for (const [key, cssVar] of THEME_VARS) {
-    const value = params[key];
-    if (value) root.style.setProperty(cssVar, value);
-  }
-  root.dataset['colorScheme'] = bridge?.colorScheme ?? 'light';
+  bridge?.onEvent?.('themeChanged', handler);
+  return () => bridge?.offEvent?.('themeChanged', handler);
 }
 
-// Тема применяется при старте и при смене в клиенте (событие themeChanged моста).
-export function watchTheme(root: HTMLElement = document.documentElement): void {
-  applyTheme(root);
-  getWebApp()?.onEvent?.('themeChanged', () => applyTheme(root));
+// Системная «Назад»: показывается, пока есть обработчик; возвращает отписку.
+export function showBackButton(handler: () => void): () => void {
+  const button = getWebApp()?.BackButton;
+  if (!button) return () => undefined;
+  button.onClick?.(handler);
+  button.show?.();
+  return () => {
+    button.offClick?.(handler);
+    button.hide?.();
+  };
+}
+
+export function hasBackButton(): boolean {
+  return Boolean(getWebApp()?.BackButton?.show);
 }

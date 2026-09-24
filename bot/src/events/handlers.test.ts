@@ -66,6 +66,7 @@ function documentSetup(options: {
   uploadImpl?: () => Promise<{ toJson: () => object }>;
   sendImpl?: () => Promise<unknown>;
   markerSet?: string | null;
+  miniAppName?: string;
 }) {
   const uploadFile = vi
     .fn()
@@ -85,7 +86,11 @@ function documentSetup(options: {
     { api: { uploadFile, sendMessageToUser } } as never,
     redis as never,
     silentLogger(),
-    { coreApiUrl: 'http://api:8000', publisher: { documentDelivery } },
+    {
+      coreApiUrl: 'http://api:8000',
+      publisher: { documentDelivery },
+      ...(options.miniAppName ? { miniAppName: options.miniAppName } : {}),
+    },
   );
   const event = {
     id: 'evt-doc-1',
@@ -137,6 +142,31 @@ describe('document.ready handler', () => {
     expect(sendMessageToUser).toHaveBeenCalledWith(5, 'файл во вложении', {
       attachments: [{ type: 'file' }],
     });
+  });
+
+  it('adds a button that opens the document card in the mini app', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([0x50, 0x4b])));
+    const { handler, event, sendMessageToUser } = documentSetup({
+      fetchImpl: fetchMock as never,
+      miniAppName: 't409_hakaton_max_bot',
+    });
+
+    await handler(event);
+
+    const extra = sendMessageToUser.mock.calls[0]?.[2] as {
+      attachments: [unknown, { payload: { buttons: unknown[][] } }];
+    };
+    expect(extra.attachments[0]).toEqual({ type: 'file' });
+    expect(extra.attachments[1].payload.buttons).toEqual([
+      [
+        {
+          type: 'open_app',
+          text: 'Открыть в приложении',
+          web_app: 't409_hakaton_max_bot',
+          payload: 'doc_42',
+        },
+      ],
+    ]);
   });
 
   it('reports the delivery to core with the document.ready event id', async () => {

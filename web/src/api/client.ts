@@ -13,6 +13,23 @@ export type AdminStats = components['schemas']['AdminStatsResponse'];
 export type NotifyRequest = components['schemas']['NotifyRequest'];
 export type NotifyResponse = components['schemas']['NotifyResponse'];
 export type DevInitDataResponse = components['schemas']['DevInitDataResponse'];
+export type Template = components['schemas']['TemplateSchema'];
+export type FieldSpec = components['schemas']['FieldSpecSchema'];
+export type FieldType = components['schemas']['FieldType'];
+export type FieldValue = components['schemas']['FieldValueSchema'];
+export type FieldError = components['schemas']['FieldErrorSchema'];
+export type ValueSource = components['schemas']['ValueSource'];
+export type DocumentView = components['schemas']['DocumentSchema'];
+export type DocumentSummary = components['schemas']['DocumentSummarySchema'];
+export type DocumentFact = components['schemas']['DocumentFactSchema'];
+export type DocumentFile = components['schemas']['DocumentFileSchema'];
+export type CompanyProfile = components['schemas']['CompanyProfileSchema'];
+export type Counterparty = components['schemas']['CounterpartySchema'];
+export type CounterpartyRequest = components['schemas']['CounterpartyRequest'];
+export type RecognizedRequisites = components['schemas']['RecognizedRequisitesSchema'];
+export type AgentFillResponse = components['schemas']['AgentFillResponse'];
+export type SendDocumentResponse = components['schemas']['SendDocumentResponse'];
+export type FileFormat = 'pdf' | 'docx';
 
 export class ApiError extends Error {
   constructor(
@@ -35,6 +52,8 @@ export interface ApiClientOptions {
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
+  // Файл уходит сырым телом с его Content-Type (фото, скан, голосовое), а не JSON.
+  file?: Blob;
   auth?: boolean;
   retryOn401?: boolean;
 }
@@ -61,16 +80,18 @@ export class ApiClient {
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    const { method = 'GET', body, auth = true, retryOn401 = true } = options;
+    const { method = 'GET', body, file, auth = true, retryOn401 = true } = options;
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (file !== undefined) headers['Content-Type'] = file.type || 'application/octet-stream';
     if (auth && this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
 
+    const payload = file ?? (body !== undefined ? JSON.stringify(body) : undefined);
     const response = await this.fetchFn(`${this.baseUrl}${path}`, {
       method,
       headers,
       credentials: 'include',
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(payload !== undefined ? { body: payload } : {}),
     });
 
     if (response.status === 401 && auth && retryOn401 && (await this.refresh())) {
@@ -167,5 +188,124 @@ export class ApiClient {
 
   adminNotify(body: NotifyRequest): Promise<NotifyResponse> {
     return this.request<NotifyResponse>('/api/v1/admin/notify', { method: 'POST', body });
+  }
+
+  // Шаблоны и документы.
+  templates(): Promise<Template[]> {
+    return this.request<Template[]>('/api/v1/templates');
+  }
+
+  template(templateId: number): Promise<Template> {
+    return this.request<Template>(`/api/v1/templates/${templateId}`);
+  }
+
+  documents(): Promise<DocumentSummary[]> {
+    return this.request<DocumentSummary[]>('/api/v1/documents');
+  }
+
+  document(documentId: number): Promise<DocumentView> {
+    return this.request<DocumentView>(`/api/v1/documents/${documentId}`);
+  }
+
+  createDocument(body: {
+    template_id: number;
+    counterparty_id?: number | null;
+    title?: string;
+  }): Promise<DocumentView> {
+    return this.request<DocumentView>('/api/v1/documents', { method: 'POST', body });
+  }
+
+  // Только то, что человек поменял: значение, прошедшее через форму без правки,
+  // сохранило бы источник «вручную» вместо «из профиля» или «из карточки».
+  setFields(documentId: number, values: Record<string, string>): Promise<DocumentView> {
+    const body = {
+      values: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }])),
+    };
+    return this.request<DocumentView>(`/api/v1/documents/${documentId}/fields`, {
+      method: 'PATCH',
+      body,
+    });
+  }
+
+  confirmFields(documentId: number, keys: string[] | null = null): Promise<DocumentView> {
+    return this.request<DocumentView>(`/api/v1/documents/${documentId}/confirm`, {
+      method: 'POST',
+      body: { keys },
+    });
+  }
+
+  recognizeIntoDocument(documentId: number, file: Blob, hint?: string): Promise<AgentFillResponse> {
+    const query = hint ? `?hint=${encodeURIComponent(hint)}` : '';
+    return this.request<AgentFillResponse>(
+      `/api/v1/documents/${documentId}/agent/recognize${query}`,
+      { method: 'POST', file },
+    );
+  }
+
+  coverLetter(documentId: number): Promise<{ text: string }> {
+    return this.request<{ text: string }>(`/api/v1/documents/${documentId}/agent/cover-letter`, {
+      method: 'POST',
+    });
+  }
+
+  sendDocument(
+    documentId: number,
+    format: FileFormat,
+    text: string | null,
+  ): Promise<SendDocumentResponse> {
+    return this.request<SendDocumentResponse>(`/api/v1/documents/${documentId}/send`, {
+      method: 'POST',
+      body: { format, text },
+    });
+  }
+
+  copyDocument(documentId: number): Promise<DocumentView> {
+    return this.request<DocumentView>(`/api/v1/documents/${documentId}/copy`, {
+      method: 'POST',
+      body: { title: null },
+    });
+  }
+
+  deleteDocument(documentId: number): Promise<void> {
+    return this.request<void>(`/api/v1/documents/${documentId}`, { method: 'DELETE' });
+  }
+
+  documentHistory(documentId: number): Promise<DocumentFact[]> {
+    return this.request<DocumentFact[]>(`/api/v1/documents/${documentId}/history`);
+  }
+
+  // Реквизиты сторон.
+  company(): Promise<CompanyProfile> {
+    return this.request<CompanyProfile>('/api/v1/company');
+  }
+
+  saveCompany(body: CompanyProfile): Promise<CompanyProfile> {
+    return this.request<CompanyProfile>('/api/v1/company', { method: 'PUT', body });
+  }
+
+  counterparties(): Promise<Counterparty[]> {
+    return this.request<Counterparty[]>('/api/v1/counterparties');
+  }
+
+  createCounterparty(body: CounterpartyRequest): Promise<Counterparty> {
+    return this.request<Counterparty>('/api/v1/counterparties', { method: 'POST', body });
+  }
+
+  updateCounterparty(counterpartyId: number, body: CounterpartyRequest): Promise<Counterparty> {
+    return this.request<Counterparty>(`/api/v1/counterparties/${counterpartyId}`, {
+      method: 'PUT',
+      body,
+    });
+  }
+
+  deleteCounterparty(counterpartyId: number): Promise<void> {
+    return this.request<void>(`/api/v1/counterparties/${counterpartyId}`, { method: 'DELETE' });
+  }
+
+  recognizeRequisites(file: Blob): Promise<RecognizedRequisites> {
+    return this.request<RecognizedRequisites>('/api/v1/requisites/recognize', {
+      method: 'POST',
+      file,
+    });
   }
 }

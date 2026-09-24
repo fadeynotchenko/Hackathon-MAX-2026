@@ -23,7 +23,10 @@ SDK `@maxhub/max-bot-api`. Здесь только то, на что опира�
   `mainKeyboard` без `MAX_MINI_APP_NAME` кнопку не рисует. У нашего бота имя
   мини-аппа совпадает с username — `t409_hakaton_max_bot`), `request_contact`,
   `request_geo_location`, `message`, `clipboard`. Сборка — `Keyboard.inlineKeyboard`
-  в `bot/src/keyboards/main.ts`.
+  в `bot/src/keyboards/main.ts`. У `open_app` есть `payload`: он приходит в
+  `initData.start_param`, и мини-апп открывается сразу на нужном экране
+  (`create`, `archive`, `doc_<id>` — `web/src/lib/startRoute.ts`); кнопка под
+  готовым файлом ведёт на карточку документа.
 
 ## TLS: корень Минцифры
 
@@ -48,9 +51,14 @@ Root CA». Этого корня нет в хранилищах Node, Debian и 
   `hash == hex(HMAC_SHA256(secret_key, data_check_string))`; `auth_date` не старше
   `INIT_DATA_MAX_AGE_SECONDS` (по умолчанию час: утёкшая строка initData даёт вход
   всё это время, а клиент MAX выдаёт свежую при каждом запуске). Тот же токен, что у бота.
-- Тема: `WebApp.themeParams` и `colorScheme` → CSS-переменные `--max-*`
-  (`applyTheme`). Кнопки и отклик: `BackButton`, `HapticFeedback`; `ready()` и
-  `expand()` вызываются после успешного входа.
+- Интерфейс — дизайн-система MAX, пакет `@maxhub/max-ui` (документация
+  https://dev.max.ru/ui): провайдер `<MaxUI>` получает `colorScheme` и `platform`
+  из моста (`WebApp.colorScheme`, `WebApp.platform`, событие `themeChanged`), вне
+  MAX берёт системную тему. Стили приложения используют только токены MAX UI
+  (`--background-*`, `--text-*`, `--spacing-*` и т. п.), своих цветов нет.
+- Кнопки и отклик: системная `BackButton` (вне MAX та же кнопка рисуется в шапке),
+  `HapticFeedback`, `close()` — «Вернуться в чат» после отправки файла; `ready()` и
+  `expand()` вызываются при старте.
 - Веб-клиент MAX открывает мини-апп во фрейме: `frame-ancestors` в CSP разрешает
   `max.ru` и поддомены, `X-Frame-Options` не ставится.
 - Ссылки: бот `https://max.ru/<username>`, запуск мини-аппа с параметром

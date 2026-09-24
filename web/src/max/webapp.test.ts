@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { applyTheme, getInitData, isInsideMax, markReady, watchTheme } from './webapp';
+import {
+  getColorScheme,
+  getInitData,
+  getPlatform,
+  getStartParam,
+  isInsideMax,
+  markReady,
+  onThemeChange,
+  showBackButton,
+} from './webapp';
 
 afterEach(() => {
   delete window.WebApp;
@@ -11,6 +20,8 @@ describe('webapp bridge', () => {
     vi.stubEnv('VITE_DEV_INIT_DATA', '');
     expect(isInsideMax()).toBe(false);
     expect(getInitData()).toBe('');
+    expect(getStartParam()).toBeNull();
+    expect(getColorScheme()).toBeUndefined();
     vi.unstubAllEnvs();
   });
 
@@ -19,7 +30,7 @@ describe('webapp bridge', () => {
     let expanded = 0;
     window.WebApp = {
       initData: 'auth_date=1&hash=x',
-      initDataUnsafe: {},
+      initDataUnsafe: { start_param: 'archive' },
       ready: () => {
         ready += 1;
       },
@@ -29,41 +40,61 @@ describe('webapp bridge', () => {
     };
     expect(isInsideMax()).toBe(true);
     expect(getInitData()).toBe('auth_date=1&hash=x');
+    expect(getStartParam()).toBe('archive');
     markReady();
     expect(ready).toBe(1);
     expect(expanded).toBe(1);
   });
 
-  it('re-applies the theme when the bridge reports a change', () => {
-    const handlers: Record<string, () => void> = {};
-    window.WebApp = {
-      initData: '',
-      initDataUnsafe: {},
-      colorScheme: 'light',
-      themeParams: { bg_color: '#ffffff' },
-      onEvent: (event, handler) => {
-        handlers[event] = handler;
-      },
-    };
-    const root = document.createElement('div');
-    watchTheme(root);
-    expect(root.dataset['colorScheme']).toBe('light');
-    window.WebApp.colorScheme = 'dark';
-    handlers['themeChanged']?.();
-    expect(root.dataset['colorScheme']).toBe('dark');
+  it('reads platform and color scheme for MAX UI', () => {
+    window.WebApp = { initData: '', initDataUnsafe: {}, platform: 'iOS', colorScheme: 'dark' };
+    expect(getPlatform()).toBe('ios');
+    expect(getColorScheme()).toBe('dark');
+    window.WebApp.platform = 'web';
+    expect(getPlatform()).toBeUndefined();
   });
 
-  it('maps theme params to css variables', () => {
+  it('subscribes and unsubscribes theme changes', () => {
+    const handlers = new Map<string, () => void>();
     window.WebApp = {
       initData: '',
       initDataUnsafe: {},
-      colorScheme: 'dark',
-      themeParams: { bg_color: '#000000', text_color: '#ffffff' },
+      onEvent: (event, handler) => handlers.set(event, handler),
+      offEvent: (event) => handlers.delete(event),
     };
-    const root = document.createElement('div');
-    applyTheme(root);
-    expect(root.style.getPropertyValue('--max-bg')).toBe('#000000');
-    expect(root.style.getPropertyValue('--max-text')).toBe('#ffffff');
-    expect(root.dataset['colorScheme']).toBe('dark');
+    const handler = vi.fn();
+    const off = onThemeChange(handler);
+    handlers.get('themeChanged')?.();
+    expect(handler).toHaveBeenCalledTimes(1);
+    off();
+    expect(handlers.has('themeChanged')).toBe(false);
+  });
+
+  it('shows the native back button while a handler is attached', () => {
+    const show = vi.fn();
+    const hide = vi.fn();
+    let attached: (() => void) | null = null;
+    window.WebApp = {
+      initData: '',
+      initDataUnsafe: {},
+      BackButton: {
+        show,
+        hide,
+        onClick: (handler) => {
+          attached = handler;
+        },
+        offClick: () => {
+          attached = null;
+        },
+      },
+    };
+    const back = vi.fn();
+    const off = showBackButton(back);
+    expect(show).toHaveBeenCalled();
+    attached!();
+    expect(back).toHaveBeenCalled();
+    off();
+    expect(hide).toHaveBeenCalled();
+    expect(attached).toBeNull();
   });
 });
