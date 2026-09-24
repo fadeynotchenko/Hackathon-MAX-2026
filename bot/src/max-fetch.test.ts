@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { API_TIMEOUT_MS, POLLING_TIMEOUT_MS, createFetchWithTimeout, timeoutFor } from './max-fetch.js';
+import {
+  API_TIMEOUT_MS,
+  POLLING_TIMEOUT_MS,
+  createFetchWithTimeout,
+  timeoutFor,
+} from './max-fetch.js';
 
 describe('таймауты Bot API', () => {
   it('даёт long polling больше времени, чем обычному вызову', () => {

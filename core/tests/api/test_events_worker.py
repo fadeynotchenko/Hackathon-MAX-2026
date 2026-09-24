@@ -4,12 +4,25 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.api.events_worker import HANDLERS
+from core.api.events_worker import WorkerDeps, build_handlers
 from core.db.repositories import UserRepository
-from core.events import BOT_USER_STARTED, BotUserStarted, consume_stream, publish_event
+from core.events import BOT_USER_STARTED, BotUserStarted, EventBus, consume_stream, publish_event
+from core.files import FilesConfig
+
+
+def _handlers(redis, *, llm=None, files: FilesConfig | None = None) -> dict:
+    return build_handlers(
+        WorkerDeps(
+            redis=redis,
+            bus=EventBus(redis, stream_to_bot="test:to_bot", source="api-test", maxlen=100),
+            files=files or FilesConfig(Path("unused"), "soffice", 5),
+            llm=llm,
+        )
+    )
 
 
 async def _consume(
@@ -73,7 +86,7 @@ async def test_worker_registers_user_and_acks(db: None, session: AsyncSession, r
         maxlen=100,
     )
     await publish_event(redis, stream, "bot.unknown", {"x": 1}, source="bot", maxlen=100)
-    await _consume(redis, stream, HANDLERS)
+    await _consume(redis, stream, _handlers(redis))
 
     user = await UserRepository(session).get_by_max_id(555)
     assert user is not None and user.username == "botuser" and user.first_seen_via == "bot"
@@ -91,7 +104,7 @@ async def test_invalid_payload_is_acked_not_retried(db: None, redis) -> None:
     async def handler(event):
         nonlocal calls
         calls += 1
-        await HANDLERS[BOT_USER_STARTED](event)
+        await _handlers(redis)[BOT_USER_STARTED](event)
 
     await _consume(redis, stream, {BOT_USER_STARTED: handler})
     assert calls == 1
@@ -176,7 +189,7 @@ async def test_bot_event_keeps_avatar_from_mini_app(
         source="bot",
         maxlen=10,
     )
-    await _consume(redis, stream, HANDLERS)
+    await _consume(redis, stream, _handlers(redis))
     user = await UserRepository(session).get_by_max_id(777)
     assert user is not None and user.photo_url == "https://cdn/avatar.png"
     assert user.first_name == issued.profile.first_name, (

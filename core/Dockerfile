@@ -33,6 +33,7 @@ RUN if [ "$WITH_PDF" = "true" ]; then \
     fi
 RUN uv sync --frozen --no-dev --no-install-project
 COPY alembic.ini ./
+COPY certs/ certs/
 COPY src/ src/
 RUN uv sync --frozen --no-dev
 # Непривилегированный пользователь; каталог логов отдаём ему (bind-mount в проде).

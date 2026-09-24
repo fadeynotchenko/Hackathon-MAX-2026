@@ -17,9 +17,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.api.error_handlers import register_exception_handlers
-from core.api.events_worker import run_events_worker
+from core.api.events_worker import WorkerDeps, run_events_worker
 from core.api.middlewares import RequestContextMiddleware, TimeoutMiddleware
-from core.api.routers import admin, auth, counterparties, dev, documents, health, me, templates
+from core.api.routers import (
+    admin,
+    agent,
+    auth,
+    counterparties,
+    dev,
+    documents,
+    health,
+    me,
+    templates,
+)
 from core.api.state import ApiState
 from core.config.app_config import AppConfig, get_app_config
 from core.config.env_spec import validate_env_or_raise
@@ -29,6 +39,7 @@ from core.db.migrate import upgrade_to_head
 from core.db.redis import RedisConfig
 from core.events import EventBus, get_events_config
 from core.files import FilesConfig
+from core.llm import GigaChatConfig, build_llm_client
 from core.logs import biz_error, biz_info, biz_warn, setup_logging
 from core.usecases.auth.config import get_auth_config
 from core.usecases.documents import ensure_builtin_templates
@@ -75,10 +86,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     redis = await init_redis(RedisConfig.from_env())
 
     events = get_events_config()
+    llm = build_llm_client(GigaChatConfig.from_env())
+    if llm is None:
+        # Без ключа приложение работает, но про выключенного агента должно быть видно в логе старта.
+        biz_warn(logger, "agent.disabled", reason="GIGACHAT_AUTH_KEY is empty")
     app.state.api = ApiState(
         app_config=app_config,
         auth_config=get_auth_config(),
         files_config=FilesConfig.from_env(),
+        llm=llm,
         event_bus=EventBus(
             redis, stream_to_bot=events.stream_to_bot, source="api", maxlen=events.maxlen
         ),
@@ -87,8 +103,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # чтобы блокирующий XREADGROUP не держал очередь команд запросов API.
     worker_redis = new_client(RedisConfig.from_env())
     stop = asyncio.Event()
+    worker_deps = WorkerDeps(
+        redis=redis,
+        bus=app.state.api.event_bus,
+        files=app.state.api.files_config,
+        llm=llm,
+    )
     app.state.events_task = asyncio.create_task(
-        run_events_worker(worker_redis, stream=events.stream_to_core, stop=stop),
+        run_events_worker(worker_redis, stream=events.stream_to_core, stop=stop, deps=worker_deps),
         name="events-worker",
     )
     app.state.events_task.add_done_callback(_report_worker_exit)
@@ -112,6 +134,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:  # noqa: S110 — причина уже записана _report_worker_exit
             pass
         await worker_redis.aclose()
+        if llm is not None:
+            await llm.aclose()
         await close_redis()
         await close_db()
         biz_info(logger, "api.stopped")
@@ -166,6 +190,7 @@ def create_app(
         admin.router,
         templates.router,
         documents.router,
+        agent.router,
         counterparties.router,
     ):
         app.include_router(router, prefix=API_V1_PREFIX)

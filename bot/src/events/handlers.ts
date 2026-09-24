@@ -3,12 +3,18 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Bot } from '@maxhub/max-bot-api';
+import { Keyboard, type Bot } from '@maxhub/max-bot-api';
 import type { Redis } from 'ioredis';
 
 import type { BotContext } from '../context.js';
 import type { Logger } from '../logger.js';
-import { DOCUMENT_READY, DocumentReady, NOTIFY_USER, NotifyUser } from './codec.js';
+import {
+  DOCUMENT_READY,
+  DocumentReady,
+  NOTIFY_USER,
+  NotifyUser,
+  type InlineButton,
+} from './codec.js';
 import { HandlerRejected, type Handler } from './consumer.js';
 
 // Коды MAX Bot API, при которых повторять доставку бессмысленно.
@@ -17,6 +23,13 @@ const PERMANENT_STATUSES = new Set([400, 403, 404]);
 const DELIVERED_TTL_SECONDS = 7 * 24 * 3600;
 // Файл документа небольшой (DOCX/PDF на страницу), но сеть может залипнуть.
 const DOWNLOAD_TIMEOUT_MS = 30_000;
+
+// Кнопки из ядра — только callback: действие решает ядро, бот лишь возвращает payload.
+export function buttonsKeyboard(rows: InlineButton[][]) {
+  return Keyboard.inlineKeyboard(
+    rows.map((row) => row.map((button) => Keyboard.button.callback(button.text, button.payload))),
+  );
+}
 
 export interface CoreEventDeps {
   coreApiUrl: string;
@@ -48,6 +61,7 @@ export function coreEventHandlers(
       try {
         await bot.api.sendMessageToUser(data.max_user_id, data.text, {
           ...(data.format ? { format: data.format } : {}),
+          ...(data.buttons?.length ? { attachments: [buttonsKeyboard(data.buttons)] } : {}),
         });
       } catch (err) {
         // Отправка не состоялась — снимаем отметку, чтобы повтор был возможен.

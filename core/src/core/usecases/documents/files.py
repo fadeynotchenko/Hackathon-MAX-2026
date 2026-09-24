@@ -138,6 +138,7 @@ async def send_document_to_chat(
     cfg: FilesConfig,
     bus: EventBus,
     tokens: DownloadTokenRepository,
+    text: str | None = None,
 ) -> tuple[DocumentFileView, str]:
     """Собрать файл при необходимости и поставить событие на доставку ботом.
 
@@ -165,9 +166,10 @@ async def send_document_to_chat(
             format=fmt,  # type: ignore[arg-type]
             size=file.size,
             download_token=token,
-            # Сопроводительный текст пока служебный: его будет писать агент,
-            # когда появится, — поле в контракте под это и заведено.
-            text=f"{document.title}: файл во вложении. Проверьте реквизиты перед отправкой.",
+            # Свой текст приходит от человека (или письмо помощника, которое он
+            # просмотрел); без него — служебная строка, а не молчаливая генерация.
+            text=(text or "").strip()
+            or f"{document.title}: файл во вложении. Проверьте реквизиты перед отправкой.",
         )
     )
     return file, event_id

@@ -4,7 +4,7 @@ import type { BotContext } from '../context.js';
 import type { EventPublisher } from '../events/publisher.js';
 import type { MainKeyboardOptions } from '../keyboards/main.js';
 import type { Logger } from '../logger.js';
-import { registerFallback } from './fallback.js';
+import { registerDialog } from './dialog.js';
 import { registerHelp } from './help.js';
 import { registerProfile } from './profile.js';
 import { registerStart } from './start.js';
@@ -15,10 +15,11 @@ export interface HandlerDeps {
   keyboard: MainKeyboardOptions;
 }
 
-// Порядок регистрации = порядок сопоставления: fallback обязан быть последним.
+// Порядок регистрации = порядок сопоставления: диалог ловит всё остальное и
+// обязан быть последним.
 export function registerHandlers(bot: Bot<BotContext>, deps: HandlerDeps): void {
   registerStart(bot, deps);
   registerHelp(bot, deps.keyboard);
   registerProfile(bot);
-  registerFallback(bot, deps.keyboard);
+  registerDialog(bot, deps);
 }

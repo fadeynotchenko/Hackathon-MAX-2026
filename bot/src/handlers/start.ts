@@ -6,8 +6,13 @@ import type { EventPublisher } from '../events/publisher.js';
 import type { Logger } from '../logger.js';
 import { mainKeyboard, type MainKeyboardOptions } from '../keyboards/main.js';
 
-export const WELCOME_TEXT =
-  'Привет! Это мини-приложение для MAX. Нажми кнопку ниже, чтобы открыть его.';
+export const WELCOME_TEXT = [
+  'Привет! Я готовлю документы для бизнеса: счета, коммерческие предложения, договоры.',
+  '',
+  'Напишите, что нужно, например: «Счёт на 120 000 для ООО Ромашка за разработку сайта» —',
+  'я заполню документ, покажу значения на проверку и пришлю файл сюда же.',
+  'Или откройте приложение, чтобы заполнить форму.',
+].join('\n');
 
 export interface StartDeps {
   publisher: EventPublisher;

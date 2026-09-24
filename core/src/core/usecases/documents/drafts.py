@@ -7,8 +7,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -200,6 +200,35 @@ async def set_fields(
         status=STATUS_READY if validated.ready else STATUS_DRAFT,
     )
     return _view(saved, template, rejected=validated.errors)
+
+
+async def confirm_fields(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    document_id: int,
+    keys: Sequence[str] | None = None,
+) -> DocumentView:
+    """Человек утвердил значения, предложенные агентом или распознанные с фото.
+
+    ``keys=None`` подтверждает все ждущие значения разом — так работает кнопка
+    «всё верно» в чате; список ключей — выборочная проверка в форме.
+    """
+    document = await _load(session, user_id=user_id, document_id=document_id)
+    template = to_view(document.template)
+    values = load_values(document.values)
+    wanted = set(values) if keys is None else set(keys)
+    confirmed = {
+        key: replace(value, confirmed=True) if key in wanted else value
+        for key, value in values.items()
+    }
+    validated = validate_fields(template.fields, confirmed)
+    saved = await DocumentRepository(session).save_values(
+        document,
+        dump_values(validated.values),
+        status=STATUS_READY if validated.ready else STATUS_DRAFT,
+    )
+    return _view(saved, template)
 
 
 async def delete_document(session: AsyncSession, *, user_id: int, document_id: int) -> None:

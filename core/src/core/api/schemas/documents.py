@@ -99,6 +99,20 @@ class RenderRequest(BaseModel):
     format: Literal["docx", "pdf"] = "docx"
 
 
+class SendDocumentRequest(RenderRequest):
+    text: str | None = Field(
+        default=None,
+        max_length=4000,
+        description="Сопроводительный текст; пусто — служебный текст по умолчанию",
+    )
+
+
+class ConfirmFieldsRequest(BaseModel):
+    keys: list[str] | None = Field(
+        default=None, description="Какие поля подтвердить; пусто — все ждущие подтверждения"
+    )
+
+
 class SendDocumentResponse(BaseModel):
     event_id: str = Field(description="UUID события доставки; он же в логах бота")
     format: str
@@ -116,6 +130,29 @@ class SetFieldsRequest(BaseModel):
         description="Ключ поля → значение; пустая строка стирает поле"
     )
     title: str | None = Field(default=None, max_length=255)
+
+
+class AgentFillRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class AgentFillResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    reply: str = Field(description="Ответ помощника для показа в чате")
+    filled: list[str] = Field(description="Поля, которые помощник заполнил")
+    rejected: list[FieldErrorSchema] = Field(
+        description="Предложенные значения, не прошедшие проверку"
+    )
+    document: DocumentSchema
+
+
+class AgentAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class AgentTextResponse(BaseModel):
+    text: str
 
 
 class CounterpartySchema(BaseModel):

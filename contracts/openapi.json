@@ -19,6 +19,85 @@
         "title": "AdminStatsResponse",
         "type": "object"
       },
+      "AgentAskRequest": {
+        "properties": {
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "AgentAskRequest",
+        "type": "object"
+      },
+      "AgentFillRequest": {
+        "properties": {
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "AgentFillRequest",
+        "type": "object"
+      },
+      "AgentFillResponse": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentSchema"
+          },
+          "filled": {
+            "description": "Поля, которые помощник заполнил",
+            "items": {
+              "type": "string"
+            },
+            "title": "Filled",
+            "type": "array"
+          },
+          "rejected": {
+            "description": "Предложенные значения, не прошедшие проверку",
+            "items": {
+              "$ref": "#/components/schemas/FieldErrorSchema"
+            },
+            "title": "Rejected",
+            "type": "array"
+          },
+          "reply": {
+            "description": "Ответ помощника для показа в чате",
+            "title": "Reply",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reply",
+          "filled",
+          "rejected",
+          "document"
+        ],
+        "title": "AgentFillResponse",
+        "type": "object"
+      },
+      "AgentTextResponse": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AgentTextResponse",
+        "type": "object"
+      },
       "CompanyProfileRequest": {
         "properties": {
           "name": {
@@ -59,6 +138,27 @@
           "values"
         ],
         "title": "CompanyProfileSchema",
+        "type": "object"
+      },
+      "ConfirmFieldsRequest": {
+        "properties": {
+          "keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Какие поля подтвердить; пусто — все ждущие подтверждения",
+            "title": "Keys"
+          }
+        },
+        "title": "ConfirmFieldsRequest",
         "type": "object"
       },
       "CounterpartyRequest": {
@@ -678,6 +778,34 @@
           }
         },
         "title": "RenderRequest",
+        "type": "object"
+      },
+      "SendDocumentRequest": {
+        "properties": {
+          "format": {
+            "default": "docx",
+            "enum": [
+              "docx",
+              "pdf"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Сопроводительный текст; пусто — служебный текст по умолчанию",
+            "title": "Text"
+          }
+        },
+        "title": "SendDocumentRequest",
         "type": "object"
       },
       "SendDocumentResponse": {
@@ -1887,6 +2015,344 @@
         ]
       }
     },
+    "/api/v1/documents/{document_id}/agent/ask": {
+      "post": {
+        "operationId": "agent_ask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Ответить на вопрос по документу",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/agent/cover-letter": {
+      "post": {
+        "operationId": "agent_cover_letter",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Черновик сопроводительного сообщения контрагенту",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/agent/fill": {
+      "post": {
+        "operationId": "agent_fill",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentFillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentFillResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Заполнить поля документа из сообщения",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/confirm": {
+      "post": {
+        "operationId": "confirm_document_fields",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmFieldsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Подтвердить значения помощника или распознавания",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/api/v1/documents/{document_id}/fields": {
       "patch": {
         "operationId": "set_document_fields",
@@ -2207,7 +2673,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RenderRequest"
+                "$ref": "#/components/schemas/SendDocumentRequest"
               }
             }
           },

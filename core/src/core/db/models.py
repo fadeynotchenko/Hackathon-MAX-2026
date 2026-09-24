@@ -183,3 +183,21 @@ class DocumentFile(Base):
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class ChatState(Base):
+    """Состояние диалога с ботом: над каким документом пользователь сейчас работает.
+
+    Отдельная таблица, а не колонка в users: колонка дала бы циклический внешний
+    ключ users ↔ documents, а здесь же будет жить остальное состояние диалога.
+    """
+
+    __tablename__ = "chat_states"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, server_default=func.now(), onupdate=func.now()
+    )

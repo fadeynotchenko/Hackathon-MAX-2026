@@ -8,17 +8,20 @@ from fastapi import APIRouter, Query, Response, status
 from core.api.dependencies import CurrentUserDep, RedisDep, SessionDep, StateDep
 from core.api.schemas.common import ErrorResponse, OkResponse
 from core.api.schemas.documents import (
+    ConfirmFieldsRequest,
     CreateDocumentRequest,
     DocumentFileSchema,
     DocumentSchema,
     DocumentSummarySchema,
     RenderRequest,
+    SendDocumentRequest,
     SendDocumentResponse,
     SetFieldsRequest,
 )
 from core.db.repositories import DownloadTokenRepository
 from core.domain.documents import FieldValue
 from core.usecases.documents import (
+    confirm_fields,
     create_draft,
     delete_document,
     get_document,
@@ -196,7 +199,7 @@ async def download(
 )
 async def send(
     document_id: int,
-    payload: RenderRequest,
+    payload: SendDocumentRequest,
     current: CurrentUserDep,
     session: SessionDep,
     state: StateDep,
@@ -212,6 +215,7 @@ async def send(
         cfg=state.files_config,
         bus=state.event_bus,
         tokens=DownloadTokenRepository(redis),
+        text=payload.text,
     )
     return SendDocumentResponse(event_id=event_id, format=file.format, filename=file.filename)
 
@@ -251,3 +255,22 @@ async def download_by_token(
 async def delete(document_id: int, current: CurrentUserDep, session: SessionDep) -> OkResponse:
     await delete_document(session, user_id=current.id, document_id=document_id)
     return OkResponse()
+
+
+@router.post(
+    "/{document_id}/confirm",
+    response_model=DocumentSchema,
+    responses=_ERRORS,
+    operation_id="confirm_document_fields",
+    summary="Подтвердить значения помощника или распознавания",
+)
+async def confirm(
+    document_id: int,
+    payload: ConfirmFieldsRequest,
+    current: CurrentUserDep,
+    session: SessionDep,
+) -> DocumentSchema:
+    document = await confirm_fields(
+        session, user_id=current.id, document_id=document_id, keys=payload.keys
+    )
+    return DocumentSchema.model_validate(document)

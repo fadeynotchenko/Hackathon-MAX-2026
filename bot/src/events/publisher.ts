@@ -2,7 +2,16 @@
 import type { Redis } from 'ioredis';
 
 import type { Logger } from '../logger.js';
-import { BOT_USER_STARTED, encodeEvent, type BotUserStarted } from './codec.js';
+import {
+  BOT_CALLBACK,
+  BOT_MESSAGE,
+  BOT_USER_STARTED,
+  encodeEvent,
+  type BotCallback,
+  type BotMessage,
+  type BotUserStarted,
+  type EventType,
+} from './codec.js';
 
 export interface PublisherOptions {
   stream: string;
@@ -17,13 +26,23 @@ export class EventPublisher {
     private readonly options: PublisherOptions,
   ) {}
 
-  async userStarted(payload: BotUserStarted): Promise<string> {
-    const { id, fields } = encodeEvent(
-      BOT_USER_STARTED,
-      payload,
-      this.options.source ?? 'bot',
-      new Date(),
-    );
+  userStarted(payload: BotUserStarted): Promise<string> {
+    return this.publish(BOT_USER_STARTED, payload);
+  }
+
+  message(payload: BotMessage): Promise<string> {
+    return this.publish(BOT_MESSAGE, payload);
+  }
+
+  callback(payload: BotCallback): Promise<string> {
+    return this.publish(BOT_CALLBACK, payload);
+  }
+
+  private async publish(
+    type: EventType,
+    payload: BotUserStarted | BotMessage | BotCallback,
+  ): Promise<string> {
+    const { id, fields } = encodeEvent(type, payload, this.options.source ?? 'bot', new Date());
     // MAXLEN ~ : приблизительное усечение дешевле точного, стрим не растёт бесконечно.
     const streamId = await this.redis.xadd(
       this.options.stream,
@@ -34,7 +53,7 @@ export class EventPublisher {
       ...Object.entries(fields).flat(),
     );
     this.log.info(
-      { event: 'events.published', type: BOT_USER_STARTED, event_id: id, stream_id: streamId },
+      { event: 'events.published', type, event_id: id, stream_id: streamId },
       'event published',
     );
     return id;

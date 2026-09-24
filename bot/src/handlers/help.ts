@@ -4,11 +4,13 @@ import type { BotContext } from '../context.js';
 import { CALLBACKS, mainKeyboard, type MainKeyboardOptions } from '../keyboards/main.js';
 
 export const HELP_TEXT = [
-  'Команды:',
-  '/start — открыть главное меню',
-  '/help — эта подсказка',
+  'Напишите обычным сообщением, какой документ нужен и с какими данными:',
+  '«Счёт на 50 000 для ООО Ромашка за консультацию, оплата до 10 октября».',
+  'Можно поправлять («поменяй сумму на 60 000») и спрашивать («чего не хватает?»).',
   '',
-  'Основная работа идёт в мини-приложении: кнопка «Открыть приложение».',
+  'Команды:',
+  '/start — главное меню',
+  '/help — эта подсказка',
 ].join('\n');
 
 export function registerHelp(bot: Bot<BotContext>, keyboard: MainKeyboardOptions): void {

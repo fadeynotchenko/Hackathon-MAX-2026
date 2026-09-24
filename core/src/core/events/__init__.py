@@ -1,23 +1,32 @@
 from .bus import Event, EventBus, EventDecodeError, EventHandler, consume_stream, publish_event
 from .config import EventsConfig, get_events_config
 from .contracts import (
+    BOT_CALLBACK,
+    BOT_MESSAGE,
     BOT_USER_STARTED,
     DOCUMENT_READY,
     ENVELOPE_VERSION,
     EVENT_PAYLOADS,
     NOTIFY_USER,
+    BotCallback,
+    BotMessage,
     BotUserStarted,
     DocumentReady,
     EventPayload,
+    InlineButton,
     NotifyUser,
 )
 
 __all__ = [
+    "BOT_CALLBACK",
+    "BOT_MESSAGE",
     "BOT_USER_STARTED",
     "DOCUMENT_READY",
     "ENVELOPE_VERSION",
     "EVENT_PAYLOADS",
     "NOTIFY_USER",
+    "BotCallback",
+    "BotMessage",
     "BotUserStarted",
     "DocumentReady",
     "Event",
@@ -26,6 +35,7 @@ __all__ = [
     "EventHandler",
     "EventPayload",
     "EventsConfig",
+    "InlineButton",
     "NotifyUser",
     "consume_stream",
     "get_events_config",

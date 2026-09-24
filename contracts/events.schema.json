@@ -37,6 +37,91 @@
   },
   "envelope_version": 1,
   "events": {
+    "bot.callback": {
+      "additionalProperties": false,
+      "description": "Бот → ядро: пользователь нажал кнопку, которую ядро прислало в notify.user.",
+      "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "integer"
+        },
+        "max_user_id": {
+          "exclusiveMinimum": 0,
+          "title": "Max User Id",
+          "type": "integer"
+        },
+        "payload": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Payload",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_user_id",
+        "chat_id",
+        "payload"
+      ],
+      "title": "BotCallback",
+      "type": "object"
+    },
+    "bot.message": {
+      "additionalProperties": false,
+      "description": "Бот → ядро: пользователь написал боту текст, а не команду.",
+      "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "integer"
+        },
+        "first_name": {
+          "default": "",
+          "title": "First Name",
+          "type": "string"
+        },
+        "last_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Name"
+        },
+        "max_user_id": {
+          "exclusiveMinimum": 0,
+          "title": "Max User Id",
+          "type": "integer"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        }
+      },
+      "required": [
+        "max_user_id",
+        "chat_id",
+        "text"
+      ],
+      "title": "BotMessage",
+      "type": "object"
+    },
     "bot.user_started": {
       "additionalProperties": false,
       "description": "Бот → ядро: пользователь нажал «Начать» (update bot_started).",
@@ -177,9 +262,53 @@
       "type": "object"
     },
     "notify.user": {
+      "$defs": {
+        "InlineButton": {
+          "additionalProperties": false,
+          "description": "Кнопка под сообщением: нажатие возвращается в ядро событием bot.callback.",
+          "properties": {
+            "payload": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Payload",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "payload"
+          ],
+          "title": "InlineButton",
+          "type": "object"
+        }
+      },
       "additionalProperties": false,
       "description": "Ядро → бот: отправить пользователю сообщение в MAX.",
       "properties": {
+        "buttons": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "$ref": "#/$defs/InlineButton"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Buttons"
+        },
         "format": {
           "anyOf": [
             {

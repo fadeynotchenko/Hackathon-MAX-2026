@@ -19,9 +19,7 @@ export interface MainKeyboardOptions {
 export function mainKeyboard(options: MainKeyboardOptions = {}) {
   const rows: Parameters<typeof Keyboard.inlineKeyboard>[0] = [];
   if (options.miniAppName) {
-    rows.push([
-      { type: 'open_app', text: 'Открыть приложение', web_app: options.miniAppName },
-    ]);
+    rows.push([{ type: 'open_app', text: 'Открыть приложение', web_app: options.miniAppName }]);
   }
   rows.push([
     Keyboard.button.callback('Помощь', CALLBACKS.help),

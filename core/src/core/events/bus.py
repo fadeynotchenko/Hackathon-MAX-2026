@@ -36,6 +36,7 @@ from core.events.contracts import (
     NOTIFY_USER,
     DocumentReady,
     EventPayload,
+    InlineButton,
     NotifyUser,
 )
 from core.logs import biz_error, biz_info, biz_warn
@@ -142,9 +143,21 @@ class EventBus:
         )
         return event.id
 
-    async def notify_user(self, max_user_id: int, text: str, *, fmt: str | None = None) -> str:
+    async def notify_user(
+        self,
+        max_user_id: int,
+        text: str,
+        *,
+        fmt: str | None = None,
+        buttons: list[list[InlineButton]] | None = None,
+    ) -> str:
         """Вернуть UUID события — тот же ``event_id``, что в логах ядра и бота."""
-        payload = NotifyUser(max_user_id=max_user_id, text=text, format=fmt)  # type: ignore[arg-type]
+        payload = NotifyUser(
+            max_user_id=max_user_id,
+            text=text,
+            format=fmt,  # type: ignore[arg-type]
+            buttons=buttons or None,
+        )
         event = await publish_event(
             self._redis,
             self._stream_to_bot,

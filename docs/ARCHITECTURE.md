@@ -35,16 +35,16 @@ Python в core импортирует только пакет `core` (`import-li
                │    api/     │                 lifespan (миграции, воркер событий)
                └──────┬──────┘                 парсит вход → зовёт сценарий → рендерит
                       ▼
-               ┌─────────────┐                 use-case-ы: auth, users, documents
+               ┌─────────────┐                 use-case-ы: auth, users, documents, agent
                │  usecases/  │                 функции с явными session/cfg/now,
                └──────┬──────┘                 результат — frozen dataclass
-         ┌────────────┼────────────┐
-         ▼            ▼            ▼
-   ┌───────────┐ ┌───────────┐ ┌───────────┐  events — шов с ботом (Redis Streams);
-   │  events/  │ │    db/    │ │  files/   │  db — модели, репозитории, движок, Redis;
-   └─────┬─────┘ └─────┬─────┘ └─────┬─────┘  files — DOCX, конвертация в PDF, хранение
-         └────────────┬┴─────────────┘        друг о друге не знают
-                      ▼
+     ┌──────────┬─────┴────┬──────────┐
+     ▼          ▼          ▼          ▼
+┌─────────┐┌─────────┐┌─────────┐┌─────────┐  events — шов с ботом (Redis Streams);
+│ events/ ││   db/   ││ files/  ││  llm/   │  db — модели, репозитории, движок, Redis;
+└────┬────┘└────┬────┘└────┬────┘└────┬────┘  files — DOCX, PDF, хранение;
+     └──────────┴────┬─────┴──────────┘       llm — порт модели и адаптер GigaChat
+                     ▼                        друг о друге не знают
                ┌─────────────┐                 структурированные логи
                │    logs/    │
                └──────┬──────┘
@@ -60,7 +60,7 @@ Python в core импортирует только пакет `core` (`import-li
 инструменты разработчика, вне контракта. Проверка: `cd core && uv run lint-imports`,
 тот же вызов в pre-commit, Stop-хуке Claude Code и `core/tests/repo/test_import_contracts.py`.
 
-Слои по именам: `api`, `usecases`, `events`, `db`, `files`, `logs`, `config`, `domain`.
+Слои по именам: `api`, `usecases`, `events`, `db`, `files`, `llm`, `logs`, `config`, `domain`.
 
 ## Где живут модели
 

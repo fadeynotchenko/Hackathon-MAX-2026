@@ -132,6 +132,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "python-docx" },
@@ -145,7 +146,6 @@ dependencies = [
 dev = [
     { name = "aiosqlite" },
     { name = "fakeredis" },
-    { name = "httpx" },
     { name = "import-linter" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -158,6 +158,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "fastapi", specifier = ">=0.118" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pyjwt", specifier = ">=2.10" },
     { name = "python-docx", specifier = ">=1.2.0" },
@@ -171,7 +172,6 @@ requires-dist = [
 dev = [
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "fakeredis", specifier = ">=2.26" },
-    { name = "httpx", specifier = ">=0.28" },
     { name = "import-linter", specifier = ">=2.1" },
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.3" },

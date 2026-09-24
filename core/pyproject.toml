@@ -21,11 +21,11 @@ dependencies = [
     "PyJWT>=2.10",
     "python-dotenv>=1.0",
     "python-docx>=1.2.0",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "aiosqlite>=0.20",
@@ -51,12 +51,12 @@ packages = ["src/core"]
 root_package = "core"
 
 [[tool.importlinter.contracts]]
-name = "layers: api -> usecases -> events/db/files -> logs -> config/domain"
+name = "layers: api -> usecases -> events/db/files/llm -> logs -> config/domain"
 type = "layers"
 layers = [
     "core.api",
     "core.usecases",
-    "core.events | core.db | core.files",
+    "core.events | core.db | core.files | core.llm",
     "core.logs",
     "core.config | core.domain",
 ]

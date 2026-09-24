@@ -155,3 +155,24 @@ describe('document.ready handler', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('notify.user buttons', () => {
+  it('renders core buttons as a callback keyboard', async () => {
+    const { handler, event, sendMessageToUser } = setup(() => Promise.resolve({}));
+    await handler({
+      ...event,
+      payload: {
+        max_user_id: 5,
+        text: 'Проверьте значения',
+        format: null,
+        buttons: [[{ text: 'Всё верно', payload: 'doc:confirm:12' }]],
+      },
+    });
+    const extra = sendMessageToUser.mock.calls[0]?.[2] as {
+      attachments: { payload: { buttons: { type: string; text: string; payload: string }[][] } }[];
+    };
+    expect(extra.attachments[0]?.payload.buttons).toEqual([
+      [expect.objectContaining({ type: 'callback', text: 'Всё верно', payload: 'doc:confirm:12' })],
+    ]);
+  });
+});

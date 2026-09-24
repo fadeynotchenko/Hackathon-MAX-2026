@@ -13,12 +13,22 @@ export const ENVELOPE_VERSION = 1;
 export const NOTIFY_USER = 'notify.user';
 export const DOCUMENT_READY = 'document.ready';
 export const BOT_USER_STARTED = 'bot.user_started';
+export const BOT_MESSAGE = 'bot.message';
+export const BOT_CALLBACK = 'bot.callback';
+
+// Кнопка под сообщением: нажатие уходит обратно в ядро событием bot.callback.
+export const InlineButton = z.strictObject({
+  text: z.string().min(1).max(64),
+  payload: z.string().min(1).max(128),
+});
+export type InlineButton = z.infer<typeof InlineButton>;
 
 // Ядро → бот: отправить пользователю сообщение в MAX.
 export const NotifyUser = z.strictObject({
   max_user_id: z.number().int().positive(),
   text: z.string().min(1).max(4000),
   format: z.enum(['markdown', 'html']).nullable().default(null),
+  buttons: z.array(z.array(InlineButton)).nullable().default(null),
 });
 export type NotifyUser = z.infer<typeof NotifyUser>;
 
@@ -47,10 +57,31 @@ export const BotUserStarted = z.strictObject({
 });
 export type BotUserStarted = z.infer<typeof BotUserStarted>;
 
+// Бот → ядро: пользователь написал боту текст, а не команду.
+export const BotMessage = z.strictObject({
+  max_user_id: z.number().int().positive(),
+  chat_id: z.number().int(),
+  text: z.string().min(1).max(4000),
+  first_name: z.string().default(''),
+  last_name: z.string().nullable().default(null),
+  username: z.string().nullable().default(null),
+});
+export type BotMessage = z.infer<typeof BotMessage>;
+
+// Бот → ядро: пользователь нажал кнопку, присланную ядром.
+export const BotCallback = z.strictObject({
+  max_user_id: z.number().int().positive(),
+  chat_id: z.number().int(),
+  payload: z.string().min(1).max(128),
+});
+export type BotCallback = z.infer<typeof BotCallback>;
+
 export const EVENT_PAYLOADS = {
   [NOTIFY_USER]: NotifyUser,
   [DOCUMENT_READY]: DocumentReady,
   [BOT_USER_STARTED]: BotUserStarted,
+  [BOT_MESSAGE]: BotMessage,
+  [BOT_CALLBACK]: BotCallback,
 } as const;
 
 export type EventType = keyof typeof EVENT_PAYLOADS;
@@ -110,7 +141,9 @@ export function decodeEvent(streamId: string, fields: Record<string, string>): E
 // Конверт для XADD. Порядок полей тот же, что у Python (удобно читать XRANGE).
 export function encodeEvent(
   type: EventType,
-  payload: z.infer<(typeof EVENT_PAYLOADS)[EventType]>,
+  // Входной тип схемы, а не выходной: поля со значением по умолчанию
+  // (buttons, format) можно не передавать — их подставит принимающая сторона.
+  payload: z.input<(typeof EVENT_PAYLOADS)[EventType]>,
   source: string,
   now: Date,
 ): { id: string; fields: Record<string, string> } {

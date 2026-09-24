@@ -73,7 +73,12 @@ describe('codec', () => {
     const event = decodeEvent('1-0', encoded.fields);
     expect(event.id).toBe(encoded.id);
     expect(event.type).toBe(NOTIFY_USER);
-    expect(NotifyUser.parse(event.payload)).toEqual({ max_user_id: 7, text: 'hi', format: null });
+    expect(NotifyUser.parse(event.payload)).toEqual({
+      max_user_id: 7,
+      text: 'hi',
+      format: null,
+      buttons: null,
+    });
   });
 
   it('applies defaults for optional payload fields', () => {

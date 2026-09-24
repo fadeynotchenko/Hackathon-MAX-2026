@@ -23,6 +23,8 @@ ENVELOPE_VERSION = 1
 NOTIFY_USER = "notify.user"
 DOCUMENT_READY = "document.ready"
 BOT_USER_STARTED = "bot.user_started"
+BOT_MESSAGE = "bot.message"
+BOT_CALLBACK = "bot.callback"
 
 
 class EventPayload(BaseModel):
@@ -31,12 +33,20 @@ class EventPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class InlineButton(EventPayload):
+    """Кнопка под сообщением: нажатие возвращается в ядро событием bot.callback."""
+
+    text: str = Field(min_length=1, max_length=64)
+    payload: str = Field(min_length=1, max_length=128)
+
+
 class NotifyUser(EventPayload):
     """Ядро → бот: отправить пользователю сообщение в MAX."""
 
     max_user_id: int = Field(gt=0)
     text: str = Field(min_length=1, max_length=4000)
     format: Literal["markdown", "html"] | None = None
+    buttons: list[list[InlineButton]] | None = None
 
 
 class DocumentReady(EventPayload):
@@ -68,9 +78,30 @@ class BotUserStarted(EventPayload):
     start_payload: str | None = None
 
 
+class BotMessage(EventPayload):
+    """Бот → ядро: пользователь написал боту текст, а не команду."""
+
+    max_user_id: int = Field(gt=0)
+    chat_id: int
+    text: str = Field(min_length=1, max_length=4000)
+    first_name: str = ""
+    last_name: str | None = None
+    username: str | None = None
+
+
+class BotCallback(EventPayload):
+    """Бот → ядро: пользователь нажал кнопку, которую ядро прислало в notify.user."""
+
+    max_user_id: int = Field(gt=0)
+    chat_id: int
+    payload: str = Field(min_length=1, max_length=128)
+
+
 # Реестр: имя события → модель payload. Используется экспортом схем и тестами.
 EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     NOTIFY_USER: NotifyUser,
     DOCUMENT_READY: DocumentReady,
     BOT_USER_STARTED: BotUserStarted,
+    BOT_MESSAGE: BotMessage,
+    BOT_CALLBACK: BotCallback,
 }
