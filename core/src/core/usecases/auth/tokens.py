@@ -23,14 +23,22 @@ class AccessClaims:
 
 
 def issue_access_token(
-    cfg: AuthConfig, *, user_id: int, is_admin: bool, now: datetime | None = None
+    cfg: AuthConfig,
+    *,
+    user_id: int,
+    is_admin: bool,
+    now: datetime | None = None,
+    ttl_seconds: int | None = None,
 ) -> str:
+    """``ttl_seconds`` переопределяет срок только для доступа проверяющих
+    (core.usecases.auth.reviewer); сессии мини-аппа живут ``access_ttl_seconds``."""
     issued = now or datetime.now(UTC)
+    ttl = ttl_seconds if ttl_seconds is not None else cfg.access_ttl_seconds
     payload = {
         "sub": str(user_id),
         "adm": is_admin,
         "iat": int(issued.timestamp()),
-        "exp": int((issued + timedelta(seconds=cfg.access_ttl_seconds)).timestamp()),
+        "exp": int((issued + timedelta(seconds=ttl)).timestamp()),
         "jti": uuid.uuid4().hex,
     }
     return jwt.encode(payload, cfg.jwt_secret, algorithm=_ALGORITHM)

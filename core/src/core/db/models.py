@@ -50,7 +50,7 @@ class User(Base):
         UtcDateTime, server_default=func.now(), onupdate=func.now()
     )
     last_login_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
-    # Откуда пользователь пришёл впервые: mini_app | bot.
+    # Откуда пользователь пришёл впервые: mini_app | bot | reviewer (учётка проверяющих).
     first_seen_via: Mapped[str] = mapped_column(String(16), default="mini_app")
 
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(back_populates="user")

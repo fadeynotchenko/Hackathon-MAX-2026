@@ -1,5 +1,7 @@
 # DATA-API 1.0 — сценарий обязательных HTTP-проверок сервиса подготовки документов.
 # Секретов здесь нет: доступы тестовой учётной записи передаются отдельным каналом.
+# Токен роли user выпускает оператор на срок проверки:
+#   python -m core.scripts.issue_reviewer_token --days 14   (внутри контейнера api)
 # Файл сверяется с contracts/openapi.json, который генерируется из кода
 # (cd core && uv run python -m core.scripts.export_openapi).
 

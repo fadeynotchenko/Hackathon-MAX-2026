@@ -28,6 +28,20 @@
 5. Проверка: `./maxapp --prod health`, `./maxapp --prod logs bot`. Бот при старте
    в режиме webhook сам регистрирует подписку в MAX на `PUBLIC_BASE_URL + BOT_WEBHOOK_PATH`.
 
+## Доступ для проверяющих
+
+HTTP-проверки (`DATA-API.yaml`, роль `user`) идут с долгим токеном отдельной
+учётки: обычный access-токен живёт 15 минут, а initData без клиента MAX не
+получить. Выпуск и отзыв — внутри контейнера api:
+
+```bash
+docker compose -f docker-compose.prod.yml exec api python -m core.scripts.issue_reviewer_token --days 14
+docker compose -f docker-compose.prod.yml exec api python -m core.scripts.issue_reviewer_token --revoke
+```
+
+Срок — до 30 дней. Отзыв удаляет учётку с её документами. Чтобы проверяющим
+доставлялись файлы в чат, выпускайте токен на настоящий MAX-id: `--max-user-id`.
+
 ## Обновление
 
 ```bash

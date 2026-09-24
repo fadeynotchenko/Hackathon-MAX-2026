@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,6 +78,12 @@ class UserRepository:
             if existing is None:
                 raise
             return existing
+
+    async def delete(self, user_id: int) -> bool:
+        """Удалить пользователя со всем, что ему принадлежит: каскад делает сама БД
+        (ON DELETE CASCADE), ORM-каскад обнулял бы внешние ключи дочерних строк."""
+        result = await self._session.execute(delete(User).where(User.id == user_id))
+        return int(result.rowcount or 0) == 1
 
     async def count(self) -> int:
         return int(await self._session.scalar(select(func.count()).select_from(User)) or 0)
