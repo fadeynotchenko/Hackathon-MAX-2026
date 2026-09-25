@@ -2,16 +2,17 @@
 // создания: сервер подставляет их реквизиты при создании черновика, поменять
 // стороны у готового черновика API не умеет. Выбранная организация живёт в адресе
 // (?org=), чтобы пережить поход в форму нового клиента и обратно.
-import { Avatar, CellAction, CellHeader, CellList, CellSimple, Radio } from '@maxhub/max-ui';
+import { CellAction, CellHeader, CellList, CellSimple, Radio } from '@maxhub/max-ui';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Banner } from '@/components/Banner';
 import { IconEdit, IconPlus } from '@/components/icons';
 import { Page } from '@/components/Page';
-import { ErrorState, Loading } from '@/components/StateViews';
+import { SearchField } from '@/components/SearchField';
+import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
-import { initials } from '@/lib/format';
+import { matchesCard } from '@/lib/search';
 import { errorText, useAsync } from '@/lib/useAsync';
 
 export function ClientPage() {
@@ -23,12 +24,13 @@ export function ClientPage() {
   const organizations = useAsync(() => api.organizations(), [api]);
   const [params, setParams] = useSearchParams();
   const organizationId =
-    Number(params.get('org')) ||
-    (organizations.data?.find((item) => item.is_default)?.id ?? null);
+    Number(params.get('org')) || (organizations.data?.find((item) => item.is_default)?.id ?? null);
   const chooseOrganization = (id: number) => setParams({ org: String(id) }, { replace: true });
   const [creating, setCreating] = useState<number | 'none' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const autoCreated = useRef(false);
+  const [query, setQuery] = useState('');
+  const clients = counterparties.data?.filter((item) => matchesCard(item, query)) ?? [];
 
   const create = async (counterpartyId: number | null) => {
     setCreating(counterpartyId ?? 'none');
@@ -125,18 +127,23 @@ export function ClientPage() {
         <ErrorState message={counterparties.error} onRetry={counterparties.reload} />
       ) : null}
       {counterparties.data && counterparties.data.length > 0 ? (
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          hint="Найти клиента: название или ИНН"
+        />
+      ) : null}
+      {counterparties.data && counterparties.data.length > 0 && clients.length === 0 ? (
+        <EmptyState title="Ничего не нашлось" text="Попробуйте другое слово." />
+      ) : null}
+      {clients.length > 0 ? (
         <CellList mode="island" filled header={<CellHeader>Ваши клиенты</CellHeader>}>
-          {counterparties.data.map((item) => (
+          {clients.map((item) => (
             <CellSimple
               key={item.id}
               title={item.name}
               subtitle={item.inn ? `ИНН ${item.inn}` : 'ИНН не указан'}
               innerClassNames={{ title: 'clamp-2' }}
-              before={
-                <Avatar.Container size={40}>
-                  <Avatar.Text gradient="blue">{initials(item.name)}</Avatar.Text>
-                </Avatar.Container>
-              }
               showChevron
               disabled={busy}
               onClick={() => void create(item.id)}

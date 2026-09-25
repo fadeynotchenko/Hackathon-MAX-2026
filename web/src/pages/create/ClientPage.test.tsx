@@ -2,7 +2,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Organization } from '@/api/client';
+import type { Counterparty, Organization } from '@/api/client';
 import { makeDocument, mockApi, renderScreen } from '@/test-utils';
 
 import { ClientPage } from './ClientPage';
@@ -19,16 +19,46 @@ function organization(id: number, name: string, isDefault: boolean): Organizatio
   };
 }
 
-function setup(organizations: Organization[]) {
+function client(id: number, name: string, inn: string): Counterparty {
+  return {
+    id,
+    name,
+    inn,
+    values: {},
+    created_at: '2026-09-24T10:00:00Z',
+    updated_at: '2026-09-24T10:00:00Z',
+  };
+}
+
+function setup(organizations: Organization[], counterparties: Counterparty[] = []) {
   const api = mockApi();
-  vi.spyOn(api, 'counterparties').mockResolvedValue([]);
+  vi.spyOn(api, 'counterparties').mockResolvedValue(counterparties);
   vi.spyOn(api, 'organizations').mockResolvedValue(organizations);
   const createDocument = vi.spyOn(api, 'createDocument').mockResolvedValue(makeDocument({ id: 9 }));
-  renderScreen(<ClientPage />, { api, path: '/create/:templateId/client', route: '/create/1/client' });
+  renderScreen(<ClientPage />, {
+    api,
+    path: '/create/:templateId/client',
+    route: '/create/1/client',
+  });
   return createDocument;
 }
 
 describe('ClientPage', () => {
+  it('filters clients by name or INN and says when nothing matches', async () => {
+    setup(
+      [organization(1, 'ООО «Ромашка»', true)],
+      [client(1, 'ООО «Лютик»', '7736207543'), client(2, 'ИП Петров', '500100732259')],
+    );
+    const search = await screen.findByRole('searchbox');
+
+    fireEvent.change(search, { target: { value: '7736' } });
+    expect(screen.getByText('ООО «Лютик»')).toBeTruthy();
+    expect(screen.queryByText('ИП Петров')).toBeNull();
+
+    fireEvent.change(search, { target: { value: 'сидоров' } });
+    expect(screen.getByText('Ничего не нашлось')).toBeTruthy();
+  });
+
   it('creates the document from the chosen organization', async () => {
     const createDocument = setup([
       organization(1, 'ООО «Ромашка»', true),

@@ -1,21 +1,13 @@
 // Вкладка «Архив»: всё созданное — поиск, фильтр по виду и группы по клиентам.
 // Группа клиента — то, что в макете называлось «проект»: документы одной
 // сделки с одним контрагентом (отдельной сущности «проект» в API пока нет).
-import {
-  Avatar,
-  Button,
-  CellHeader,
-  CellList,
-  CellSimple,
-  Icon16SearchOutline,
-  Input,
-  Typography,
-} from '@maxhub/max-ui';
+import { Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type { DocumentSummary } from '@/api/client';
 import { Page } from '@/components/Page';
+import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
 import {
@@ -26,20 +18,16 @@ import {
   kindStyle,
   pluralize,
 } from '@/lib/format';
+import { matchesQuery } from '@/lib/search';
 import { useAsync } from '@/lib/useAsync';
 
 const NO_CLIENT = 'Без клиента';
 
 function matches(doc: DocumentSummary, query: string): boolean {
-  if (!query) return true;
-  const haystack = [doc.title, doc.number, doc.template_title, doc.client, doc.counterparty_name]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return query
-    .toLowerCase()
-    .split(/\s+/)
-    .every((word) => haystack.includes(word));
+  return matchesQuery(
+    [doc.title, doc.number, doc.template_title, doc.client, doc.counterparty_name],
+    query,
+  );
 }
 
 const STATUS_TONE: Record<DocumentState['tone'], string> = {
@@ -69,7 +57,7 @@ export function ArchivePage() {
   const groups = useMemo(() => {
     const visible = documents
       .filter((doc) => !kind || (kindByTitle.get(doc.template_title) ?? 'other') === kind)
-      .filter((doc) => matches(doc, query.trim()))
+      .filter((doc) => matches(doc, query))
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
     const byClient = new Map<string, DocumentSummary[]>();
     for (const doc of visible) {
@@ -95,18 +83,7 @@ export function ArchivePage() {
       ) : null}
       {state.data && documents.length > 0 ? (
         <>
-          <div className="section">
-            <Input
-              type="search"
-              aria-label="Поиск по названию или клиенту"
-              placeholder="Название, вид или клиент"
-              mode="contrast"
-              iconBefore={<Icon16SearchOutline />}
-              withClearButton
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
+          <SearchField value={query} onChange={setQuery} hint="Название, вид или клиент" />
           {kinds.length > 1 ? (
             <div className="chips" role="group" aria-label="Вид документа">
               <Button
@@ -153,14 +130,13 @@ export function ArchivePage() {
               }
             >
               {docs.map((doc) => {
-                const style = kindStyle(kindByTitle.get(doc.template_title));
                 const status = documentState(doc);
                 return (
                   <CellSimple
                     key={doc.id}
                     title={documentName(doc.title, doc.number)}
-                    // Вид документа уже на значке, статус — первым словом подписи:
-                    // так строка не переносится и название видно целиком.
+                    // Статус — первым словом подписи: так строка не переносится
+                    // и название видно целиком.
                     subtitle={
                       <>
                         <span className={STATUS_TONE[status.tone]}>{status.label}</span>
@@ -168,11 +144,6 @@ export function ArchivePage() {
                       </>
                     }
                     innerClassNames={{ title: 'ellipsis', subtitle: 'ellipsis' }}
-                    before={
-                      <Avatar.Container size={40} form="squircle">
-                        <Avatar.Text gradient={style.gradient}>{style.short}</Avatar.Text>
-                      </Avatar.Container>
-                    }
                     showChevron
                     onClick={() => navigate(`/documents/${doc.id}`)}
                   />

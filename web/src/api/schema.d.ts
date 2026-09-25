@@ -1236,6 +1236,11 @@ export interface components {
             is_builtin: boolean;
             /** Kind */
             kind: string;
+            /**
+             * Preview
+             * @description Текст пустого бланка — предпросмотр до заполнения
+             */
+            preview: string;
             /** Slug */
             slug: string;
             /** Title */

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import Template
 from core.db.repositories import TemplateRepository
-from core.domain.documents import FieldSpec, FieldType
+from core.domain.documents import FieldSpec, FieldType, fill_text_template
 from core.domain.exceptions import NotFoundError
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 
@@ -24,6 +24,11 @@ class TemplateView:
     is_builtin: bool
     fields: tuple[FieldSpec, ...]
     body: str
+
+    @property
+    def preview(self) -> str:
+        """Пустой бланк: так документ выглядит до первого заполненного поля."""
+        return fill_text_template(self.body, {})
 
 
 def _specs_from_json(raw: list[dict[str, object]]) -> tuple[FieldSpec, ...]:

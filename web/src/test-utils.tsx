@@ -18,6 +18,7 @@ export function makeTemplate(overrides: Partial<Template> = {}): Template {
     description: 'Счёт с реквизитами продавца',
     body_format: 'text',
     is_builtin: true,
+    preview: 'Счёт на оплату № __________ от __________',
     fields: [
       {
         key: 'client_name',

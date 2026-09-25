@@ -132,21 +132,19 @@ export function groupFields(fields: FieldSpec[]): Array<[string, FieldSpec[]]> {
   return [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b));
 }
 
-// Вид документа → короткое имя, метка и цвет аватара в списках.
+// Вид документа → метка во множественном числе для фильтров и графиков.
 export interface KindStyle {
-  short: string;
   plural: string;
-  gradient: 'green' | 'blue' | 'purple' | 'orange';
 }
 
 export const KIND_STYLE: Record<string, KindStyle> = {
-  invoice: { short: 'СЧ', plural: 'Счета', gradient: 'green' },
-  offer: { short: 'КП', plural: 'КП', gradient: 'blue' },
-  contract: { short: 'ДГ', plural: 'Договоры', gradient: 'purple' },
+  invoice: { plural: 'Счета' },
+  offer: { plural: 'КП' },
+  contract: { plural: 'Договоры' },
 };
 
 export function kindStyle(kind: string | undefined): KindStyle {
-  return (kind && KIND_STYLE[kind]) || { short: 'ДК', plural: 'Другие', gradient: 'orange' };
+  return (kind && KIND_STYLE[kind]) || { plural: 'Другие' };
 }
 
 export interface DocumentState {

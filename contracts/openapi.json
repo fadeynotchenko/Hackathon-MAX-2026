@@ -1488,6 +1488,11 @@
             "title": "Kind",
             "type": "string"
           },
+          "preview": {
+            "description": "Текст пустого бланка — предпросмотр до заполнения",
+            "title": "Preview",
+            "type": "string"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -1505,7 +1510,8 @@
           "description",
           "body_format",
           "is_builtin",
-          "fields"
+          "fields",
+          "preview"
         ],
         "title": "TemplateSchema",
         "type": "object"

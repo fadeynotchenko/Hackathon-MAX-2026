@@ -1,13 +1,13 @@
-// Шаблон перед созданием: как выглядит бланк и что понадобится. Отсюда же —
-// напоминание про реквизиты своей организации: без них каждый документ
-// пришлось бы дозаполнять руками.
+// Шаблон перед созданием: пустой бланк таким, каким он станет PDF, и что
+// понадобится для заполнения. Отсюда же — напоминание про реквизиты своей
+// организации: без них каждый документ пришлось бы дозаполнять руками.
 import { Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { Banner } from '@/components/Banner';
 import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
-import { TemplateThumb } from '@/components/TemplateThumb';
+import { DocPreview } from '@/components/DocPreview';
 import { useAuth } from '@/auth/context';
 import { GROUP_TITLE, groupFields } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
@@ -51,7 +51,7 @@ export function TemplatePage() {
       }
     >
       <div className="section">
-        <TemplateThumb kind={template.kind} large />
+        <DocPreview text={template.preview} marks={false} />
       </div>
       {!hasOrganization ? (
         <div className="section">

@@ -37,6 +37,7 @@ class TemplateSchema(BaseModel):
     body_format: str
     is_builtin: bool
     fields: list[FieldSpecSchema]
+    preview: str = Field(description="Текст пустого бланка — предпросмотр до заполнения")
 
 
 class FieldValueSchema(BaseModel):

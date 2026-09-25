@@ -39,6 +39,9 @@ async def test_template_library_lists_builtin(
     assert invoice["is_builtin"] is True
     field = next(f for f in invoice["fields"] if f["key"] == "seller_inn")
     assert field["type"] == "inn" and field["required"] is True and field["group"]
+    # Предпросмотр шаблона — тот же текст, что уйдёт в файл, только с пустыми местами.
+    assert invoice["preview"].startswith("Счёт на оплату")
+    assert "{{" not in invoice["preview"] and "__________" in invoice["preview"]
 
 
 async def test_document_flow_from_requisites_to_preview(
