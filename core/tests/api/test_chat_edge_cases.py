@@ -159,7 +159,7 @@ async def test_caption_asking_for_new_document_is_not_put_into_the_active_one(
     )
 
     reply = (await _replies(redis))[-1]
-    assert reply.text.startswith("Договор оказания услуг")
+    assert reply.text.startswith("🤝 <b>Договор оказания услуг</b>")
     assert await _active(session) != invoice_id
 
 
@@ -177,12 +177,12 @@ async def test_words_answer_to_pending_photo_offers_to_use_it(
     offer = (await _replies(redis))[-1]
     assert MEDIA_OFFER_TEXT in offer.text
     use = offer.buttons[0][0]  # type: ignore[index]
-    assert use.text == "Взять из вложения" and use.payload.startswith("doc:media:")
+    assert use.text == "📎 Взять из вложения" and use.payload.startswith("doc:media:")
     assert storage.urls == [], "без спроса вложение не распознаётся"
 
     await handlers[BOT_CALLBACK](_press(use.payload, "evt-3")[1])
     filled = (await _replies(redis))[-1]
-    assert "— Название клиента: ООО «Ромашка»" in filled.text
+    assert "• Название клиента: <b>ООО «Ромашка»</b>" in filled.text
     assert storage.urls == ["https://i.max.test/p/1"]
 
 
@@ -201,13 +201,13 @@ async def test_failed_buttons_come_back_with_buttons(
 
     await handlers[BOT_CALLBACK](_press(f"doc:send:{document_id}:pdf", "evt-3")[1])
     pdf = (await _replies(redis))[-1]
-    assert pdf.text.startswith("PDF сейчас собрать нечем")
+    assert pdf.text.startswith("😔 PDF сейчас собрать нечем")
     assert pdf.buttons is not None
     assert pdf.buttons[0][0].payload == f"doc:send:{document_id}:docx"
 
     await handlers[BOT_CALLBACK](_press("doc:confirm:424242", "evt-4")[1])
     missing = (await _replies(redis))[-1]
-    assert missing.text == "Документ не найден"
+    assert missing.text == "😔 Документ не найден"
     assert [[b.payload for b in row] for row in missing.buttons or []] == [["doc:new"]]
 
     await handlers[BOT_CALLBACK](_press("doc:confirm:" + "9" * 30, "evt-5")[1])
@@ -247,13 +247,13 @@ async def test_confirm_explains_errors_when_nothing_is_missing(
     text = "Счёт № 1 для ООО Клиент за сайт на 5 000, БИК 044525974"
     await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message(text), "evt-1"))
     filled = (await _replies(redis))[-1]
-    assert "Проверьте: «Расчётный счёт»: счёт не сходится с БИК банка." in filled.text
+    assert "❗ <b>Проверьте:</b>\n• «Расчётный счёт»: счёт не сходится с БИК банка" in filled.text
 
     confirm = filled.buttons[0][0].payload  # type: ignore[index]
     await handlers[BOT_CALLBACK](_press(confirm, "evt-2")[1])
     confirmed = (await _replies(redis))[-1]
-    assert confirmed.text.startswith("Подтвердил, но есть ошибки: «Расчётный счёт»")
-    assert "Ещё нужно: ." not in confirmed.text
+    assert confirmed.text.startswith("👍 Подтвердил, но есть ошибки:\n• «Расчётный счёт»")
+    assert "Ещё нужно" not in confirmed.text
 
 
 async def test_seller_is_named_when_there_are_several_organizations(
@@ -289,7 +289,7 @@ async def test_empty_model_answer_is_not_silence(db: None, session: AsyncSession
 
     replies = await _replies(redis)
     assert len(replies) == 2
-    assert replies[-1].text == "Помощник не нашёл, что ответить. Спросите по-другому"
+    assert replies[-1].text == "😔 Помощник не нашёл, что ответить. Спросите по-другому"
 
 
 async def test_double_tap_on_a_button_is_handled_once(
@@ -368,6 +368,31 @@ async def test_rejected_edit_is_not_reported_as_written(
     await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("сумма сто пятьдесят"), "evt-2"))
 
     reply = (await _replies(redis))[-1]
-    assert "Не записал: «Сумма к оплате»: не похоже на сумму." in reply.text
-    assert "— Сумма к оплате" not in reply.text, "прежняя сумма осталась, но это не запись"
+    assert "❗ <b>Не записал:</b>\n• «Сумма к оплате»: не похоже на сумму" in reply.text
+    assert "• Сумма к оплате" not in reply.text, "прежняя сумма осталась, но это не запись"
     assert "не нашёл значений" not in reply.text
+
+
+async def test_user_values_are_escaped_in_the_html_reply(
+    db: None, session: AsyncSession, redis
+) -> None:
+    await ensure_builtin_templates(session)
+    await session.commit()
+    llm = FakeLLM(
+        text="Сумма <5 000> & без НДС",
+        json_replies=[
+            {"intent": "new", "template": "invoice"},
+            {"client_name": "ООО <b>Ромашка</b> & Ко"},
+            {"intent": "question", "template": ""},
+        ],
+    )
+    handlers = _handlers(redis, llm=llm)
+    text = "Счёт для ООО <b>Ромашка</b> & Ко"
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message(text), "evt-1"))
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Какая сумма?"), "evt-2"))
+
+    filled, answer = await _replies(redis)
+    assert "• Название клиента: <b>ООО &lt;b&gt;Ромашка&lt;/b&gt; &amp; Ко</b>" in filled.text, (
+        "значение от человека — текст, а не разметка MAX"
+    )
+    assert answer.text == "Сумма &lt;5 000&gt; &amp; без НДС"

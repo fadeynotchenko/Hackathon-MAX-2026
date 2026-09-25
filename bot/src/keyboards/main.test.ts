@@ -11,11 +11,11 @@ describe('main keyboard', () => {
     const rows = buttons(mainKeyboard({ miniAppName: 't409_hakaton_max_bot' }));
     expect(rows[0]?.[0]).toMatchObject({
       type: 'open_app',
-      text: 'Создать документ',
+      text: '📄 Создать документ',
       web_app: 't409_hakaton_max_bot',
       payload: 'create',
     });
-    expect(rows[1]?.[0]).toMatchObject({ type: 'open_app', text: 'Архив', payload: 'archive' });
+    expect(rows[1]?.[0]).toMatchObject({ type: 'open_app', text: '🗂 Архив', payload: 'archive' });
     expect(rows[1]?.[1]).toMatchObject({ type: 'callback', payload: 'help' });
   });
 

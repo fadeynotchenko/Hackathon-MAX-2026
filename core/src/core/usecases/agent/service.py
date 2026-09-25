@@ -78,9 +78,14 @@ def lower_first(label: str) -> str:
     return label
 
 
-def missing_text(document: DocumentView) -> str:
+def missing_labels(document: DocumentView) -> list[str]:
+    """Названия пустых полей в порядке формы: «Название клиента», «Дата счёта»."""
     labels = {spec.key: spec.label for spec in document.template.fields}
-    return ", ".join(lower_first(labels[key]) for key in missing_in_order(document))
+    return [labels[key] for key in missing_in_order(document)]
+
+
+def missing_text(document: DocumentView) -> str:
+    return ", ".join(lower_first(label) for label in missing_labels(document))
 
 
 def grounded(spec: FieldSpec, value: str, message: str) -> bool:

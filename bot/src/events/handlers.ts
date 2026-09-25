@@ -16,6 +16,7 @@ import {
   type InlineButton,
 } from './codec.js';
 import { HandlerRejected, type Handler } from './consumer.js';
+import { rememberMarkup } from './markup.js';
 import type { EventPublisher } from './publisher.js';
 
 // Коды MAX Bot API, при которых повторять доставку бессмысленно.
@@ -32,7 +33,7 @@ export function documentKeyboard(miniAppName: string, documentId: number) {
     [
       {
         type: 'open_app',
-        text: 'Открыть в приложении',
+        text: '📱 Открыть в приложении',
         web_app: miniAppName,
         payload: `doc_${documentId}`,
       },
@@ -80,11 +81,13 @@ export function coreEventHandlers(
         log.info({ event: 'notify.duplicate', event_id: event.id }, 'already delivered');
         return;
       }
+      let mid: string | undefined;
       try {
-        await bot.api.sendMessageToUser(data.max_user_id, data.text, {
+        const sent = await bot.api.sendMessageToUser(data.max_user_id, data.text, {
           ...(data.format ? { format: data.format } : {}),
           ...(data.buttons?.length ? { attachments: [buttonsKeyboard(data.buttons)] } : {}),
         });
+        mid = sent?.body?.mid;
       } catch (err) {
         // Отправка не состоялась — снимаем отметку, чтобы повтор был возможен.
         await redis.del(`events:delivered:${event.id}`);
@@ -96,6 +99,15 @@ export function coreEventHandlers(
           );
         }
         throw err;
+      }
+      if (mid && data.format && data.buttons?.length) {
+        // Сообщение уже доставлено: сбой здесь — только потеря жирного шрифта
+        // после нажатия, а не повод переигрывать событие и слать его второй раз.
+        try {
+          await rememberMarkup(redis, mid, { text: data.text, format: data.format });
+        } catch (err) {
+          log.warn({ event: 'notify.markup_not_saved', event_id: event.id, err }, 'markup lost');
+        }
       }
       log.info(
         { event: 'notify.delivered', max_user_id: data.max_user_id, event_id: event.id },

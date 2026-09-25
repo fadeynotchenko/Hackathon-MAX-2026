@@ -51,6 +51,7 @@ async function main(): Promise<void> {
     publisher,
     log,
     keyboard: { miniAppName: config.MAX_MINI_APP_NAME },
+    redis,
   });
 
   // Отдельное соединение для блокирующего XREADGROUP: иначе оно держало бы

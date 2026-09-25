@@ -6,14 +6,17 @@ import {
   DOC_ACTION,
   NON_TEXT_HINT,
   UNKNOWN_COMMAND_TEXT,
+  isGreeting,
   pickAttachment,
   registerDialog,
 } from './dialog.js';
+import { WELCOME_TEXT } from './start.js';
 
 type Handler = (ctx: unknown) => Promise<void>;
 
-function setup() {
+function setup(saved: Record<string, string> = {}) {
   const xadd = vi.fn().mockResolvedValue('1-0');
+  const get = vi.fn((key: string) => Promise.resolve(saved[key] ?? null));
   const publisher = new EventPublisher(
     { xadd } as unknown as ConstructorParameters<typeof EventPublisher>[0],
     silentLogger(),
@@ -29,7 +32,7 @@ function setup() {
       handlers.action = handler;
     },
   };
-  registerDialog(bot as never, { publisher, log: silentLogger() });
+  registerDialog(bot as never, { publisher, log: silentLogger(), keyboard: {}, redis: { get } });
   return { xadd, handlers };
 }
 
@@ -124,8 +127,20 @@ describe('dialog', () => {
     const command = textMessage('/deploy');
     await handlers.on!(command.ctx);
 
-    expect(photo.reply).toHaveBeenCalledWith(NON_TEXT_HINT);
+    expect(photo.reply).toHaveBeenCalledWith(NON_TEXT_HINT, { format: 'html' });
     expect(command.reply).toHaveBeenCalledWith(UNKNOWN_COMMAND_TEXT);
+    expect(xadd).not.toHaveBeenCalled();
+  });
+
+  it('greets on «привет» itself instead of asking the assistant', async () => {
+    const { xadd, handlers } = setup();
+    const { ctx, reply } = textMessage('Привет!');
+    await handlers.on!(ctx);
+
+    expect(reply).toHaveBeenCalledWith(
+      WELCOME_TEXT,
+      expect.objectContaining({ format: 'html', attachments: expect.any(Array) }),
+    );
     expect(xadd).not.toHaveBeenCalled();
   });
 
@@ -160,6 +175,36 @@ describe('dialog', () => {
     expect(answerOnCallback.mock.invocationCallOrder[0]).toBeLessThan(
       xadd.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it('keeps the formatting of the pressed message when its markup was saved', async () => {
+    const html = '📄 <b>Счёт на оплату</b>\nПроверьте значения';
+    const { handlers } = setup({
+      'messages:markup:mid.1': JSON.stringify({ text: html, format: 'html' }),
+    });
+    const answerOnCallback = vi.fn().mockResolvedValue({ success: true });
+    await handlers.action!({
+      callback: { payload: 'doc:confirm:12' },
+      user: { user_id: 5 },
+      chatId: 77,
+      message: { body: { mid: 'mid.1', text: '📄 Счёт на оплату\nПроверьте значения' } },
+      answerOnCallback,
+    });
+
+    expect(answerOnCallback).toHaveBeenCalledWith({
+      message: { text: html, format: 'html', attachments: [] },
+    });
+  });
+});
+
+describe('isGreeting', () => {
+  it('recognises a bare greeting and nothing more', () => {
+    for (const text of ['привет', 'Привет!', 'Здравствуйте', 'добрый день 👋', 'Меню', 'hi']) {
+      expect(isGreeting(text), text).toBe(true);
+    }
+    for (const text of ['Привет, нужен счёт на 5000', 'приветственное письмо', 'меню кафе']) {
+      expect(isGreeting(text), text).toBe(false);
+    }
   });
 });
 
