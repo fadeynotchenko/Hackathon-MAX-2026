@@ -31,6 +31,7 @@ const schema = z
     MAX_BOT_TOKEN: z.string().min(1, 'MAX_BOT_TOKEN обязателен'),
     MAX_MINI_APP_NAME: z.string().default(''),
     BOT_MODE: z.enum(['polling', 'webhook']).default('polling'),
+    BOT_POLLING_TAKEOVER: z.stringbool().default(false),
     BOT_WEBHOOK_PATH: z.string().startsWith('/').default('/bot/webhook'),
     BOT_WEBHOOK_SECRET: z.string().default(''),
     BOT_WEBHOOK_PORT: z.coerce.number().int().positive().default(8080),

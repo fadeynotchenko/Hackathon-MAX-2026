@@ -1,7 +1,7 @@
 # Прод-стенд. Запуск через ./deploy.sh (тесты в образе → снимок БД → up --build).
 #
-# Сервисы: db, redis, api, bot, gateway, db_backup. Каждая папка репозитория — своя
-# деплой-единица (core, bot, gateway+web); вынос на отдельный хост сводится к
+# Сервисы: db, redis, api, bot, gateway, certbot, db_backup. Каждая папка репозитория —
+# своя деплой-единица (core, bot, gateway+web); вынос на отдельный хост сводится к
 # переносу блока в другой compose. Миграции и потребитель событий бота — внутри api.
 #
 # Логи: stdout контейнеров с ротацией по объёму (живой хвост для `docker compose
@@ -220,6 +220,44 @@ services:
     cap_add: [NET_BIND_SERVICE, CHOWN, SETUID, SETGID, DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
+
+  certbot:
+    # Сертификат Let's Encrypt для DOMAIN: выпуск при первом старте и проверка
+    # продления дважды в сутки (gateway/certbot.sh). http-01 проходит через общий
+    # с gateway webroot, готовая пара копируется в gateway/ssl, и gateway сам
+    # перечитывает её (gateway/cert-reload.sh) — без docker.sock и ручных шагов.
+    image: certbot/certbot:v5.8.0
+    container_name: maxapp_certbot
+    logging: *default-logging
+    entrypoint: ["/bin/sh", "/opt/maxapp/certbot.sh"]
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./gateway/certbot.sh:/opt/maxapp/certbot.sh:ro
+      - ./gateway/acme:/var/www/acme
+      - ./gateway/letsencrypt:/etc/letsencrypt
+      - ./gateway/ssl:/etc/nginx/ssl
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [maxapp]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/lib/letsencrypt
+      - /var/log/letsencrypt
+    cap_drop: [ALL]
+    # Пишет в каталоги gateway/ на хосте, владелец которых — тот, кто клонировал репозиторий.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          pids: 50
 
   db_backup:
     # Суточный pg_dump (custom-format) в ./backups в DB_BACKUP_HOUR_UTC, хранит

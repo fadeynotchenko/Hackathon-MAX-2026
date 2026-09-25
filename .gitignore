@@ -32,11 +32,13 @@ CLAUDE.md
 backups/
 *.dump
 
-# TLS-материалы и ACME-челленджи кладутся на сервер руками (см. docs/DEPLOY.md).
+# TLS-материалы, ACME-челленджи и учётка Let's Encrypt живут только на сервере
+# (контейнер certbot, см. docs/DEPLOY.md).
 gateway/ssl/*
 !gateway/ssl/README.md
 gateway/acme/*
 !gateway/acme/.gitkeep
+gateway/letsencrypt/
 
 # Кеши инструментов сведены в один .cache/, чтобы корень не обрастал
 # служебными каталогами (.pytest_cache, .ruff_cache, .import_linter_cache).

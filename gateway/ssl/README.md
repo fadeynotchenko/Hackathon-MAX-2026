@@ -1,25 +1,23 @@
 # TLS-материалы
 
-Сюда на сервере кладутся `fullchain.pem` и `privkey.pem` (Let's Encrypt через
-certbot или сертификат от регистратора). Каталог монтируется в контейнер nginx
-только на чтение; содержимое в git не попадает (`.gitignore`).
+Здесь на сервере лежат `fullchain.pem` и `privkey.pem`, которые читает nginx.
+Каталог монтируется в gateway только на чтение, содержимое в git не попадает
+(`.gitignore`). Руками сюда ничего класть не нужно:
 
-Первый запуск: если файлов нет, `deploy.sh` кладёт самоподписанную пару на 30 дней,
-чтобы gateway поднялся и отдавал `/.well-known/acme-challenge/` из `gateway/acme`.
-После этого выпуск настоящего сертификата:
+- первый запуск `deploy.sh` ставит самоподписанную пару на 30 дней — без неё nginx
+  не стартует, а без работающего nginx Let's Encrypt не проверит домен;
+- контейнер `certbot` (`gateway/certbot.sh`) выпускает сертификат для `DOMAIN` по
+  http-01 через webroot `gateway/acme/`, копирует пару сюда и дважды в сутки
+  проверяет продление; учётка Let's Encrypt — в `gateway/letsencrypt/`;
+- gateway раз в минуту сверяет файлы и после замены делает `nginx -s reload`
+  (`gateway/cert-reload.sh`).
 
-```bash
-certbot certonly --webroot -w ./gateway/acme -d "$DOMAIN"
-cp /etc/letsencrypt/live/$DOMAIN/{fullchain,privkey}.pem ./gateway/ssl/
-docker compose -f docker-compose.prod.yml exec gateway nginx -s reload
-```
+Статус выпуска: `./maxapp --prod logs certbot`. Выпуск заново с нуля — удалить
+`gateway/letsencrypt/` и перезапустить контейнер:
+`docker compose -f docker-compose.prod.yml restart certbot`.
 
-Продление (таймер certbot ставит сам): подключить копирование и перезагрузку хуком,
-иначе через 90 дней nginx продолжит отдавать протухший файл:
-
-```bash
-certbot renew --deploy-hook "cp /etc/letsencrypt/live/$DOMAIN/{fullchain,privkey}.pem /opt/maxapp/gateway/ssl/ && docker compose -f /opt/maxapp/docker-compose.prod.yml exec gateway nginx -s reload"
-```
+Свой сертификат (от регистратора) кладётся сюда под теми же именами, `certbot`
+тогда не поднимается: `docker compose -f docker-compose.prod.yml stop certbot`.
 
 HSTS в `security_headers.conf` объявлен с `includeSubDomains`: все поддомены
 `DOMAIN` обязаны отвечать по https.

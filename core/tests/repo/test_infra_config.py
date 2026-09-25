@@ -40,8 +40,27 @@ def _services(compose: str) -> set[str]:
 
 def test_stacks_contain_exactly_the_expected_services(prod: str, dev: str) -> None:
     """Без лишних контейнеров: миграции и потребитель событий живут внутри api."""
-    assert _services(prod) == {"db", "redis", "api", "bot", "gateway", "db_backup"}
+    assert _services(prod) == {"db", "redis", "api", "bot", "gateway", "certbot", "db_backup"}
     assert _services(dev) == {"db", "redis", "deps", "api", "bot", "web"}
+
+
+def test_certbot_shares_webroot_and_certs_with_gateway(prod: str) -> None:
+    """Сертификат выпускается и продлевается без ручных шагов: http-01 через общий
+    webroot, пара — в тот каталог, что читает nginx, а gateway перечитывает её сам."""
+    certbot = prod.split("\n  certbot:\n", 1)[1].split("\n  db_backup:\n", 1)[0]
+    gateway = prod.split("\n  gateway:\n", 1)[1].split("\n  certbot:\n", 1)[0]
+    assert "./gateway/acme:/var/www/acme\n" in certbot
+    assert "./gateway/acme:/var/www/acme:ro" in gateway
+    assert "./gateway/ssl:/etc/nginx/ssl\n" in certbot
+    assert "./gateway/ssl:/etc/nginx/ssl:ro" in gateway
+    assert "gateway:\n        condition: service_healthy" in certbot, "http-01 нужен живой :80"
+    assert re.search(r"image: certbot/certbot:v\d+\.\d+\.\d+", certbot), "версия certbot закреплена"
+    assert "root /var/www/acme" in _read("gateway/templates/default.conf.template")
+    assert "/docker-entrypoint.d/" in _read("gateway/Dockerfile")
+    assert "nginx -s reload" in _read("gateway/cert-reload.sh")
+    script = _read("gateway/certbot.sh")
+    assert '-w "$WEBROOT"' in script and "WEBROOT=/var/www/acme" in script
+    assert "SSL_DIR=/etc/nginx/ssl" in script
 
 
 def test_api_waits_for_db_and_redis(prod: str, dev: str) -> None:

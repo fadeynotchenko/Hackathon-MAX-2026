@@ -16,6 +16,7 @@ backups/
 !.env.example
 gateway/ssl/
 gateway/acme/
+gateway/letsencrypt/
 .DS_Store
 .idea/
 .vscode/

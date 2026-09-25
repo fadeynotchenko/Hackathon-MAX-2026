@@ -5,13 +5,14 @@
 #   SKIP_TESTS=1 ./deploy.sh # без прогона тестов (только если они уже зелёные в CI)
 #
 # Шаги:
-#   1. проверки: .env на месте, docker и git доступны;
+#   1. проверки: .env на месте и с настоящим DOMAIN, docker и git доступны;
 #   2. git pull --ff-only;
 #   3. тесты core внутри тестового образа (core/Dockerfile, target test) — красные = нет деплоя;
 #   4. каталоги логов/бэкапов с правами под uid контейнеров, самоподписанный TLS при первом запуске;
-#   5. снимок БД перед выкаткой (best-effort, ротация PREDEPLOY_KEEP);
-#   6. docker compose up -d --build --remove-orphans --wait (api применит миграции при старте);
-#   7. сводка контейнеров и health API, чистка старых слоёв.
+#   5. первый выпуск Let's Encrypt (gateway + certbot) до старта бота;
+#   6. снимок БД перед выкаткой (best-effort, ротация PREDEPLOY_KEEP);
+#   7. docker compose up -d --build --remove-orphans --wait (api применит миграции при старте);
+#   8. сводка контейнеров, health API и сертификата, чистка старых слоёв.
 #
 # Правки .env делаются ДО запуска: контейнеры перечитают его при пересоздании.
 set -euo pipefail
@@ -27,6 +28,16 @@ log "cwd: $PWD"
 [ -f .env ] || fail ".env не найден рядом с docker-compose.prod.yml"
 command -v git >/dev/null || fail "git не найден"
 command -v docker >/dev/null || fail "docker не найден"
+
+# Значение из .env так, как его увидит compose: последняя строка, без кавычек.
+env_value() { sed -n "s/^$1=//p" .env | tail -n 1 | tr -d "\"'"; }
+DOMAIN="$(env_value DOMAIN)"
+case "$DOMAIN" in
+  '' | *.example.tld) fail "DOMAIN в .env не задан: нужен адрес мини-аппа, например DOMAIN=project-documents-max.ru" ;;
+esac
+if [ "$(env_value PUBLIC_BASE_URL)" != "https://$DOMAIN" ]; then
+  log "WARNING: PUBLIC_BASE_URL в .env не https://$DOMAIN — бот зарегистрирует вебхук не на этот стенд"
+fi
 
 log "git pull --ff-only"
 git pull --ff-only
@@ -60,15 +71,43 @@ install -d -m 0750 -o 101 -g 101 ./app_logs/nginx
 install -d -m 0700 ./backups
 
 log "TLS: сертификат gateway"
+# Учётка Let's Encrypt и история выпусков контейнера certbot.
+install -d -m 0700 ./gateway/letsencrypt
 if [ ! -f ./gateway/ssl/fullchain.pem ] || [ ! -f ./gateway/ssl/privkey.pem ]; then
   # Без пары сертификатов nginx не стартует, а certbot по webroot нужен работающий
   # nginx: замкнутый круг. Самоподписанная пара поднимает gateway для первого
-  # выпуска через ACME (см. gateway/ssl/README.md), потом её заменяет настоящая.
+  # выпуска через ACME, потом контейнер certbot заменяет её настоящей.
   install -d -m 0700 ./gateway/ssl
-  openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
-    -subj "/CN=$(grep -E '^DOMAIN=' .env | cut -d= -f2- | tr -d '\"')" \
+  openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=$DOMAIN" \
     -keyout ./gateway/ssl/privkey.pem -out ./gateway/ssl/fullchain.pem >/dev/null 2>&1
-  log "WARNING: поставлен самоподписанный сертификат на 30 дней, выпустите настоящий (gateway/ssl/README.md)"
+  log "поставлена самоподписанная пара на 30 дней, настоящую выпустит контейнер certbot"
+fi
+
+# Заглушка первого запуска подписана сама собой: издатель совпадает с субъектом.
+cert_is_self_signed() {
+  local pem=./gateway/ssl/fullchain.pem
+  [ "$(openssl x509 -in "$pem" -noout -issuer | sed 's/^issuer=//')" = \
+    "$(openssl x509 -in "$pem" -noout -subject | sed 's/^subject=//')" ]
+}
+
+if cert_is_self_signed; then
+  # Бот при старте регистрирует вебхук в MAX на https://$DOMAIN, а мини-апп в
+  # клиенте MAX не откроется с самоподписанным сертификатом. Поэтому сначала
+  # gateway и certbot (gateway тянет за собой api, db и redis), бот — после.
+  log "первый выпуск Let's Encrypt для $DOMAIN (до 2 минут)"
+  $COMPOSE up -d --build gateway certbot
+  for _ in $(seq 1 24); do
+    cert_is_self_signed || break
+    sleep 5
+  done
+  if cert_is_self_signed; then
+    log "WARNING: сертификат не выпущен. Проверьте, что A-запись $DOMAIN ведёт на этот сервер, а порты 80 и 443 открыты снаружи."
+    log "WARNING: certbot повторяет попытку каждые 15 минут (./maxapp --prod logs certbot); после выпуска перезапустите бота: $COMPOSE restart bot"
+  else
+    # gateway и сам перечитает пару в течение минуты, но бот стартует прямо сейчас.
+    $COMPOSE exec -T gateway nginx -s reload || log "WARNING: gateway не перечитал конфиг, подхватит пару сам в течение минуты"
+    log "сертификат Let's Encrypt получен"
+  fi
 fi
 
 log "снимок БД перед выкаткой (best-effort)"
@@ -98,6 +137,11 @@ log "контейнеры:"
 $COMPOSE ps
 log "health API:"
 $COMPOSE exec -T api curl -fsS http://127.0.0.1:8000/api/v1/health && echo || log "WARNING: API не отвечает, проверьте ./maxapp --prod logs api"
+if cert_is_self_signed; then
+  log "WARNING: https://$DOMAIN пока с самоподписанным сертификатом, мини-апп в MAX не откроется: ./maxapp --prod logs certbot"
+else
+  log "TLS: $(openssl x509 -in ./gateway/ssl/fullchain.pem -noout -issuer), до $(openssl x509 -in ./gateway/ssl/fullchain.pem -noout -enddate | cut -d= -f2)"
+fi
 # Старые слои образов после пересборки не нужны.
 docker image prune -f >/dev/null 2>&1 || true
 log "готово"

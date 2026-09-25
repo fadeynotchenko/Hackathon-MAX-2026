@@ -129,15 +129,22 @@ ENV_SPEC: list[EnvVar] = [
             "PUBLIC_BASE_URL",
             "Публичный https-адрес стенда. Нужен боту в режиме webhook и для ссылок.",
             type=T_URL,
-            example="https://maxapp.example.tld",
+            example="https://project-documents-max.ru",
             owner="bot/src/config.ts; AppConfig",
+            notes="Всегда https://<DOMAIN>: по нему бот регистрирует вебхук в MAX.",
         ),
         EnvVar(
             "DOMAIN",
             "Доменное имя для server_name nginx (прод-compose).",
             required_for=_req(COMPOSE),
-            example="maxapp.example.tld",
-            owner="gateway/templates/default.conf.template",
+            example="project-documents-max.ru",
+            notes="Этот же адрес указан URL мини-приложения в MAX; A-запись домена ведёт на прод-хост.",
+            owner="gateway/templates/default.conf.template; gateway/certbot.sh; deploy.sh",
+        ),
+        EnvVar(
+            "ACME_EMAIL",
+            "Почта учётной записи Let's Encrypt для сертификата DOMAIN. Пусто ⇒ учётка без почты.",
+            owner="docker-compose.prod.yml (certbot); gateway/certbot.sh",
         ),
     ),
     *_grouped(
@@ -154,6 +161,7 @@ ENV_SPEC: list[EnvVar] = [
         EnvVar(
             "MAX_MINI_APP_NAME",
             "Имя мини-приложения для кнопки open_app; у бота совпадает с его username.",
+            example="t409_hakaton_max_bot",
             owner="bot/src/config.ts",
             notes="Пусто ⇒ кнопка не показывается: MAX отвечает 400 «Field 'webApp' cannot be null» и теряет всё сообщение.",
         ),
@@ -180,6 +188,14 @@ ENV_SPEC: list[EnvVar] = [
             "polling (dev) | webhook (прод за nginx).",
             default="polling",
             owner="bot/src/config.ts",
+        ),
+        EnvVar(
+            "BOT_POLLING_TAKEOVER",
+            "Разрешить polling-боту снять вебхук-подписки (например, прода на домене) и забрать апдейты себе.",
+            type=T_BOOL,
+            default="false",
+            owner="bot/src/config.ts; bot/src/webhook-guard.ts",
+            notes="false ⇒ при живой подписке бот не запускает polling и пишет в лог, чей вебхук мешает: иначе локальный стенд молча отключил бы прод.",
         ),
         EnvVar(
             "BOT_WEBHOOK_PATH",

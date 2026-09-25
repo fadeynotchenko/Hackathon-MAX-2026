@@ -19,5 +19,7 @@ FROM nginx:1.27-alpine
 COPY gateway/templates/ /etc/nginx/templates/
 COPY gateway/snippets/ /etc/nginx/snippets/
 COPY --from=web-build /repo/web/dist /usr/share/nginx/html
+# Перечитывание сертификата после выпуска и продления контейнером certbot.
+COPY --chmod=755 gateway/cert-reload.sh /docker-entrypoint.d/40-cert-reload.sh
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- http://127.0.0.1/nginx-health >/dev/null || exit 1

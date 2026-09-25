@@ -11,6 +11,9 @@ SDK `@maxhub/max-bot-api`. Здесь только то, на что опира�
   (прод). Бот выбирает режим по `BOT_MODE`; в webhook-режиме SDK сам регистрирует
   подписку на `PUBLIC_BASE_URL + BOT_WEBHOOK_PATH` и проверяет заголовок
   `x-max-bot-api-secret` (`BOT_WEBHOOK_SECRET`) сравнением за константное время.
+  Запуск polling'а в SDK снимает все подписки бота, поэтому бот сначала читает
+  `GET /subscriptions` и при живом вебхуке polling не запускает
+  (`bot/src/webhook-guard.ts`, обход — `BOT_POLLING_TAKEOVER=true`).
 - Апдейты, на которые подписан бот: `bot_started` (пользователь нажал «Начать»,
   есть `payload` из deep-link), `message_created`, `message_callback` (нажатие
   inline-кнопки, отвечаем `answerOnCallback`).

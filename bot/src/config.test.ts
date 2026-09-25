@@ -24,6 +24,14 @@ describe('loadConfig', () => {
     expect(loadConfig(base).LOG_DIR).toBe('app_logs');
   });
 
+  it('keeps webhook subscriptions unless polling takeover is explicit', () => {
+    expect(loadConfig(base).BOT_POLLING_TAKEOVER).toBe(false);
+    expect(loadConfig({ ...base, BOT_POLLING_TAKEOVER: 'true' }).BOT_POLLING_TAKEOVER).toBe(true);
+    expect(() => loadConfig({ ...base, BOT_POLLING_TAKEOVER: 'maybe' })).toThrow(
+      /BOT_POLLING_TAKEOVER/,
+    );
+  });
+
   it('requires the bot token', () => {
     expect(() => loadConfig({ REDIS_HOST: 'x' })).toThrow(/MAX_BOT_TOKEN/);
   });

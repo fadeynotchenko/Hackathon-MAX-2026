@@ -18,6 +18,7 @@ import { loggingMiddleware } from './middlewares/logging.js';
 import { malformedUpdateGuard } from './middlewares/malformed.js';
 import { createRedis } from './redis.js';
 import { RedisSessionStore } from './session/redis-store.js';
+import { webhooksInTheWay } from './webhook-guard.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -112,6 +113,20 @@ async function main(): Promise<void> {
     });
     log.info({ event: 'bot.webhook.started', path: config.BOT_WEBHOOK_PATH }, 'webhook mode');
   } else {
+    const webhooks = await webhooksInTheWay(bot.api, config.BOT_POLLING_TAKEOVER);
+    if (webhooks.length > 0) {
+      // Процесс остаётся жить: потребитель событий по-прежнему доставляет файлы
+      // документов в чат, не доходят сюда только входящие апдейты.
+      log.error(
+        {
+          event: 'bot.polling.blocked',
+          webhooks,
+          hint: 'апдейты этого бота уходят на вебхук (прод). Для локали — отдельный бот со своим MAX_BOT_TOKEN; забрать апдейты себе и снять подписку прода — BOT_POLLING_TAKEOVER=true',
+        },
+        'webhook subscription is active, polling not started',
+      );
+      return;
+    }
     log.info({ event: 'bot.polling.started' }, 'polling mode');
     // Промис живёт, пока крутится polling; резолв без stopPolling — SDK сдался.
     await bot.start({ mode: 'polling', options: { allowedUpdates: [...allowedUpdates] } });
