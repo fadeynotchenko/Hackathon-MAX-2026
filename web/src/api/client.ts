@@ -10,6 +10,8 @@ export type ErrorResponse = components['schemas']['ErrorResponse'];
 export type SessionResponse = components['schemas']['SessionResponse'];
 export type UserProfile = components['schemas']['UserProfileSchema'];
 export type AdminStats = components['schemas']['AdminStatsResponse'];
+export type AdminMetrics = components['schemas']['AdminMetricsResponse'];
+export type DailyMetrics = components['schemas']['DailyMetricsSchema'];
 export type NotifyRequest = components['schemas']['NotifyRequest'];
 export type NotifyResponse = components['schemas']['NotifyResponse'];
 export type DevInitDataResponse = components['schemas']['DevInitDataResponse'];
@@ -185,6 +187,10 @@ export class ApiClient {
 
   adminStats(): Promise<AdminStats> {
     return this.request<AdminStats>('/api/v1/admin/stats');
+  }
+
+  adminMetrics(days: number): Promise<AdminMetrics> {
+    return this.request<AdminMetrics>(`/api/v1/admin/metrics?days=${days}`);
   }
 
   adminNotify(body: NotifyRequest): Promise<NotifyResponse> {

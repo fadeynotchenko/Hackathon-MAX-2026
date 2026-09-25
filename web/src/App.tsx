@@ -4,7 +4,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/context';
 import { startRoute } from '@/lib/startRoute';
 import { getStartParam } from '@/max/webapp';
-import { AdminPage } from '@/pages/AdminPage';
+import { AdminPage } from '@/pages/admin/AdminPage';
 import { ArchivePage } from '@/pages/archive/ArchivePage';
 import { ClientPage } from '@/pages/create/ClientPage';
 import { CreatePage } from '@/pages/create/CreatePage';

@@ -483,3 +483,372 @@ body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Метрики админки. Цвета графиков — токены MAX UI: акцент --icon-themed,
+   контекст --icon-tertiary, сетка и ось --divider-*, фон карточки
+   --background-primary. Ступени воронки — акцент, смешанный с цветом текста на
+   0/20/40/60/80 %: в обеих темах проверены на монотонность, шаг светлоты не
+   меньше 0,06 и контраст с фоном карточки не ниже 2:1 (у акцента 4:1). */
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size2xl);
+  transition: opacity 0.15s ease;
+}
+
+/* Новый период загружается: прежние графики остаются на месте, приглушённые. */
+.dashboard--stale {
+  opacity: 0.5;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-size-m);
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-xs);
+  min-width: 0;
+  padding: var(--spacing-size-xl);
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--background-primary);
+}
+
+.stat-tile__value {
+  overflow-wrap: anywhere;
+}
+
+.chart-card {
+  --chart-surface: var(--background-primary);
+  --chart-accent: var(--icon-themed);
+  --chart-context: var(--icon-tertiary);
+  --chart-grid: var(--divider-secondary);
+  --chart-axis: var(--divider-primary);
+  --chart-step-0: var(--icon-themed);
+  --chart-step-1: color-mix(in srgb, var(--icon-themed), var(--text-primary) 20%);
+  --chart-step-2: color-mix(in srgb, var(--icon-themed), var(--text-primary) 40%);
+  --chart-step-3: color-mix(in srgb, var(--icon-themed), var(--text-primary) 60%);
+  --chart-step-4: color-mix(in srgb, var(--icon-themed), var(--text-primary) 80%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-l);
+  margin: 0;
+  padding: var(--spacing-size-xl);
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--chart-surface);
+}
+
+.chart-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-size-m);
+}
+
+/* Кнопка «Таблица» не сжимается рядом с длинным подзаголовком. */
+.chart-card__head > button {
+  flex: none;
+}
+
+.chart-card__titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-xs);
+  min-width: 0;
+}
+
+.chart {
+  position: relative;
+  border-radius: var(--size-border-radius-semantic-border-radius-paper);
+  outline: none;
+}
+
+.chart:focus-visible {
+  box-shadow: 0 0 0 2px var(--icon-themed);
+}
+
+/* pan-y: вертикальный жест листает экран, горизонтальный водит по графику. */
+.chart__svg {
+  display: block;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.chart__grid,
+.chart__baseline,
+.chart__crosshair {
+  stroke-width: 1;
+}
+
+.chart__grid {
+  stroke: var(--chart-grid);
+}
+
+.chart__baseline,
+.chart__crosshair {
+  stroke: var(--chart-axis);
+}
+
+.chart__tick,
+.chart__label {
+  font-family: var(--family-base);
+  font-size: var(--font-size-tag);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__tick {
+  fill: var(--text-tertiary);
+}
+
+.chart__label {
+  fill: var(--text-secondary);
+  font-weight: 600;
+}
+
+.chart__line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart__line--accent {
+  stroke: var(--chart-accent);
+}
+
+.chart__line--context {
+  stroke: var(--chart-context);
+}
+
+/* Точка с кольцом цвета фона: видна там, где пересекает линию. */
+.chart__dot {
+  stroke: var(--chart-surface);
+  stroke-width: 2;
+}
+
+.chart__dot--accent {
+  fill: var(--chart-accent);
+}
+
+.chart__dot--context {
+  fill: var(--chart-context);
+}
+
+.chart__bar {
+  fill: var(--chart-accent);
+  transition: opacity 0.1s ease;
+}
+
+.chart__bar--dim {
+  opacity: 0.45;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-xs);
+  max-width: 75%;
+  padding: var(--spacing-size-m) var(--spacing-size-l);
+  border-radius: var(--size-border-radius-semantic-border-radius-paper);
+  border: 0.5px solid var(--divider-primary);
+  background: var(--background-primary);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--text-primary) 14%, transparent);
+  font-size: var(--font-size-description);
+  line-height: var(--line-height-detail);
+  pointer-events: none;
+}
+
+.chart-tooltip__title {
+  color: var(--text-secondary);
+}
+
+.chart-tooltip__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-size-s);
+  white-space: nowrap;
+}
+
+.chart-tooltip__value {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip__name {
+  color: var(--text-secondary);
+}
+
+.chart-key {
+  display: inline-block;
+  flex: none;
+}
+
+.chart-key--line {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.chart-key--rect {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.chart-key--accent {
+  background: var(--chart-accent);
+}
+
+.chart-key--context {
+  background: var(--chart-context);
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-size-xl);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-description);
+}
+
+.chart-legend__item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-size-s);
+}
+
+.chart-table__scroll {
+  overflow-x: auto;
+}
+
+.chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-description);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-table th,
+.chart-table td {
+  padding: var(--spacing-size-s) var(--spacing-size-xs);
+  border-bottom: 0.5px solid var(--divider-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chart-table thead th {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.chart-table th:first-child {
+  text-align: left;
+}
+
+.chart-table tbody th {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-l);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-xs);
+}
+
+.bar-row__text {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-size-m);
+  font-size: var(--font-size-description);
+  line-height: var(--line-height-detail);
+}
+
+.bar-row__label {
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.bar-row__value {
+  flex: none;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-row__note {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* Полоса 8px, скругление только у конца: растёт от левой оси. */
+.bar-row__track {
+  height: 8px;
+}
+
+.bar-row__bar {
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+}
+
+.bar-row__bar--accent,
+.bar-row__bar--step-0 {
+  background: var(--chart-step-0);
+}
+
+.bar-row__bar--context {
+  background: var(--chart-context);
+}
+
+.bar-row__bar--step-1 {
+  background: var(--chart-step-1);
+}
+
+.bar-row__bar--step-2 {
+  background: var(--chart-step-2);
+}
+
+.bar-row__bar--step-3 {
+  background: var(--chart-step-3);
+}
+
+.bar-row__bar--step-4 {
+  background: var(--chart-step-4);
+}
+
+/* Состояние доставки: цвет только вместе с иконкой и подписью. */
+.status-icon {
+  display: block;
+}
+
+.status-icon--good {
+  color: var(--icon-positive);
+}
+
+.status-icon--bad {
+  color: var(--icon-negative);
+}
+
+.status-icon--wait {
+  color: var(--icon-tertiary);
+}

@@ -85,8 +85,8 @@ export function ProfilePage() {
       {user.is_admin ? (
         <CellList mode="island" filled header={<CellHeader>Администрирование</CellHeader>}>
           <CellSimple
-            title="Сводка и рассылка"
-            subtitle="Пользователи и сообщения через бота"
+            title="Метрики и рассылка"
+            subtitle="Пользователи, документы, воронка; сообщения через бота"
             before={<IconChart />}
             showChevron
             onClick={() => navigate('/admin')}

@@ -6,6 +6,12 @@ import type { DocumentSummary, FieldSpec, FieldType, ValueSource } from '@/api/c
 const DATE = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 const DATE_SHORT = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
 const TIME = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
+const NUMBER = new Intl.NumberFormat('ru-RU');
+
+// «1 284»: разряды по-русски.
+export function formatNumber(value: number): string {
+  return NUMBER.format(value);
+}
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';

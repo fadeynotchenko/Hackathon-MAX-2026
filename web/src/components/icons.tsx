@@ -198,3 +198,12 @@ export function IconChart(props: IconProps) {
     </Icon>
   );
 }
+
+export function IconClock(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5V12l3 2" />
+    </Icon>
+  );
+}
