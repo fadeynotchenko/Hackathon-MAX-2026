@@ -8,10 +8,18 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.api.events_worker import WorkerDeps, build_handlers
+from core.api.events_worker import MESSAGE_LIMIT, WorkerDeps, _reply, build_handlers
 from core.db.repositories import UserRepository
-from core.events import BOT_USER_STARTED, BotUserStarted, EventBus, consume_stream, publish_event
+from core.events import (
+    BOT_USER_STARTED,
+    BotUserStarted,
+    EventBus,
+    NotifyUser,
+    consume_stream,
+    publish_event,
+)
 from core.files import FilesConfig
+from core.usecases.agent import ChatReply
 
 
 def _handlers(redis, *, llm=None, files: FilesConfig | None = None, fetch=None) -> dict:
@@ -312,3 +320,25 @@ async def test_delivery_report_is_stitched_to_the_send(
 
     facts = await document_history(session, user_id=user_id, document_id=document_id)
     assert (facts[-1].kind, facts[-1].code) == ("delivery_failed", "max_api.403")
+
+
+async def test_long_html_reply_goes_out_as_plain_text(redis) -> None:
+    """Обрезанный посреди тега HTML MAX не принял бы: длинный ответ теряет разметку,
+    но не текст и не кнопки."""
+    deps = WorkerDeps(
+        redis=redis,
+        bus=EventBus(redis, stream_to_bot="test:to_bot", source="api-test", maxlen=100),
+        files=FilesConfig(Path("unused"), "soffice", 5),
+        llm=None,
+    )
+    await _reply(deps, 5, ChatReply("<b>" + "а &amp; б " * 800 + "</b>"))
+    await _reply(deps, 5, ChatReply("<b>Коротко</b> &amp; ясно"))
+
+    long, short = (
+        NotifyUser.model_validate_json(fields["payload"])
+        for _, fields in await redis.xrange("test:to_bot")
+    )
+    assert long.format is None
+    assert long.text.startswith("а & б") and "<b>" not in long.text
+    assert len(long.text) == MESSAGE_LIMIT and long.text.endswith("…")
+    assert short.format == "html" and short.text == "<b>Коротко</b> &amp; ясно"

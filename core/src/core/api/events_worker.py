@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from html import unescape
 
 from redis.asyncio import Redis
 
@@ -104,13 +106,27 @@ def _buttons(reply: ChatReply) -> list[list[InlineButton]]:
     return [[InlineButton(text=b.text, payload=b.payload) for b in row] for row in reply.buttons]
 
 
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _plain(html: str) -> str:
+    """HTML ответа без разметки. Свои «<» и «&» в ответе экранированы, поэтому
+    тегами здесь бывают только теги самого ответа."""
+    return unescape(_TAG.sub("", html))
+
+
 async def _reply(deps: WorkerDeps, max_user_id: int, reply: ChatReply) -> None:
     """Длинный ответ (расшифровка голосового плюс заполненные поля) обрезается, а не
-    роняет событие: payload длиннее контракта не прошёл бы проверку NotifyUser."""
-    text = reply.text
+    роняет событие: payload длиннее контракта не прошёл бы проверку NotifyUser.
+    Обрезанный посреди тега HTML MAX не принял бы, поэтому такой ответ уходит
+    простым текстом."""
+    text: str = reply.text
+    fmt: str | None = "html"
     if len(text) > MESSAGE_LIMIT:
-        text = text[: MESSAGE_LIMIT - 1] + "…"
-    await deps.bus.notify_user(max_user_id, text, buttons=_buttons(reply))
+        text, fmt = _plain(text), None
+        if len(text) > MESSAGE_LIMIT:
+            text = text[: MESSAGE_LIMIT - 1] + "…"
+    await deps.bus.notify_user(max_user_id, text, fmt=fmt, buttons=_buttons(reply))
 
 
 class EventInProgressError(RuntimeError):

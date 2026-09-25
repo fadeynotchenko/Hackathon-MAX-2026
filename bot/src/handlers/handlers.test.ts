@@ -47,7 +47,7 @@ describe('start handler', () => {
 
     expect(reply).toHaveBeenCalledWith(
       WELCOME_TEXT,
-      expect.objectContaining({ attachments: expect.any(Array) }),
+      expect.objectContaining({ format: 'html', attachments: expect.any(Array) }),
     );
     expect(ctx.session.starts).toBe(2);
     expect(xadd).toHaveBeenCalledTimes(1);
@@ -74,9 +74,17 @@ describe('profile text', () => {
       user: { user_id: 1, first_name: 'A', last_name: 'B', username: 'ab' },
       session: { starts: 3 },
     } as never);
-    expect(text).toContain('Имя: A B');
-    expect(text).toContain('ID в MAX: 1');
+    expect(text).toContain('Имя: <b>A B</b>');
+    expect(text).toContain('ID в MAX: <code>1</code>');
     expect(text).toContain('@ab');
     expect(text).toContain('Запусков бота: 3');
+  });
+
+  it('escapes the name: the text goes out as HTML', () => {
+    const text = profileText({
+      user: { user_id: 1, first_name: '<b>A</b> & Co', username: 'ab' },
+      session: { starts: 0 },
+    } as never);
+    expect(text).toContain('Имя: <b>&lt;b&gt;A&lt;/b&gt; &amp; Co</b>');
   });
 });

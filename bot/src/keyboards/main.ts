@@ -27,14 +27,19 @@ export interface MainKeyboardOptions {
 // Без имени приветствие уходит только с «Помощью», а не теряется.
 export function mainKeyboard(options: MainKeyboardOptions = {}) {
   const rows: Parameters<typeof Keyboard.inlineKeyboard>[0] = [];
-  const help = Keyboard.button.callback('Помощь', CALLBACKS.help);
+  const help = Keyboard.button.callback('❓ Помощь', CALLBACKS.help);
   const app = options.miniAppName;
   if (app) {
     rows.push([
-      { type: 'open_app', text: 'Создать документ', web_app: app, payload: APP_SCREENS.create },
+      {
+        type: 'open_app',
+        text: '📄 Создать документ',
+        web_app: app,
+        payload: APP_SCREENS.create,
+      },
     ]);
     rows.push([
-      { type: 'open_app', text: 'Архив', web_app: app, payload: APP_SCREENS.archive },
+      { type: 'open_app', text: '🗂 Архив', web_app: app, payload: APP_SCREENS.archive },
       help,
     ]);
   } else {

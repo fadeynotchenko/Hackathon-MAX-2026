@@ -71,10 +71,11 @@ async def test_message_creates_document_and_asks_for_confirmation(
 
     (reply,) = await _replies(redis)
     assert reply.max_user_id == USER
-    assert reply.text.startswith("Счёт на оплату")
-    assert "— Сумма к оплате: 120 000,00" in reply.text
+    assert reply.format == "html", "ответ размечен: заголовок и значения жирным"
+    assert reply.text.startswith("🧾 <b>Счёт на оплату</b>")
+    assert "• Сумма к оплате: <b>120 000,00</b>" in reply.text
     labels = [[b.text for b in row] for row in reply.buttons or []]
-    assert labels == [["Всё верно"], ["Новый документ"]]
+    assert labels == [["👍 Всё верно"], ["➕ Новый документ"]]
 
     user = await UserRepository(session).get_by_max_id(USER)
     assert user is not None and user.first_seen_via == "bot"
@@ -166,8 +167,8 @@ async def test_confirm_button_and_unknown_button(
     )
 
     confirmed, foreign, unknown = (await _replies(redis))[1:]
-    assert confirmed.text.startswith("Подтвердил. Ещё нужно:")
-    assert foreign.text == "Документ не найден", (
+    assert confirmed.text.startswith("👍 Подтвердил.\n\n📋 <b>Ещё нужно:</b>\n• ")
+    assert foreign.text == "😔 Документ не найден", (
         "чужой или несуществующий документ по кнопке не отдаём"
     )
     assert unknown.text == UNKNOWN_BUTTON_TEXT
@@ -256,9 +257,9 @@ async def test_photo_goes_into_the_active_document(db: None, session: AsyncSessi
     )
 
     reply = (await _replies(redis))[-1]
-    assert "Во вложении — карточка предприятия." in reply.text
-    assert "— ИНН клиента: 7707083893" in reply.text
-    assert reply.buttons is not None and reply.buttons[0][0].text == "Всё верно"
+    assert "📎 Во вложении — карточка предприятия." in reply.text
+    assert "• ИНН клиента: <b>7707083893</b>" in reply.text
+    assert reply.buttons is not None and reply.buttons[0][0].text == "👍 Всё верно"
     assert storage.urls == ["https://i.max.test/p/1"]
     (photo,) = llm.calls[-1][1][1].attachments
     assert photo.media_type == "image/jpeg"
@@ -289,8 +290,8 @@ async def test_photo_without_document_waits_for_the_template_button(
         )
     )
     filled = (await _replies(redis))[-1]
-    assert filled.text.startswith("Счёт на оплату")
-    assert "— Название клиента: ООО «Ромашка»" in filled.text
+    assert filled.text.startswith("🧾 <b>Счёт на оплату</b>")
+    assert "• Название клиента: <b>ООО «Ромашка»</b>" in filled.text
     assert storage.urls == ["https://i.max.test/p/1"]
 
     await handlers[BOT_CALLBACK](
@@ -301,7 +302,8 @@ async def test_photo_without_document_waits_for_the_template_button(
         )
     )
     second = (await _replies(redis))[-1]
-    assert second.text.startswith("Начал «Коммерческое предложение».")
+    assert second.text.startswith("💼 <b>Коммерческое предложение</b> — новый документ")
+    assert "📋 <b>Нужно заполнить:</b>\n• Название клиента" in second.text
     assert len(storage.urls) == 1, "отложенное фото распознаётся один раз"
 
 
@@ -318,8 +320,8 @@ async def test_caption_names_the_document_for_the_photo(
     )
 
     (reply,) = await _replies(redis)
-    assert reply.text.startswith("Договор оказания услуг")
-    assert "— ИНН клиента: 7707083893" in reply.text
+    assert reply.text.startswith("🤝 <b>Договор оказания услуг</b>")
+    assert "• ИНН клиента: <b>7707083893</b>" in reply.text
 
 
 async def test_voice_is_transcribed_and_handled_as_text(
@@ -340,8 +342,8 @@ async def test_voice_is_transcribed_and_handled_as_text(
     await handlers[BOT_ATTACHMENT](_event(BOT_ATTACHMENT, _attachment("audio"), "evt-v"))
 
     (reply,) = await _replies(redis)
-    assert reply.text.startswith("Расслышал: «Счёт на 120 000 для ООО Ромашка»")
-    assert "— Сумма к оплате: 120\u00a0000,00" in reply.text
+    assert reply.text.startswith("🎙 <b>Расслышал:</b> <i>«Счёт на 120 000 для ООО Ромашка»</i>")
+    assert "• Сумма к оплате: <b>120\u00a0000,00</b>" in reply.text
     assert llm.calls[1][1][1].content == "Счёт на 120 000 для ООО Ромашка"
 
 
@@ -371,7 +373,7 @@ async def test_attachment_problems_are_explained(db: None, session: AsyncSession
     assert download.text == DOWNLOAD_FAILED_TEXT
     assert unsupported.text == UNSUPPORTED_FILE_TEXT
     assert pending.text == ASK_MEDIA_TEMPLATE_TEXT
-    assert large.text.startswith("Файл больше 10 МБ")
+    assert large.text.startswith("😔 Файл больше 10 МБ")
     assert broken.urls == ["https://i.max.test/p/1"], "xlsx даже не скачивали"
 
 
@@ -433,7 +435,7 @@ async def test_sent_document_can_be_taken_as_a_base(
     )
     sending = next(reply for reply in await _replies(redis) if "Собираю" in reply.text)
     base = sending.buttons[0][0]  # type: ignore[index]
-    assert base.text == "На основе этого" and base.payload.startswith("doc:copy:")
+    assert base.text == "📑 На основе этого" and base.payload.startswith("doc:copy:")
 
     await handlers[BOT_CALLBACK](
         _event(
@@ -443,5 +445,8 @@ async def test_sent_document_can_be_taken_as_a_base(
         )
     )
     copied = (await _replies(redis))[-1]
-    assert copied.text.startswith("Взял за основу «Коммерческое предложение»")
-    assert "Осталось заполнить: дата предложения, предложение действует до." in copied.text
+    assert copied.text.startswith("📑 <b>Взял за основу «Коммерческое предложение»</b>")
+    assert (
+        "📋 <b>Осталось заполнить:</b>\n• Дата предложения\n• Предложение действует до"
+        in copied.text
+    )

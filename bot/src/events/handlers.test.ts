@@ -161,7 +161,7 @@ describe('document.ready handler', () => {
       [
         {
           type: 'open_app',
-          text: 'Открыть в приложении',
+          text: '📱 Открыть в приложении',
           web_app: 't409_hakaton_max_bot',
           payload: 'doc_42',
         },
@@ -246,5 +246,48 @@ describe('notify.user buttons', () => {
     expect(extra.attachments[0]?.payload.buttons).toEqual([
       [expect.objectContaining({ type: 'callback', text: 'Всё верно', payload: 'doc:confirm:12' })],
     ]);
+  });
+
+  it('remembers the HTML of a message with buttons, so a tap does not strip the bold', async () => {
+    const { handler, event, redis } = setup(() =>
+      Promise.resolve({ body: { mid: 'mid.7', text: 'Счёт' } }),
+    );
+    await handler({
+      ...event,
+      payload: {
+        max_user_id: 5,
+        text: '<b>Счёт</b>',
+        format: 'html',
+        buttons: [[{ text: 'Всё верно', payload: 'doc:confirm:12' }]],
+      },
+    });
+    expect(redis.set).toHaveBeenCalledWith(
+      'messages:markup:mid.7',
+      JSON.stringify({ text: '<b>Счёт</b>', format: 'html' }),
+      'EX',
+      expect.any(Number),
+    );
+  });
+
+  it('delivers once even if the markup cannot be saved', async () => {
+    const { handler, event, redis, sendMessageToUser } = setup(() =>
+      Promise.resolve({ body: { mid: 'mid.8' } }),
+    );
+    redis.set.mockImplementation((key: string) =>
+      key.startsWith('messages:markup:')
+        ? Promise.reject(new Error('down'))
+        : Promise.resolve('OK'),
+    );
+    await handler({
+      ...event,
+      payload: {
+        max_user_id: 5,
+        text: '<b>Счёт</b>',
+        format: 'html',
+        buttons: [[{ text: 'Всё верно', payload: 'doc:confirm:12' }]],
+      },
+    });
+    expect(sendMessageToUser).toHaveBeenCalledTimes(1);
+    expect(redis.del).not.toHaveBeenCalled();
   });
 });

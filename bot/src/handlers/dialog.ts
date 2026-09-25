@@ -2,21 +2,50 @@
 // ядро, ответ приходит событием notify.user. Бот здесь только канал: модель,
 // документы и права живут в ядре, поэтому тот же диалог работает и из мини-аппа.
 import type { Bot } from '@maxhub/max-bot-api';
+import type { Redis } from 'ioredis';
 
 import type { BotContext } from '../context.js';
 import type { BotAttachment } from '../events/codec.js';
+import { recallMarkup } from '../events/markup.js';
 import type { EventPublisher } from '../events/publisher.js';
+import { mainKeyboard, type MainKeyboardOptions } from '../keyboards/main.js';
 import type { Logger } from '../logger.js';
+import { WELCOME_TEXT } from './start.js';
 
 export const DOC_ACTION = /^doc:/;
-export const NON_TEXT_HINT =
-  'Я понимаю текст, голосовые, фото и сканы (PDF, DOCX). Напишите, какой документ нужен, например: «Счёт на 50 000 для ООО Ромашка за консультацию».';
-export const UNKNOWN_COMMAND_TEXT =
-  'Такой команды нет. Наберите /help или просто напишите, что нужно.';
+// Разметка — HTML MAX, как у приветствия.
+export const NON_TEXT_HINT = [
+  '🤔 Такое сообщение я не прочитаю.',
+  '',
+  'Понимаю текст, голосовые, фото и сканы в PDF или DOCX. Напишите, какой документ нужен, например:',
+  '<i>«Счёт на 50 000 для ООО Ромашка за консультацию»</i>',
+].join('\n');
+export const UNKNOWN_COMMAND_TEXT = [
+  '🤷 Такой команды нет.',
+  'Наберите /help или просто напишите, что нужно.',
+].join('\n');
+
+// «Привет» — не просьба о документе: помощник принял бы его за вопрос о текущем
+// документе и ответил бы невпопад. На приветствие бот отвечает сам, как на /start.
+const GREETING =
+  /^(привет\p{L}*|здравствуй(те)?|здрась?те|добр(ый|ое|ой) (день|утро|вечер|ночи)|хай|салют|hello|hi|hey|start|старт|начать|меню)$/u;
+
+export function isGreeting(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^\p{L}\s]/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  return GREETING.test(words);
+}
 
 export interface DialogDeps {
   publisher: EventPublisher;
   log: Logger;
+  keyboard: MainKeyboardOptions;
+  // Разметка отправленных сообщений: с ней снятие кнопок не стирает жирный шрифт.
+  redis: Pick<Redis, 'get'>;
 }
 
 // Вложение из апдейта MAX в том виде, который нужен здесь: SDK не экспортирует
@@ -61,6 +90,18 @@ async function showTyping(
   }
 }
 
+// Сохранённая разметка нажатого сообщения. Redis недоступен — не повод оставить
+// кнопки висеть: сообщение переотправится простым текстом.
+async function markupOf(mid: string | undefined, deps: DialogDeps) {
+  if (!mid) return null;
+  try {
+    return await recallMarkup(deps.redis, mid);
+  } catch (err) {
+    deps.log.warn({ event: 'dialog.markup_unavailable', err }, 'markup not read');
+    return null;
+  }
+}
+
 export function registerDialog(bot: Bot<BotContext>, deps: DialogDeps): void {
   bot.action(DOC_ACTION, async (ctx) => {
     const payload = ctx.callback?.payload;
@@ -71,8 +112,13 @@ export function registerDialog(bot: Bot<BotContext>, deps: DialogDeps): void {
     // Остальные дубли отсекает ядро.
     const original = ctx.message?.body.text;
     if (original) {
+      const formatted = await markupOf(ctx.message?.body.mid, deps);
       try {
-        await ctx.answerOnCallback({ message: { text: original, attachments: [] } });
+        await ctx.answerOnCallback({
+          message: formatted
+            ? { text: formatted.text, format: formatted.format, attachments: [] }
+            : { text: original, attachments: [] },
+        });
       } catch (err) {
         deps.log.warn({ event: 'dialog.callback_answer_failed', err }, 'callback not answered');
       }
@@ -106,11 +152,18 @@ export function registerDialog(bot: Bot<BotContext>, deps: DialogDeps): void {
       return;
     }
     if (!text) {
-      await ctx.reply(NON_TEXT_HINT);
+      await ctx.reply(NON_TEXT_HINT, { format: 'html' });
       return;
     }
     if (text.startsWith('/')) {
       await ctx.reply(UNKNOWN_COMMAND_TEXT);
+      return;
+    }
+    if (isGreeting(text)) {
+      await ctx.reply(WELCOME_TEXT, {
+        format: 'html',
+        attachments: [mainKeyboard(deps.keyboard)],
+      });
       return;
     }
     if (!sender) return;

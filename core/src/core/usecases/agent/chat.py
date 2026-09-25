@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from html import escape
 from pathlib import PurePosixPath
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +46,7 @@ from core.usecases.agent.service import (
     answer_question,
     fill_from_message,
     lower_first,
+    missing_labels,
     missing_text,
 )
 from core.usecases.documents import (
@@ -63,23 +65,48 @@ from core.usecases.documents import (
 )
 from core.usecases.users import mark_active
 
+# Ответы в чат — HTML MAX (бот отправляет их с format="html"). Всё, что пришло от
+# человека, модели или из шаблона, проходит через _esc: иначе «ООО <Ромашка>» или
+# «&» в названии сломали бы разметку, и MAX не принял бы сообщение.
 DISABLED_TEXT = (
-    "Помощник сейчас выключен. Документ можно заполнить в мини-приложении — "
-    "кнопка «Открыть приложение»."
+    "🔌 Помощник сейчас выключен.\n"
+    "Документ можно заполнить в мини-приложении: /start → «Создать документ»."
 )
 ASK_TEMPLATE_TEXT = (
-    "Какой документ подготовить? Выберите ниже или опишите словами, например: "
-    "«Счёт на 120 000 для ООО Ромашка за разработку сайта»."
+    "📄 <b>Какой документ подготовить?</b>\n"
+    "Выберите ниже 👇 или опишите словами, например:\n"
+    "<i>«Счёт на 120 000 для ООО Ромашка за разработку сайта»</i>"
 )
 ASK_MEDIA_TEMPLATE_TEXT = (
-    "Куда перенести данные из вложения? Выберите документ — распознаю и покажу, что нашёл."
+    "📎 <b>Куда перенести данные из вложения?</b>\n"
+    "Выберите документ 👇 — распознаю и покажу, что нашёл."
 )
-UNKNOWN_BUTTON_TEXT = "Эта кнопка больше не работает. Напишите, что нужно сделать."
-LLM_DOWN_TEXT = "Помощник не отвечает. Попробуйте через минуту или заполните документ в приложении."
-MEDIA_EXPIRED_TEXT = "Вложение, присланное раньше, устарело — пришлите его ещё раз."
-MEDIA_OFFER_TEXT = "Данные из присланного раньше вложения тоже взять? Нажмите «Взять из вложения»."
-DOWNLOAD_FAILED_TEXT = "Не получилось скачать вложение из MAX, пришлите его ещё раз."
-UNSUPPORTED_FILE_TEXT = "Такой файл не прочитать. Подойдёт фото, PDF, DOCX или голосовое."
+UNKNOWN_BUTTON_TEXT = "⌛ Эта кнопка больше не работает. Напишите, что нужно сделать."
+LLM_DOWN_TEXT = (
+    "😔 Помощник не отвечает.\nПопробуйте через минуту или заполните документ в приложении."
+)
+MEDIA_EXPIRED_TEXT = "⌛ Вложение, присланное раньше, устарело — пришлите его ещё раз."
+MEDIA_OFFER_TEXT = "📎 Взять данные и из присланного раньше вложения? Нажмите «Взять из вложения»."
+DOWNLOAD_FAILED_TEXT = "😔 Не получилось скачать вложение из MAX — пришлите его ещё раз."
+UNSUPPORTED_FILE_TEXT = "🤔 Такой файл я не прочитаю.\nПодойдёт фото, PDF, DOCX или голосовое."
+READY_TEXT = "🏁 <b>Документ готов!</b> В каком формате прислать файл?"
+HOW_TO_FILL_TEXT = (
+    "Как удобнее:\n"
+    "✍️ напишите одним сообщением\n"
+    "🎙 надиктуйте голосовым\n"
+    "📷 пришлите фото карточки клиента"
+)
+
+CONFIRM_BUTTON = "👍 Всё верно"
+SEND_DOCX_BUTTON = "📘 Прислать DOCX"
+SEND_PDF_BUTTON = "📕 Прислать PDF"
+NEW_BUTTON = "➕ Новый документ"
+COPY_BUTTON = "📑 На основе этого"
+MEDIA_BUTTON = "📎 Взять из вложения"
+# Значок вида документа в заголовке ответа и на кнопке шаблона; свой вид — 📄.
+_KIND_ICONS = {"invoice": "🧾", "offer": "💼", "contract": "🤝"}
+# Предел текста кнопки в контракте notify.user.
+_BUTTON_LIMIT = 64
 
 # Сколько отложенное фото ждёт выбора документа: дальше ссылка MAX может протухнуть,
 # а пользователь — забыть, что присылал.
@@ -120,6 +147,8 @@ class ChatButton:
 
 @dataclass(frozen=True)
 class ChatReply:
+    """Ответ в чат. ``text`` — HTML MAX: канал отправляет его с разметкой."""
+
     text: str
     buttons: tuple[tuple[ChatButton, ...], ...] = ()
 
@@ -155,6 +184,14 @@ class ChatActionDeps:
         )
 
 
+def _esc(text: str) -> str:
+    return escape(text, quote=False)
+
+
+def _bullets(items: Iterable[str]) -> str:
+    return "\n".join(f"• {item}" for item in items)
+
+
 def _failure_text(exc: AppError) -> str:
     """Текст ошибки для чата. Сбой на нашей стороне или у модели (5xx) пишется в лог:
     в HTTP это делает обработчик ошибок api, а у событий бота его нет."""
@@ -162,25 +199,32 @@ def _failure_text(exc: AppError) -> str:
         biz_warn(logger, "agent.chat.failed", code=exc.code, error=exc.log_message or str(exc))
     if exc.code == "agent.unavailable":
         return LLM_DOWN_TEXT
-    return exc.public_message
+    return f"😔 {_esc(exc.public_message)}"
+
+
+def _icon(kind: str) -> str:
+    return _KIND_ICONS.get(kind, "📄")
 
 
 def _template_buttons(templates: list[TemplateView]) -> tuple[tuple[ChatButton, ...], ...]:
-    return tuple((ChatButton(t.title, f"doc:new:{t.slug}"),) for t in templates)
+    return tuple(
+        (ChatButton(f"{_icon(t.kind)} {t.title}"[:_BUTTON_LIMIT], f"doc:new:{t.slug}"),)
+        for t in templates
+    )
 
 
 def _document_buttons(document: DocumentView) -> tuple[tuple[ChatButton, ...], ...]:
     rows: list[tuple[ChatButton, ...]] = []
     if document.unconfirmed:
-        rows.append((ChatButton("Всё верно", f"doc:confirm:{document.id}"),))
+        rows.append((ChatButton(CONFIRM_BUTTON, f"doc:confirm:{document.id}"),))
     elif document.ready:
         rows.append(
             (
-                ChatButton("Прислать DOCX", f"doc:send:{document.id}:docx"),
-                ChatButton("Прислать PDF", f"doc:send:{document.id}:pdf"),
+                ChatButton(SEND_DOCX_BUTTON, f"doc:send:{document.id}:docx"),
+                ChatButton(SEND_PDF_BUTTON, f"doc:send:{document.id}:pdf"),
             )
         )
-    rows.append((ChatButton("Новый документ", "doc:new"),))
+    rows.append((ChatButton(NEW_BUTTON, "doc:new"),))
     return tuple(rows)
 
 
@@ -191,61 +235,88 @@ def _heading(document: DocumentView) -> str:
     return document_name(document)
 
 
+def _title_line(document: DocumentView) -> str:
+    """Первая строка ответа о документе: значок вида и название жирным."""
+    return f"{_icon(document.template.kind)} <b>{_esc(_heading(document))}</b>"
+
+
+def _missing_block(document: DocumentView, title: str = "Ещё нужно") -> str:
+    return f"📋 <b>{title}:</b>\n" + _bullets(_esc(label) for label in missing_labels(document))
+
+
 def _fill_text(
     result: AgentFillResult, *, source: str = "В сообщении", seller: str | None = None
 ) -> str:
     """Ответ показывает значения, а не только названия полей: подтверждать
-    человек должен то, что увидел, а не то, что помощник пообещал заполнить."""
+    человек должен то, что увидел, а не то, что помощник пообещал заполнить.
+
+    Разделы — заголовок, записанное, замечания, недостающее, что делать дальше —
+    отделены пустой строкой: в длинном ответе значения ищут глазами."""
     document = result.document
     context = render_context(document.template.fields, document.values)
     labels = {spec.key: spec.label for spec in document.template.fields}
-    lines = [_heading(document)]
+    head = [_title_line(document)]
     if seller:
-        lines.append(f"От: {seller}")
+        head.append(f"🏢 От: {_esc(seller)}")
     if result.kind:
-        lines.append(f"Во вложении — {result.kind}.")
-    written = [f"— {labels[key]}: {context[key]}" for key in result.filled if context.get(key)]
+        head.append(f"📎 Во вложении — {_esc(result.kind)}.")
+    blocks = ["\n".join(head)]
+    written = [
+        f"• {_esc(labels[key])}: <b>{_esc(context[key])}</b>"
+        for key in result.filled
+        if context.get(key)
+    ]
+    notes: list[str] = []
     if written:
-        lines += ["Записал:", *written]
+        blocks.append("✍️ <b>Записал:</b>\n" + "\n".join(written))
     elif result.unchanged and not result.rejected:
         same = ", ".join(lower_first(labels[key]) for key in result.unchanged)
-        lines.append(f"Ничего не поменял — в документе уже так: {same}.")
+        notes.append(f"👌 Ничего не поменял — в документе уже так: {_esc(same)}.")
     elif not result.rejected:
-        lines.append(f"{source} не нашёл значений для полей документа.")
+        notes.append(f"🤔 {source} не нашёл значений для полей документа.")
     if result.kept:
         kept = ", ".join(lower_first(labels[key]) for key in result.kept)
-        lines.append(f"Не стал менять — во вложении другое: {kept}.")
+        notes.append(f"↩️ Не стал менять — во вложении другое: {_esc(kept)}.")
+    if notes:
+        blocks.append("\n".join(notes))
     if result.rejected:
-        lines.append("Не записал: " + "; ".join(error.message for error in result.rejected) + ".")
+        blocks.append(
+            "❗ <b>Не записал:</b>\n" + _bullets(_esc(error.message) for error in result.rejected)
+        )
     rejected = {error.key for error in result.rejected}
     # Ошибка уже записанного значения (счёт не сходится с новым БИК) — тоже сюда,
     # иначе «Всё верно» подтвердит, а документ так и не станет готовым.
     problems = [error.message for error in document.errors if error.key not in rejected]
     if problems:
-        lines.append("Проверьте: " + "; ".join(problems) + ".")
+        blocks.append("❗ <b>Проверьте:</b>\n" + _bullets(_esc(problem) for problem in problems))
     if document.missing:
-        lines.append(f"Ещё нужно: {missing_text(document)}.")
+        blocks.append(_missing_block(document))
     if document.unconfirmed:
-        lines.append("Проверьте значения и нажмите «Всё верно».")
+        blocks.append("👉 Проверьте значения и нажмите «Всё верно».")
     elif document.ready:
-        lines.append("Документ готов — прислать файл?")
-    return "\n".join(lines)
+        blocks.append(READY_TEXT)
+    return "\n\n".join(blocks)
 
 
 def _confirm_text(document: DocumentView) -> str:
     if document.ready:
-        return "Готово, документ заполнен. Прислать файл?"
+        return READY_TEXT
     if document.missing:
-        return f"Подтвердил. Ещё нужно: {missing_text(document)}."
+        return (
+            f"👍 Подтвердил.\n\n{_missing_block(document)}\n\n"
+            "Напишите недостающее сообщением или надиктуйте голосовым."
+        )
     if not document.errors:
-        return "Подтвердил."
-    problems = "; ".join(error.message for error in document.errors)
-    return f"Подтвердил, но есть ошибки: {problems}. Поправьте их сообщением или в приложении."
+        return "👍 Подтвердил."
+    problems = _bullets(_esc(error.message) for error in document.errors)
+    return (
+        f"👍 Подтвердил, но есть ошибки:\n{problems}\n\nПоправьте их сообщением или в приложении."
+    )
 
 
 def _download_error_text(exc: InboundFileError, files: FilesConfig) -> str:
     if isinstance(exc, InboundFileTooLargeError):
-        return f"Файл больше {files.media_max_bytes // (1024 * 1024)} МБ, пришлите поменьше."
+        return f"😔 Файл больше {files.media_max_bytes // (1024 * 1024)} МБ — пришлите поменьше."
     return DOWNLOAD_FAILED_TEXT
 
 
@@ -402,7 +473,7 @@ async def handle_chat_message(
             answer = await answer_question(
                 session, user_id=user_id, document_id=active.id, question=text, llm=llm
             )
-            return ChatReply(answer, _document_buttons(active))
+            return ChatReply(_esc(answer), _document_buttons(active))
 
         if intent == "new" or active is None:
             template = next((t for t in templates if t.slug == slug), None)
@@ -433,7 +504,7 @@ async def handle_chat_message(
         # Вложение ждало выбора документа, а человек ответил словами: не теряем
         # его молча, но и не распознаём без спроса — оно могло быть о другом.
         text_out += f"\n\n{MEDIA_OFFER_TEXT}"
-        buttons = ((ChatButton("Взять из вложения", f"doc:media:{result.document.id}"),), *buttons)
+        buttons = ((ChatButton(MEDIA_BUTTON, f"doc:media:{result.document.id}"),), *buttons)
     return ChatReply(text_out, buttons)
 
 
@@ -492,7 +563,7 @@ async def _hear(
     heard = transcript[:TRANSCRIPT_PREVIEW_LENGTH]
     if len(transcript) > TRANSCRIPT_PREVIEW_LENGTH:
         heard += "…"
-    return ChatReply(f"Расслышал: «{heard}»\n\n{reply.text}", reply.buttons)
+    return ChatReply(f"🎙 <b>Расслышал:</b> <i>«{_esc(heard)}»</i>\n\n{reply.text}", reply.buttons)
 
 
 async def handle_chat_attachment(
@@ -580,7 +651,7 @@ async def _new_from_button(
     if not templates:
         return ChatReply(UNKNOWN_BUTTON_TEXT)
     document = (await _start_document(session, user_id, templates[0].id)).document
-    started = f"Начал «{document.template.title}»."
+    started = f"{_title_line(document)} — новый документ"
     pending, expired = await _take_pending(chat, user_id)
     if pending is not None and deps.llm is not None:
         try:
@@ -594,18 +665,17 @@ async def _new_from_button(
             )
         except InboundFileError as exc:
             return ChatReply(
-                f"{started} {_download_error_text(exc, deps.files)}", _document_buttons(document)
+                f"{started}\n\n{_download_error_text(exc, deps.files)}",
+                _document_buttons(document),
             )
         except AppError as exc:
-            return ChatReply(f"{started} {_failure_text(exc)}", _document_buttons(document))
-    lines = [started]
+            return ChatReply(f"{started}\n\n{_failure_text(exc)}", _document_buttons(document))
+    blocks = [started]
     if expired:
-        lines.append(MEDIA_EXPIRED_TEXT)
-    lines.append(
-        f"Ещё нужно: {missing_text(document)}. Напишите одним сообщением, надиктуйте "
-        "голосовым или пришлите фото карточки клиента."
-    )
-    return ChatReply(" ".join(lines), _document_buttons(document))
+        blocks.append(MEDIA_EXPIRED_TEXT)
+    if document.missing:
+        blocks += [_missing_block(document, "Нужно заполнить"), HOW_TO_FILL_TEXT]
+    return ChatReply("\n\n".join(blocks), _document_buttons(document))
 
 
 def _parse_id(raw: str) -> int | None:
@@ -618,11 +688,11 @@ async def _buttons_after_failure(
 ) -> tuple[tuple[ChatButton, ...], ...]:
     """Кнопки к ошибке: бот уже снял их с нажатого сообщения, и без них человек
     остался бы с текстом ошибки и пустым чатом."""
-    new = (ChatButton("Новый документ", "doc:new"),)
+    new = (ChatButton(NEW_BUTTON, "doc:new"),)
     if document_id is None:
         return (new,)
     if exc.code == "render.pdf_unavailable":
-        return ((ChatButton("Прислать DOCX", f"doc:send:{document_id}:docx"),), new)
+        return ((ChatButton(SEND_DOCX_BUTTON, f"doc:send:{document_id}:docx"),), new)
     try:
         document = await get_document(session, user_id=user_id, document_id=document_id)
     except NotFoundError:
@@ -672,11 +742,11 @@ async def handle_chat_action(
                 tokens=deps.tokens,
             )
             return ChatReply(
-                f"Собираю «{file.filename}», пришлю следующим сообщением.",
+                f"⏳ Собираю «{_esc(file.filename)}» — пришлю следующим сообщением.",
                 (
                     (
-                        ChatButton("На основе этого", f"doc:copy:{args[0]}"),
-                        ChatButton("Новый документ", "doc:new"),
+                        ChatButton(COPY_BUTTON, f"doc:copy:{args[0]}"),
+                        ChatButton(NEW_BUTTON, "doc:new"),
                     ),
                 ),
             )
@@ -685,13 +755,13 @@ async def handle_chat_action(
             document = await copy_document(session, user_id=user_id, document_id=document_id)
             await chat.set_active_document(user_id, document.id)
             rest = (
-                f"Осталось заполнить: {missing_text(document)}."
+                _missing_block(document, "Осталось заполнить")
                 if document.missing
-                else "Проверьте значения."
+                else "👉 Проверьте значения."
             )
             return ChatReply(
-                f"Взял за основу «{document.title}»: стороны и условия те же, реквизиты — "
-                f"свежие из карточек. {rest}",
+                f"📑 <b>Взял за основу «{_esc(document.title)}»</b>\n"
+                f"Стороны и условия те же, реквизиты — свежие из карточек.\n\n{rest}",
                 _document_buttons(document),
             )
 
