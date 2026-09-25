@@ -482,7 +482,7 @@ ENV_SPEC: list[EnvVar] = [
         EnvVar(
             "GIGACHAT_MODEL",
             "Модель GigaChat для помощника.",
-            default="GigaChat-2-Max",
+            default="GigaChat-3-Ultra",
             owner="core.llm.config",
         ),
         EnvVar(

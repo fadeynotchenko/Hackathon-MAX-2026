@@ -32,7 +32,7 @@ class GigaChatConfig:
         return cls(
             auth_key=get_env("GIGACHAT_AUTH_KEY"),
             scope=get_env_or_default("GIGACHAT_SCOPE", "GIGACHAT_API_PERS"),
-            model=get_env_or_default("GIGACHAT_MODEL", "GigaChat-2-Max"),
+            model=get_env_or_default("GIGACHAT_MODEL", "GigaChat-3-Ultra"),
             api_url=get_env_or_default("GIGACHAT_API_URL", "https://api.giga.chat/v1").rstrip("/"),
             auth_url=get_env_or_default(
                 "GIGACHAT_AUTH_URL", "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
