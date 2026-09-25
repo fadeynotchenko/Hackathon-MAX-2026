@@ -60,14 +60,17 @@ if [ "${SKIP_TESTS:-0}" != "1" ]; then
 fi
 
 log "каталоги логов и бэкапов с владельцами контейнеров"
+# Каталог с числовым владельцем: у uid контейнеров на хосте нет имён, а
+# `install -o 10001` из uutils coreutils (Ubuntu 26.04) числовой uid не принимает.
+owned_dir() { mkdir -p "$3" && chown "$2:$2" "$3" && chmod "$1" "$3"; }
 # Bind-mount создаётся Docker'ом как root:root, а api (uid 10001), бот (uid 1000)
 # и воркер nginx (uid 101) пишут в него непривилегированно. Без этого api падает
 # на первой же записи в файл лога.
-install -d -m 0750 -o 10001 -g 10001 ./app_logs/api
+owned_dir 0750 10001 ./app_logs/api
 # Файлы документов пишет тот же uid, что и логи api; 0750 — чужие в них не ходят.
-install -d -m 0750 -o 10001 -g 10001 ./app_data/api
-install -d -m 0750 -o 1000 -g 1000 ./app_logs/bot
-install -d -m 0750 -o 101 -g 101 ./app_logs/nginx
+owned_dir 0750 10001 ./app_data/api
+owned_dir 0750 1000 ./app_logs/bot
+owned_dir 0750 101 ./app_logs/nginx
 install -d -m 0700 ./backups
 
 log "TLS: сертификат gateway"

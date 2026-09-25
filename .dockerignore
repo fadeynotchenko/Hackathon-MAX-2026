@@ -20,3 +20,4 @@ gateway/letsencrypt/
 .DS_Store
 .idea/
 .vscode/
+server-credentials.txt

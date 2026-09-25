@@ -70,3 +70,6 @@ Thumbs.db
 
 # Локальный store pnpm (появляется при установке через npx pnpm)
 .pnpm-store/
+
+# Доступы к прод-серверу: только на машине владельца.
+/server-credentials.txt
