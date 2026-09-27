@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 
-from core.api.dependencies import CurrentUserDep, SessionDep
+from core.api.dependencies import CurrentUserDep, SessionDep, StateDep
 from core.api.schemas.common import ErrorResponse, IdPath, OkResponse
-from core.api.schemas.documents import TemplateRequest, TemplateSchema
-from core.domain.documents import FieldSpec
+from core.api.schemas.documents import TemplateImportSchema, TemplateRequest, TemplateSchema
+from core.api.uploads import DOCUMENT_TYPES, binary_body, read_body
+from core.domain.places import Place
+from core.usecases.agent import import_template_file
 from core.usecases.documents import (
+    TemplateField,
     TemplateInput,
     create_template,
     delete_template,
@@ -30,7 +33,7 @@ def _input(payload: TemplateRequest) -> TemplateInput:
         description=payload.description,
         body=payload.body,
         fields=tuple(
-            FieldSpec(
+            TemplateField(
                 key=field.key,
                 label=field.label,
                 type=field.type,
@@ -38,9 +41,11 @@ def _input(payload: TemplateRequest) -> TemplateInput:
                 hint=field.hint,
                 carry_over=field.carry_over,
                 today_by_default=field.today_by_default,
+                places=tuple(Place(place.text, place.before) for place in field.places),
             )
             for field in payload.fields
         ),
+        file_id=payload.file_id,
     )
 
 
@@ -75,6 +80,38 @@ async def create(
 ) -> TemplateSchema:
     created = await create_template(session, user_id=current.id, data=_input(payload))
     return TemplateSchema.model_validate(created)
+
+
+@router.post(
+    "/import",
+    response_model=TemplateImportSchema,
+    responses=_ERRORS | {413: {"model": ErrorResponse}, 415: {"model": ErrorResponse}},
+    operation_id="import_template",
+    summary="Разобрать файл-образец для своего шаблона",
+    description=(
+        "Находит места для данных: метки {{Название поля}} в файле, а без них — "
+        "с помощником. Шаблон не создаётся: черновик проверяет человек и "
+        "сохраняет через POST /templates с file_id."
+    ),
+    openapi_extra=binary_body(*DOCUMENT_TYPES, description="Образец документа: DOCX или PDF"),
+)
+async def import_file(
+    request: Request,
+    current: CurrentUserDep,
+    session: SessionDep,
+    state: StateDep,
+    filename: str = Query(default="", max_length=255, description="Имя файла у пользователя"),
+) -> TemplateImportSchema:
+    limit = state.files_config.media_max_bytes
+    result = await import_template_file(
+        session,
+        user_id=current.id,
+        data=await read_body(request, max_bytes=limit),
+        filename=filename,
+        llm=state.llm,
+        max_bytes=limit,
+    )
+    return TemplateImportSchema.model_validate(result)
 
 
 @router.get(

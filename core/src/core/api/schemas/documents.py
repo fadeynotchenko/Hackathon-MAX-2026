@@ -11,6 +11,15 @@ from core.api.schemas.common import DbId, PrintableStr
 from core.domain.documents import FieldType, ValueSource
 
 
+class PlaceSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    text: str = Field(description="Фрагмент файла-образца, на месте которого встанет значение")
+    before: str = Field(
+        default="", description="Текст перед фрагментом в той же строке: уточняет, какой он"
+    )
+
+
 class FieldSpecSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,6 +36,20 @@ class FieldSpecSchema(BaseModel):
     today_by_default: bool = Field(
         default=False, description="Пустая дата при создании документа — сегодняшняя"
     )
+    places: list[PlaceSchema] = Field(
+        default_factory=list, description="Места значения в файле-образце; у текстовых — пусто"
+    )
+
+
+class TemplateFileSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filename: str
+    text: str | None = Field(
+        default=None,
+        description="Текст образца, строка на абзац; только в ответе на один шаблон",
+    )
 
 
 class TemplateSchema(BaseModel):
@@ -42,6 +65,14 @@ class TemplateSchema(BaseModel):
     fields: list[FieldSpecSchema]
     body: str = Field(description="Текст шаблона с маркерами {{key}} на месте полей")
     preview: str = Field(description="Текст пустого бланка — предпросмотр до заполнения")
+    file: TemplateFileSchema | None = Field(
+        default=None, description="Файл-образец DOCX: документ собирается в его оформлении"
+    )
+
+
+class PlaceRequest(BaseModel):
+    text: PrintableStr = Field(min_length=1, max_length=300)
+    before: PrintableStr = Field(default="", max_length=100)
 
 
 class TemplateFieldRequest(BaseModel):
@@ -57,15 +88,53 @@ class TemplateFieldRequest(BaseModel):
     hint: PrintableStr = Field(default="", max_length=200)
     carry_over: bool = True
     today_by_default: bool = False
+    places: list[PlaceRequest] = Field(
+        default_factory=list,
+        max_length=20,
+        description="Где в файле-образце стоит значение; только вместе с file_id",
+    )
 
 
 class TemplateRequest(BaseModel):
     title: PrintableStr = Field(max_length=64)
     description: PrintableStr = Field(default="", max_length=300)
     body: PrintableStr = Field(
-        max_length=20000, description="Текст с маркерами {{key}}; каждый маркер описан в fields"
+        default="",
+        max_length=20000,
+        description="Текст с маркерами {{key}}; каждый маркер описан в fields. "
+        "С file_id не нужен: текст собирается из образца",
     )
     fields: list[TemplateFieldRequest] = Field(max_length=50)
+    file_id: DbId | None = Field(
+        default=None, description="Файл-образец DOCX из POST /templates/import"
+    )
+
+
+class ImportedFieldSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str = Field(description="Ключ каталога (реквизит, number, date, total); пусто — своё поле")
+    label: str
+    type: FieldType
+    required: bool
+    places: list[PlaceSchema]
+
+
+class TemplateImportSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    file_id: int | None = Field(
+        description="Сохранённый образец DOCX; у PDF пусто — шаблон будет текстовым"
+    )
+    filename: str
+    format: Literal["docx", "pdf"]
+    title: str = Field(description="Предложенное название шаблона")
+    text: str = Field(description="Текст файла, строка на абзац")
+    fields: list[ImportedFieldSchema] = Field(description="Найденные места для данных")
+    found_by: Literal["markers", "assistant", "none"] = Field(
+        description="Кто нашёл места: метки {{…}} в файле, помощник или никто"
+    )
+    notice: str | None = Field(description="Почему места не искались помощником")
 
 
 class FieldValueSchema(BaseModel):

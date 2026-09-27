@@ -57,6 +57,13 @@ export function TemplatePage() {
       <div className="section">
         <DocPreview text={template.preview} marks={false} />
       </div>
+      {template.file ? (
+        <div className="section">
+          <Banner tone="info" title={`Документ соберётся в файле «${template.file.filename}»`}>
+            С логотипом и оформлением образца; выше — только его текст.
+          </Banner>
+        </div>
+      ) : null}
       {!hasOrganization ? (
         <div className="section">
           <Banner tone="warning" title="Реквизиты вашей организации не заполнены">

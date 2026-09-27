@@ -4,10 +4,12 @@
 // берутся из каталога — тогда в документе они подставятся сами.
 //
 // Экран открывается пустым (/templates/new), копией стандартного шаблона
-// (/templates/new?from=1) или правкой своего (/templates/5/edit).
-import { Button, Switch, Textarea, Typography } from '@maxhub/max-ui';
+// (/templates/new?from=1), текстом PDF-образца (/templates/new с черновиком в
+// state) или правкой своего (/templates/5/edit); свой шаблон из файла DOCX
+// правится на экране образца.
+import { Button, Textarea, Typography } from '@maxhub/max-ui';
 import { useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
 import { Banner } from '@/components/Banner';
@@ -22,27 +24,23 @@ import { useBack } from '@/lib/useBack';
 import { haptic, hapticResult } from '@/max/webapp';
 
 import {
-  CUSTOM_TYPES,
   DESCRIPTION_MAX,
   draftFromTemplate,
   EMPTY_DRAFT,
   type EditorDraft,
-  type EditorField,
-  FIELD_CATALOG,
   fieldsOf,
-  hasFixedType,
   insertText,
-  LABEL_MAX,
   marker,
   previewText,
   problemsOf,
-  sourceText,
   TEXT_MAX,
   TITLE_MAX,
   toRequest,
-  TYPE_LABEL,
   withField,
 } from './editor';
+import { FieldPicker, FieldSettings } from './FieldControls';
+import { draftFromTemplate as sampleFromTemplate } from './sample';
+import { SampleEditor } from './TemplateSamplePage';
 
 const EXAMPLE = [
   'Акт № {{Номер документа}} от {{Дата документа}}',
@@ -58,6 +56,7 @@ export function TemplateEditorPage() {
   const { api } = useAuth();
   const param = useParams().templateId;
   const fromParam = useSearchParams()[0].get('from');
+  const handed = (useLocation().state as { draft?: EditorDraft } | null)?.draft;
   const editId = param === undefined ? null : Number(param);
   const sourceId = editId ?? (fromParam ? Number(fromParam) : null);
   const back = useBack(editId !== null ? `/create/${editId}` : '/create');
@@ -81,11 +80,16 @@ export function TemplateEditorPage() {
   // Стандартный шаблон не правится: его «правка» — сохранение своей копии.
   const source = state.data;
   const copy = !source || editId === null || source.is_builtin;
+  if (source?.file && !copy) {
+    return (
+      <SampleEditor initial={sampleFromTemplate(source)} templateId={source.id} onBack={back} />
+    );
+  }
   return (
     <TemplateEditor
       key={source?.id ?? 'new'}
       title={copy ? 'Новый шаблон' : title}
-      initial={source ? draftFromTemplate(source, { copy }) : EMPTY_DRAFT}
+      initial={source ? draftFromTemplate(source, { copy }) : (handed ?? EMPTY_DRAFT)}
       templateId={copy ? null : source.id}
       onBack={back}
     />
@@ -277,114 +281,5 @@ function TemplateEditor({ title, initial, templateId, onBack }: TemplateEditorPr
         </Section>
       ) : null}
     </Page>
-  );
-}
-
-function FieldPicker({ onInsert }: { onInsert: (label: string) => void }) {
-  const [custom, setCustom] = useState('');
-  // Фигурные скобки и перевод строки сломали бы маркер в тексте.
-  const label = custom.replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
-  return (
-    <div className="picker">
-      <div className="picker__group">
-        <FieldInput
-          label="Своё поле"
-          type="text"
-          value={custom}
-          maxLength={LABEL_MAX}
-          hint="Например: Срок поставки, Адрес доставки"
-          onChange={setCustom}
-        />
-        <Button
-          size="medium"
-          variant="secondary"
-          disabled={!label}
-          onClick={() => {
-            onInsert(label);
-            setCustom('');
-          }}
-        >
-          Вставить своё поле
-        </Button>
-      </div>
-      {FIELD_CATALOG.map((group) => (
-        <div key={group.title} className="picker__group" role="group" aria-label={group.title}>
-          <Typography.Text variant="description-strong" color="secondary">
-            {group.title}
-          </Typography.Text>
-          <div className="chips chips--wrap">
-            {group.items.map((item) => (
-              <Button
-                key={item.field.key}
-                size="small"
-                variant="secondary"
-                aria-label={`Вставить «${item.field.label}»`}
-                onClick={() => onInsert(item.field.label)}
-              >
-                {item.short}
-              </Button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FieldSettings({
-  field,
-  onChange,
-}: {
-  field: EditorField;
-  onChange: (field: EditorField) => void;
-}) {
-  const source = sourceText(field.key);
-  const details = [
-    TYPE_LABEL[field.type],
-    source ? `подставится ${source}` : null,
-    field.today_by_default ? 'сегодняшняя по умолчанию' : null,
-  ].filter(Boolean);
-  return (
-    <div className="template-field">
-      <div className="template-field__head">
-        <div className="template-field__titles">
-          <Typography.Text variant="body-strong">{field.label}</Typography.Text>
-          <Typography.Text variant="description" color="tertiary">
-            {details.join(' · ')}
-          </Typography.Text>
-        </div>
-        <label className="template-field__required">
-          <Typography.Text variant="description" color="secondary">
-            Обязательное
-          </Typography.Text>
-          <Switch
-            checked={field.required}
-            aria-label={`«${field.label}» обязательное`}
-            onChange={(event) => onChange({ ...field, required: event.target.checked })}
-          />
-        </label>
-      </div>
-      {hasFixedType(field.key) ? null : (
-        <div className="chips chips--inset" role="group" aria-label={`Тип поля «${field.label}»`}>
-          {CUSTOM_TYPES.map((type) => (
-            <Button
-              key={type}
-              size="small"
-              variant={field.type === type ? 'primary' : 'secondary'}
-              aria-pressed={field.type === type}
-              onClick={() =>
-                onChange({
-                  ...field,
-                  type,
-                  today_by_default: type === 'date' && field.today_by_default,
-                })
-              }
-            >
-              {TYPE_LABEL[type]}
-            </Button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }

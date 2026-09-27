@@ -12,6 +12,7 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -122,10 +123,34 @@ class Counterparty(Base):
     )
 
 
+class TemplateFile(Base):
+    """Файл-образец DOCX своего шаблона: документы собираются в его оформлении.
+
+    Байты лежат в базе, а не на диске: собранный документ можно пересобрать,
+    а образец компании — нет, и терять его вместе с томом нельзя. Текст образца
+    (строка на абзац) сохраняется рядом, чтобы не разбирать DOCX на каждый
+    показ шаблона. Файл без шаблона — загруженный, но не сохранённый образец."""
+
+    __tablename__ = "template_files"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    owner_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    size: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    text: Mapped[str] = mapped_column(Text, deferred=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
+
+
 class Template(Base):
     """Шаблон документа: спецификация полей плюс тело для подстановки.
 
-    ``owner_user_id`` пуст у встроенных шаблонов. Слуг уникален глобально:
+    ``owner_user_id`` пуст у встроенных шаблонов. ``body_format`` — ``text``, или
+    ``docx`` у шаблона из файла-образца: тогда ``body`` — текст образца с
+    маркерами для предпросмотра и помощника, а места полей лежат в ``fields``. Слуг уникален глобально:
     свой шаблон пользователя получает случайный слуг ``my-…``, поэтому частичный
     индекс «уникально среди системных» не нужен.
 
@@ -153,10 +178,14 @@ class Template(Base):
     archived_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     # У прошлой редакции — живой шаблон: «на основе этого» берёт свежий текст.
     origin_id: Mapped[int | None] = mapped_column(ForeignKey("templates.id", ondelete="SET NULL"))
+    # Образец DOCX: документ собирается в нём, а не из текста ``body``.
+    file_id: Mapped[int | None] = mapped_column(ForeignKey("template_files.id"))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()
     )
+
+    file: Mapped[TemplateFile | None] = relationship(lazy="selectin")
 
 
 class Document(Base):

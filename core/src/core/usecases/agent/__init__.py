@@ -18,6 +18,7 @@ from .recognize import (
     transcribe,
 )
 from .service import AgentFillResult, answer_question, draft_cover_letter, fill_from_message
+from .template_import import ImportedField, TemplateImport, import_template_file
 
 __all__ = [
     "AgentFillResult",
@@ -26,8 +27,10 @@ __all__ = [
     "ChatButton",
     "ChatReply",
     "ChatSender",
+    "ImportedField",
     "MediaFetcher",
     "RecognizedRequisites",
+    "TemplateImport",
     "VoiceFillResult",
     "answer_question",
     "draft_cover_letter",
@@ -37,6 +40,7 @@ __all__ = [
     "handle_chat_action",
     "handle_chat_attachment",
     "handle_chat_message",
+    "import_template_file",
     "recognize_requisites",
     "transcribe",
 ]

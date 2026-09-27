@@ -95,11 +95,12 @@ server {
         proxy_pass $api_upstream;
         include /etc/nginx/snippets/proxy_common.conf;
 
-        # Помощник, распознавание фото и голосовых, сборка и отправка файла: своя
-        # зона частоты, а тело — до 11 МБ (фото с телефона больше 5 МБ). Предел
-        # приложения MEDIA_MAX_BYTES (10 МБ) ниже, поэтому 413 отвечает API с
-        # понятным текстом, а nginx отсекает только совсем лишнее.
-        location ~ ^/api/v1/(documents/[0-9]+/(agent/[a-z-]+|render|send)|requisites/recognize)$ {
+        # Помощник, распознавание фото и голосовых, файл-образец шаблона, сборка и
+        # отправка файла: своя зона частоты, а тело — до 11 МБ (фото с телефона и
+        # DOCX с логотипом больше 5 МБ). Предел приложения MEDIA_MAX_BYTES (10 МБ)
+        # ниже, поэтому 413 отвечает API с понятным текстом, а nginx отсекает
+        # только совсем лишнее.
+        location ~ ^/api/v1/(documents/[0-9]+/(agent/[a-z-]+|render|send)|requisites/recognize|templates/import)$ {
             limit_req zone=api_heavy burst=30 nodelay;
             limit_conn conn_per_ip 50;
             include /etc/nginx/snippets/security_headers.conf;

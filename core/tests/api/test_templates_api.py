@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.usecases.documents import ensure_builtin_templates
 from tests.api.test_documents_api import _auth
+from tests.samples import offer_docx
+
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 ACT = {
     "title": "Акт выполненных работ",
@@ -86,3 +89,53 @@ async def test_template_errors_are_readable(
     stranger = await _auth(client, make_init_data, user_id=2)
     foreign = await client.delete(f"/api/v1/templates/{created['id']}", headers=stranger)
     assert foreign.status_code == 404
+
+
+async def test_template_from_sample_file(
+    client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    headers = await _auth(client, make_init_data)
+
+    imported = await client.post(
+        "/api/v1/templates/import?filename=КП.docx",
+        headers=headers | {"Content-Type": DOCX_TYPE},
+        content=offer_docx(marked=True),
+    )
+    assert imported.status_code == 200, imported.text
+    draft = imported.json()
+    assert (draft["format"], draft["found_by"]) == ("docx", "markers")
+    assert [field["label"] for field in draft["fields"]] == ["Название клиента", "Сумма"]
+
+    created = await client.post(
+        "/api/v1/templates",
+        headers=headers,
+        json={
+            "title": draft["title"],
+            "file_id": draft["file_id"],
+            "fields": [
+                {
+                    "key": "client_name",
+                    "label": "Название клиента",
+                    "places": draft["fields"][0]["places"],
+                },
+                {
+                    "key": "total",
+                    "label": "Сумма",
+                    "type": "money",
+                    "places": draft["fields"][1]["places"],
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    template = created.json()
+    assert template["file"] == {"id": draft["file_id"], "filename": "КП.docx", "text": None}
+    assert "Для: {{client_name}}" in template["body"]
+    one = (await client.get(f"/api/v1/templates/{template['id']}", headers=headers)).json()
+    assert one["file"]["text"] == draft["text"]
+    assert one["fields"][0]["places"] == [{"text": "{{ Название клиента }}", "before": ""}]
+
+    unsupported = await client.post(
+        "/api/v1/templates/import", headers=headers, content=b"just text"
+    )
+    assert unsupported.status_code == 415

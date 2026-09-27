@@ -17,10 +17,24 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import DocumentFile
-from core.db.repositories import DocumentFileRepository, DownloadTicket, DownloadTokenRepository
+from core.db.repositories import (
+    DocumentFileRepository,
+    DownloadTicket,
+    DownloadTokenRepository,
+    TemplateFileRepository,
+)
+from core.domain.documents import BLANK, render_context
 from core.domain.exceptions import AppError, ConflictError, NotFoundError
 from core.events import DocumentReady, EventBus
-from core.files import DocumentStorage, FilesConfig, PdfUnavailableError, build_docx, convert_to_pdf
+from core.files import (
+    DocumentStorage,
+    FilesConfig,
+    PdfUnavailableError,
+    TemplateFileError,
+    build_docx,
+    convert_to_pdf,
+    fill_docx,
+)
 from core.usecases.documents.drafts import DocumentView, document_name, get_document
 from core.usecases.documents.journal import Fact, record
 
@@ -85,6 +99,30 @@ async def list_document_files(
     return [to_view(row, current_source=current) for row in rows]
 
 
+async def _build_docx(session: AsyncSession, document: DocumentView) -> bytes:
+    """DOCX документа: из текста шаблона или в копии файла-образца компании."""
+    template = document.template
+    if template.file is None:
+        return build_docx(document.title, document.preview)
+    source = await TemplateFileRepository(session).data(template.file.id)
+    if source is None:
+        raise NotFoundError("Файл-образец шаблона не найден", code="template.file_not_found")
+    try:
+        return fill_docx(
+            source,
+            places=template.places,
+            context=render_context(template.fields, document.values),
+            blank=BLANK,
+        )
+    except TemplateFileError as exc:
+        raise AppError(
+            "Файл-образец шаблона не открылся — загрузите его заново",
+            code="render.template_broken",
+            status_code=500,
+            log_message=str(exc),
+        ) from exc
+
+
 async def render_document(
     session: AsyncSession, *, user_id: int, document_id: int, fmt: str, cfg: FilesConfig
 ) -> DocumentFileView:
@@ -98,7 +136,7 @@ async def render_document(
         )
 
     started = time.monotonic()
-    docx_bytes = build_docx(document.title, document.preview)
+    docx_bytes = await _build_docx(session, document)
     if fmt == PDF:
         try:
             data = await convert_to_pdf(

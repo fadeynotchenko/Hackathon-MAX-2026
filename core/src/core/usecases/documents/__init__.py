@@ -47,6 +47,7 @@ from .organizations import (
 )
 from .requisites import REQUISITE_FIELDS
 from .templates import (
+    TemplateField,
     TemplateInput,
     TemplateView,
     create_template,
@@ -71,6 +72,7 @@ __all__ = [
     "Fact",
     "OrganizationView",
     "SendState",
+    "TemplateField",
     "TemplateInput",
     "TemplateView",
     "confirm_fields",

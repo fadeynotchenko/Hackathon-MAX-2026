@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
 import { Banner } from '@/components/Banner';
-import { IconChat, IconPlus } from '@/components/icons';
+import { IconChat, IconPlus, IconUpload } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
@@ -64,10 +64,21 @@ export function CreatePage() {
         </Section>
       ) : null}
 
-      <CellList mode="island" filled>
+      <CellList mode="island" filled header={<CellHeader>Свой шаблон</CellHeader>}>
         <CellSimple
-          title="Свой шаблон"
-          subtitle="Ваш текст — реквизиты сторон подставятся сами"
+          title="Из файла"
+          subtitle="Ваш DOCX или PDF — места для данных найдём сами"
+          before={
+            <span className="themed-icon">
+              <IconUpload />
+            </span>
+          }
+          showChevron
+          onClick={() => navigate('/templates/upload')}
+        />
+        <CellSimple
+          title="Написать текст"
+          subtitle="Реквизиты сторон вставляются из каталога"
           before={
             <span className="themed-icon">
               <IconPlus />

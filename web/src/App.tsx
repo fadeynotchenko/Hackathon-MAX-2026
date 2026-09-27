@@ -21,6 +21,7 @@ import { OrganizationPage } from '@/pages/profile/OrganizationPage';
 import { OrganizationsPage } from '@/pages/profile/OrganizationsPage';
 import { ProfilePage } from '@/pages/profile/ProfilePage';
 import { TemplateEditorPage } from '@/pages/templates/TemplateEditorPage';
+import { TemplateSamplePage } from '@/pages/templates/TemplateSamplePage';
 
 function StartRedirect() {
   const navigate = useNavigate();
@@ -46,6 +47,7 @@ export function App() {
         <Route path="/create/:templateId" element={<TemplatePage />} />
         <Route path="/create/:templateId/client" element={<ClientPage />} />
         <Route path="/templates/new" element={<TemplateEditorPage />} />
+        <Route path="/templates/upload" element={<TemplateSamplePage />} />
         <Route path="/templates/:templateId/edit" element={<TemplateEditorPage />} />
         <Route path="/documents/:documentId" element={<DocumentPage />} />
         <Route path="/documents/:documentId/fill" element={<FillPage />} />

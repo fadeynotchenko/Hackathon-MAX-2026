@@ -31,7 +31,7 @@ export const TEXT_MAX = 20000;
 export const LABEL_MAX = 100;
 export const FIELDS_MAX = 50;
 
-function makeField(
+export function makeField(
   key: string,
   label: string,
   type: FieldType,
@@ -112,6 +112,14 @@ const REQUISITE_KEYS = new Set(
   SIDES.flatMap((side) => REQUISITES.map(([key]) => `${side.prefix}${key}`)),
 );
 
+export function catalogByKey(key: string): EditorField | undefined {
+  return CATALOG_FIELDS.find((field) => field.key === key);
+}
+
+export function catalogKeys(): string[] {
+  return CATALOG_FIELDS.map((field) => field.key);
+}
+
 // Тип поля из каталога задан заранее: у реквизита стороны — карточкой
 // (значение подставится само), у номера, даты и суммы — смыслом поля.
 export function hasFixedType(key: string): boolean {
@@ -157,7 +165,7 @@ const LABEL_MARKER = /\{\{\s*([^{}\n]+?)\s*\}\}/g;
 const KEY_MARKER = /\{\{\s*(\w+)\s*\}\}/g;
 
 // «инн  клиента» и «ИНН клиента» — одно поле: название набирают руками.
-function norm(label: string): string {
+export function norm(label: string): string {
   return label.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
 }
 
@@ -174,7 +182,7 @@ export function labelsInText(text: string): string[] {
   return [...seen.values()];
 }
 
-function findByLabel(fields: EditorField[], label: string): EditorField | undefined {
+export function findByLabel<T extends EditorField>(fields: T[], label: string): T | undefined {
   const wanted = norm(label);
   return fields.find((field) => norm(field.label) === wanted);
 }
@@ -245,7 +253,8 @@ function resolve(draft: EditorDraft): { fields: EditorField[]; keyByLabel: Map<s
   const fields: EditorField[] = [];
   const keyByLabel = new Map<string, string>();
   for (const label of labelsInText(draft.text)) {
-    let field = findByLabel(draft.known, label) ?? findByLabel(CATALOG_FIELDS, label);
+    let field: EditorField | undefined =
+      findByLabel(draft.known, label) ?? findByLabel(CATALOG_FIELDS, label);
     if (!field) {
       field = makeField(keyFor(label, taken), label, 'text');
       taken.add(field.key);
@@ -254,6 +263,10 @@ function resolve(draft: EditorDraft): { fields: EditorField[]; keyByLabel: Map<s
     if (!fields.some((item) => item.key === field.key)) fields.push(field);
   }
   return { fields, keyByLabel };
+}
+
+export function catalogByLabel(label: string): EditorField | undefined {
+  return findByLabel(CATALOG_FIELDS, label);
 }
 
 export function fieldsOf(draft: EditorDraft): EditorField[] {

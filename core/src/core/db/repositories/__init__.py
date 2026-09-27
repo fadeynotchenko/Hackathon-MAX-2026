@@ -7,7 +7,7 @@ from .document_repository import DocumentRepository
 from .download_token_repository import DownloadTicket, DownloadTokenRepository
 from .organization_repository import OrganizationRepository
 from .refresh_token_repository import RefreshTokenRepository
-from .template_repository import TemplateRepository
+from .template_repository import TemplateFileRepository, TemplateRepository
 from .user_repository import UserRepository, UserUpsert
 
 __all__ = [
@@ -21,6 +21,7 @@ __all__ = [
     "DownloadTokenRepository",
     "OrganizationRepository",
     "RefreshTokenRepository",
+    "TemplateFileRepository",
     "TemplateRepository",
     "UserRepository",
     "UserUpsert",

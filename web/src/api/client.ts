@@ -17,6 +17,9 @@ export type NotifyResponse = components['schemas']['NotifyResponse'];
 export type DevInitDataResponse = components['schemas']['DevInitDataResponse'];
 export type Template = components['schemas']['TemplateSchema'];
 export type TemplateRequest = components['schemas']['TemplateRequest'];
+export type TemplateImport = components['schemas']['TemplateImportSchema'];
+export type ImportedField = components['schemas']['ImportedFieldSchema'];
+export type Place = components['schemas']['PlaceSchema'];
 export type FieldSpec = components['schemas']['FieldSpecSchema'];
 export type FieldType = components['schemas']['FieldType'];
 export type FieldValue = components['schemas']['FieldValueSchema'];
@@ -205,6 +208,15 @@ export class ApiClient {
 
   template(templateId: number): Promise<Template> {
     return this.request<Template>(`/api/v1/templates/${templateId}`);
+  }
+
+  // Файл-образец (DOCX или PDF) → черновик своего шаблона с найденными местами.
+  importTemplate(file: File): Promise<TemplateImport> {
+    const query = file.name ? `?filename=${encodeURIComponent(file.name)}` : '';
+    return this.request<TemplateImport>(`/api/v1/templates/import${query}`, {
+      method: 'POST',
+      file,
+    });
   }
 
   createTemplate(body: TemplateRequest): Promise<Template> {

@@ -138,6 +138,15 @@ export function IconTemplates(props: IconProps) {
   );
 }
 
+export function IconUpload(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 15V4M7 9l5-5 5 5" />
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </Icon>
+  );
+}
+
 export function IconPlus(props: IconProps) {
   return (
     <Icon {...props}>

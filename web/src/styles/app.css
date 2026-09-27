@@ -365,6 +365,21 @@ body {
   overflow-wrap: anywhere;
 }
 
+.template-field__places {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-size-m);
+}
+
+.template-field__places > :first-child {
+  min-width: 0;
+}
+
+.template-field__places > button {
+  flex: none;
+}
+
 .template-field__required {
   display: flex;
   align-items: center;

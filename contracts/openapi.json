@@ -943,6 +943,14 @@
             ],
             "title": "Max Length"
           },
+          "places": {
+            "description": "Места значения в файле-образце; у текстовых — пусто",
+            "items": {
+              "$ref": "#/components/schemas/PlaceSchema"
+            },
+            "title": "Places",
+            "type": "array"
+          },
           "required": {
             "title": "Required",
             "type": "boolean"
@@ -1109,6 +1117,42 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "ImportedFieldSchema": {
+        "properties": {
+          "key": {
+            "description": "Ключ каталога (реквизит, number, date, total); пусто — своё поле",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "places": {
+            "items": {
+              "$ref": "#/components/schemas/PlaceSchema"
+            },
+            "title": "Places",
+            "type": "array"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FieldType"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type",
+          "required",
+          "places"
+        ],
+        "title": "ImportedFieldSchema",
+        "type": "object"
+      },
       "MaxLoginRequest": {
         "properties": {
           "init_data": {
@@ -1268,6 +1312,47 @@
           "updated_at"
         ],
         "title": "OrganizationSchema",
+        "type": "object"
+      },
+      "PlaceRequest": {
+        "properties": {
+          "before": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Before",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "PlaceRequest",
+        "type": "object"
+      },
+      "PlaceSchema": {
+        "properties": {
+          "before": {
+            "default": "",
+            "description": "Текст перед фрагментом в той же строке: уточняет, какой он",
+            "title": "Before",
+            "type": "string"
+          },
+          "text": {
+            "description": "Фрагмент файла-образца, на месте которого встанет значение",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "PlaceSchema",
         "type": "object"
       },
       "RecognizedRequisitesSchema": {
@@ -1491,6 +1576,15 @@
             "title": "Label",
             "type": "string"
           },
+          "places": {
+            "description": "Где в файле-образце стоит значение; только вместе с file_id",
+            "items": {
+              "$ref": "#/components/schemas/PlaceRequest"
+            },
+            "maxItems": 20,
+            "title": "Places",
+            "type": "array"
+          },
           "required": {
             "default": true,
             "title": "Required",
@@ -1513,10 +1607,121 @@
         "title": "TemplateFieldRequest",
         "type": "object"
       },
+      "TemplateFileSchema": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Текст образца, строка на абзац; только в ответе на один шаблон",
+            "title": "Text"
+          }
+        },
+        "required": [
+          "id",
+          "filename"
+        ],
+        "title": "TemplateFileSchema",
+        "type": "object"
+      },
+      "TemplateImportSchema": {
+        "properties": {
+          "fields": {
+            "description": "Найденные места для данных",
+            "items": {
+              "$ref": "#/components/schemas/ImportedFieldSchema"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Сохранённый образец DOCX; у PDF пусто — шаблон будет текстовым",
+            "title": "File Id"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "docx",
+              "pdf"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "found_by": {
+            "description": "Кто нашёл места: метки {{…}} в файле, помощник или никто",
+            "enum": [
+              "markers",
+              "assistant",
+              "none"
+            ],
+            "title": "Found By",
+            "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Почему места не искались помощником",
+            "title": "Notice"
+          },
+          "text": {
+            "description": "Текст файла, строка на абзац",
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "description": "Предложенное название шаблона",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "filename",
+          "format",
+          "title",
+          "text",
+          "fields",
+          "found_by",
+          "notice"
+        ],
+        "title": "TemplateImportSchema",
+        "type": "object"
+      },
       "TemplateRequest": {
         "properties": {
           "body": {
-            "description": "Текст с маркерами {{key}}; каждый маркер описан в fields",
+            "default": "",
+            "description": "Текст с маркерами {{key}}; каждый маркер описан в fields. С file_id не нужен: текст собирается из образца",
             "maxLength": 20000,
             "title": "Body",
             "type": "string"
@@ -1535,6 +1740,20 @@
             "title": "Fields",
             "type": "array"
           },
+          "file_id": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Файл-образец DOCX из POST /templates/import",
+            "title": "File Id"
+          },
           "title": {
             "maxLength": 64,
             "title": "Title",
@@ -1543,7 +1762,6 @@
         },
         "required": [
           "title",
-          "body",
           "fields"
         ],
         "title": "TemplateRequest",
@@ -1570,6 +1788,17 @@
             },
             "title": "Fields",
             "type": "array"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateFileSchema"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Файл-образец DOCX: документ собирается в его оформлении"
           },
           "id": {
             "title": "Id",
@@ -4503,6 +4732,127 @@
           }
         },
         "summary": "Сохранить свой шаблон",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/templates/import": {
+      "post": {
+        "description": "Находит места для данных: метки {{Название поля}} в файле, а без них — с помощником. Шаблон не создаётся: черновик проверяет человек и сохраняет через POST /templates с file_id.",
+        "operationId": "import_template",
+        "parameters": [
+          {
+            "description": "Имя файла у пользователя",
+            "in": "query",
+            "name": "filename",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Имя файла у пользователя",
+              "maxLength": 255,
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/pdf": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "Образец документа: DOCX или PDF",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateImportSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Разобрать файл-образец для своего шаблона",
         "tags": [
           "documents"
         ]

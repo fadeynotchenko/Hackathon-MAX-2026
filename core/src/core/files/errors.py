@@ -17,3 +17,7 @@ class InboundFileError(RuntimeError):
 
 class InboundFileTooLargeError(InboundFileError):
     """Вложение больше лимита на распознавание: дальше качать бессмысленно."""
+
+
+class TemplateFileError(RuntimeError):
+    """Файл-образец шаблона не читается: битый DOCX или PDF без текста."""

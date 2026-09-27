@@ -98,9 +98,11 @@ def test_nginx_rate_limits_and_429(nginx_template: str) -> None:
 
 
 def test_nginx_limits_heavy_and_upload_routes(nginx_template: str) -> None:
-    """Распознавание принимает фото больше общего лимита тела, но в своей зоне частоты."""
+    """Распознавание и файл-образец шаблона принимают тело больше общего лимита,
+    но в своей зоне частоты."""
     assert re.search(r"zone=api_heavy:\d+m\s+rate=\d+r/s", nginx_template)
-    upload = nginx_template.split("requisites/recognize)$ {", 1)[1].split("}", 1)[0]
+    assert "|requisites/recognize|templates/import)$ {" in nginx_template
+    upload = nginx_template.split("templates/import)$ {", 1)[1].split("}", 1)[0]
     assert "limit_req zone=api_heavy" in upload
     sizes = re.findall(r"client_max_body_size (\d+)m;", upload)
     assert sizes and int(sizes[0]) * 1024 * 1024 > 10485760, (

@@ -12,15 +12,27 @@ export interface FilePickProps {
   subtitle?: string | undefined;
   icon: ReactNode;
   busy?: boolean | undefined;
+  // Что писать, пока файл обрабатывается.
+  busyTitle?: string | undefined;
+  // Типы файлов для диалога; по умолчанию — всё, что распознаёт сервер.
+  accept?: string | undefined;
   onPick: (file: File) => void;
 }
 
-export function FilePick({ title, subtitle, icon, busy, onPick }: FilePickProps) {
+export function FilePick({
+  title,
+  subtitle,
+  icon,
+  busy,
+  busyTitle = 'Распознаём…',
+  accept = RECOGNIZABLE,
+  onPick,
+}: FilePickProps) {
   const input = useRef<HTMLInputElement>(null);
   return (
     <>
       <CellSimple
-        title={busy ? 'Распознаём…' : title}
+        title={busy ? busyTitle : title}
         subtitle={subtitle}
         before={
           <span className="themed-icon">
@@ -34,7 +46,7 @@ export function FilePick({ title, subtitle, icon, busy, onPick }: FilePickProps)
       <input
         ref={input}
         type="file"
-        accept={RECOGNIZABLE}
+        accept={accept}
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];

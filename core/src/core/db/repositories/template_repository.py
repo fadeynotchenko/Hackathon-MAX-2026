@@ -1,13 +1,15 @@
-"""Шаблоны документов: встроенные (без владельца) и свои шаблоны пользователя."""
+"""Шаблоны документов: встроенные (без владельца), свои шаблоны пользователя
+и их файлы-образцы."""
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 
-from sqlalchemy import exists, func, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.models import Document, Template
+from core.db.models import Document, Template, TemplateFile
 
 
 class TemplateRepository:
@@ -59,6 +61,7 @@ class TemplateRepository:
         body_format: str,
         archived_at: datetime | None = None,
         origin_id: int | None = None,
+        file_id: int | None = None,
     ) -> Template:
         template = Template(
             owner_user_id=owner_user_id,
@@ -71,9 +74,11 @@ class TemplateRepository:
             body_format=body_format,
             archived_at=archived_at,
             origin_id=origin_id,
+            file_id=file_id,
         )
         self._session.add(template)
         await self._session.flush()
+        await self._session.refresh(template, ["file"])
         return template
 
     async def move_documents(self, from_id: int, to_id: int) -> None:
@@ -109,3 +114,49 @@ class TemplateRepository:
         template.body_format = body_format
         await self._session.flush()
         return template
+
+
+class TemplateFileRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self, *, owner_user_id: int, filename: str, data: bytes, text: str
+    ) -> TemplateFile:
+        file = TemplateFile(
+            owner_user_id=owner_user_id,
+            filename=filename,
+            size=len(data),
+            sha256=hashlib.sha256(data).hexdigest(),
+            data=data,
+            text=text,
+        )
+        self._session.add(file)
+        await self._session.flush()
+        return file
+
+    async def get(self, owner_user_id: int, file_id: int) -> TemplateFile | None:
+        stmt = select(TemplateFile).where(
+            TemplateFile.id == file_id, TemplateFile.owner_user_id == owner_user_id
+        )
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def data(self, file_id: int) -> bytes | None:
+        stmt = select(TemplateFile.data).where(TemplateFile.id == file_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def text(self, file_id: int) -> str | None:
+        stmt = select(TemplateFile.text).where(TemplateFile.id == file_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def delete_unused(self, owner_user_id: int, *, before: datetime) -> None:
+        """Загруженные, но так и не сохранённые шаблоном образцы: пользователь
+        выбрал другой файл или ушёл с экрана."""
+        used = select(Template.file_id).where(Template.file_id.is_not(None))
+        await self._session.execute(
+            delete(TemplateFile).where(
+                TemplateFile.owner_user_id == owner_user_id,
+                TemplateFile.created_at < before,
+                TemplateFile.id.not_in(used),
+            )
+        )

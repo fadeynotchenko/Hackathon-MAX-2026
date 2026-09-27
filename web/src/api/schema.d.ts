@@ -538,6 +538,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/templates/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Разобрать файл-образец для своего шаблона
+         * @description Находит места для данных: метки {{Название поля}} в файле, а без них — с помощником. Шаблон не создаётся: черновик проверяет человек и сохраняет через POST /templates с file_id.
+         */
+        post: operations["import_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/templates/{template_id}": {
         parameters: {
             query?: never;
@@ -992,6 +1012,11 @@ export interface components {
             label: string;
             /** Max Length */
             max_length: number | null;
+            /**
+             * Places
+             * @description Места значения в файле-образце; у текстовых — пусто
+             */
+            places?: components["schemas"]["PlaceSchema"][];
             /** Required */
             required: boolean;
             /**
@@ -1058,6 +1083,21 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "degraded";
+        };
+        /** ImportedFieldSchema */
+        ImportedFieldSchema: {
+            /**
+             * Key
+             * @description Ключ каталога (реквизит, number, date, total); пусто — своё поле
+             */
+            key: string;
+            /** Label */
+            label: string;
+            /** Places */
+            places: components["schemas"]["PlaceSchema"][];
+            /** Required */
+            required: boolean;
+            type: components["schemas"]["FieldType"];
         };
         /** MaxLoginRequest */
         MaxLoginRequest: {
@@ -1135,6 +1175,30 @@ export interface components {
             values: {
                 [key: string]: string;
             };
+        };
+        /** PlaceRequest */
+        PlaceRequest: {
+            /**
+             * Before
+             * @default
+             */
+            before: string;
+            /** Text */
+            text: string;
+        };
+        /** PlaceSchema */
+        PlaceSchema: {
+            /**
+             * Before
+             * @description Текст перед фрагментом в той же строке: уточняет, какой он
+             * @default
+             */
+            before: string;
+            /**
+             * Text
+             * @description Фрагмент файла-образца, на месте которого встанет значение
+             */
+            text: string;
         };
         /** RecognizedRequisitesSchema */
         RecognizedRequisitesSchema: {
@@ -1257,6 +1321,11 @@ export interface components {
             /** Label */
             label: string;
             /**
+             * Places
+             * @description Где в файле-образце стоит значение; только вместе с file_id
+             */
+            places?: components["schemas"]["PlaceRequest"][];
+            /**
              * Required
              * @default true
              */
@@ -1269,11 +1338,65 @@ export interface components {
             /** @default text */
             type: components["schemas"]["FieldType"];
         };
+        /** TemplateFileSchema */
+        TemplateFileSchema: {
+            /** Filename */
+            filename: string;
+            /** Id */
+            id: number;
+            /**
+             * Text
+             * @description Текст образца, строка на абзац; только в ответе на один шаблон
+             */
+            text?: string | null;
+        };
+        /** TemplateImportSchema */
+        TemplateImportSchema: {
+            /**
+             * Fields
+             * @description Найденные места для данных
+             */
+            fields: components["schemas"]["ImportedFieldSchema"][];
+            /**
+             * File Id
+             * @description Сохранённый образец DOCX; у PDF пусто — шаблон будет текстовым
+             */
+            file_id: number | null;
+            /** Filename */
+            filename: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "docx" | "pdf";
+            /**
+             * Found By
+             * @description Кто нашёл места: метки {{…}} в файле, помощник или никто
+             * @enum {string}
+             */
+            found_by: "markers" | "assistant" | "none";
+            /**
+             * Notice
+             * @description Почему места не искались помощником
+             */
+            notice: string | null;
+            /**
+             * Text
+             * @description Текст файла, строка на абзац
+             */
+            text: string;
+            /**
+             * Title
+             * @description Предложенное название шаблона
+             */
+            title: string;
+        };
         /** TemplateRequest */
         TemplateRequest: {
             /**
              * Body
-             * @description Текст с маркерами {{key}}; каждый маркер описан в fields
+             * @description Текст с маркерами {{key}}; каждый маркер описан в fields. С file_id не нужен: текст собирается из образца
+             * @default
              */
             body: string;
             /**
@@ -1283,6 +1406,11 @@ export interface components {
             description: string;
             /** Fields */
             fields: components["schemas"]["TemplateFieldRequest"][];
+            /**
+             * File Id
+             * @description Файл-образец DOCX из POST /templates/import
+             */
+            file_id?: number | null;
             /** Title */
             title: string;
         };
@@ -1299,6 +1427,8 @@ export interface components {
             description: string;
             /** Fields */
             fields: components["schemas"]["FieldSpecSchema"][];
+            /** @description Файл-образец DOCX: документ собирается в его оформлении */
+            file?: components["schemas"]["TemplateFileSchema"] | null;
             /** Id */
             id: number;
             /** Is Builtin */
@@ -3354,6 +3484,90 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    import_template: {
+        parameters: {
+            query?: {
+                /** @description Имя файла у пользователя */
+                filename?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Образец документа: DOCX или PDF */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+                "application/pdf": string;
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateImportSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
