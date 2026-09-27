@@ -1,8 +1,9 @@
-// Шаблон перед созданием: пустой бланк таким, каким он станет PDF, и что
-// понадобится для заполнения. Отсюда же — напоминание про реквизиты своей
-// организации: без них каждый документ пришлось бы дозаполнять руками.
-// Свой шаблон здесь меняют и удаляют, стандартный — берут за основу своего.
-import { Button, CellAction, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
+// Шаблон перед созданием: пустой бланк таким, каким он станет PDF, и одна
+// кнопка. Список полей не нужен — они видны на самом бланке. Отсюда же —
+// напоминание про реквизиты своей организации: без них каждый документ
+// пришлось бы дозаполнять руками. Свой шаблон здесь меняют и удаляют,
+// стандартный — берут за основу своего.
+import { Button, CellAction, CellList, CellSimple } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -13,7 +14,6 @@ import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { DocPreview } from '@/components/DocPreview';
 import { useAuth } from '@/auth/context';
-import { GROUP_TITLE, groupFields } from '@/lib/format';
 import { errorText, useAsync } from '@/lib/useAsync';
 
 export function TemplatePage() {
@@ -42,11 +42,9 @@ export function TemplatePage() {
   }
 
   const [template, organizations] = state.data;
-  const hasOrganization = organizations.length > 0;
   return (
     <Page
       title={template.title}
-      subtitle={template.description}
       onBack={back}
       footer={
         <Button size="large" stretched onClick={() => navigate(`/create/${template.id}/client`)}>
@@ -54,20 +52,10 @@ export function TemplatePage() {
         </Button>
       }
     >
-      <div className="section">
-        <DocPreview text={template.preview} marks={false} />
-      </div>
-      {template.file ? (
+      {organizations.length === 0 ? (
         <div className="section">
-          <Banner tone="info" title={`Документ соберётся в файле «${template.file.filename}»`}>
-            С логотипом и оформлением образца; выше — только его текст.
-          </Banner>
-        </div>
-      ) : null}
-      {!hasOrganization ? (
-        <div className="section">
-          <Banner tone="warning" title="Реквизиты вашей организации не заполнены">
-            Заполните их один раз — дальше они подставятся во все документы.
+          <Banner tone="warning" title="Добавьте свои реквизиты">
+            Один раз — и они будут во всех документах.
             <div style={{ marginTop: 8 }}>
               <Button
                 size="small"
@@ -78,47 +66,22 @@ export function TemplatePage() {
                   })
                 }
               >
-                Заполнить реквизиты
+                Добавить
               </Button>
             </div>
           </Banner>
         </div>
       ) : null}
-      {groupFields(template.fields).map(([group, fields]) => (
-        <CellList
-          key={group}
-          mode="island"
-          filled
-          header={
-            <CellHeader
-              after={
-                group === 'Продавец' && hasOrganization ? (
-                  <Typography.Text variant="description" color="tertiary">
-                    из организации
-                  </Typography.Text>
-                ) : null
-              }
-            >
-              {GROUP_TITLE[group] ?? group}
-            </CellHeader>
-          }
-        >
-          {fields.map((field) => (
-            <CellSimple
-              key={field.key}
-              height="compact"
-              title={field.label}
-              after={
-                field.required ? null : (
-                  <Typography.Text variant="description" color="tertiary">
-                    необязательно
-                  </Typography.Text>
-                )
-              }
-            />
-          ))}
-        </CellList>
-      ))}
+      <div className="section">
+        <DocPreview text={template.preview} marks={false} />
+      </div>
+      {template.file ? (
+        <div className="section">
+          <Banner tone="info" title={`Соберётся в файле «${template.file.filename}»`}>
+            С оформлением образца; выше — только текст.
+          </Banner>
+        </div>
+      ) : null}
       <TemplateActions template={template} />
     </Page>
   );

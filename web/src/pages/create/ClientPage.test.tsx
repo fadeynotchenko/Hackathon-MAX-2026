@@ -44,10 +44,24 @@ function setup(organizations: Organization[], counterparties: Counterparty[] = [
 }
 
 describe('ClientPage', () => {
+  it('shows a short client list without a search field', async () => {
+    setup([organization(1, 'ООО «Ромашка»', true)], [client(1, 'ООО «Лютик»', '7736207543')]);
+
+    expect(await screen.findByText('ООО «Лютик»')).toBeTruthy();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+  });
+
   it('filters clients by name or INN and says when nothing matches', async () => {
     setup(
       [organization(1, 'ООО «Ромашка»', true)],
-      [client(1, 'ООО «Лютик»', '7736207543'), client(2, 'ИП Петров', '500100732259')],
+      [
+        client(1, 'ООО «Лютик»', '7736207543'),
+        client(2, 'ИП Петров', '500100732259'),
+        client(3, 'ООО «Василёк»', '7707083893'),
+        client(4, 'ООО «Ландыш»', '7702070139'),
+        client(5, 'ИП Сидорова', '500100732250'),
+        client(6, 'АО «Пион»', '7728168971'),
+      ],
     );
     const search = await screen.findByRole('searchbox');
 
@@ -55,7 +69,7 @@ describe('ClientPage', () => {
     expect(screen.getByText('ООО «Лютик»')).toBeTruthy();
     expect(screen.queryByText('ИП Петров')).toBeNull();
 
-    fireEvent.change(search, { target: { value: 'сидоров' } });
+    fireEvent.change(search, { target: { value: 'кузнецов' } });
     expect(screen.getByText('Ничего не нашлось')).toBeTruthy();
   });
 

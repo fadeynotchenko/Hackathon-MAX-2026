@@ -47,19 +47,19 @@ export function GatePage() {
   }
   if (status === 'signed_out') {
     return (
-      <Gate
-        title="Вы вышли"
-        text="Документы и реквизиты сохранены — войдите, чтобы продолжить."
-        action={retry}
-        actionLabel="Войти снова"
-      />
+      <Gate title="Вы вышли" text="Документы сохранены." action={retry} actionLabel="Войти снова" />
     );
   }
   if (status === 'outside') {
     return (
       <Gate
         title="Откройте в MAX"
-        text="Это мини-приложение работает внутри мессенджера MAX: откройте его из чата с ботом. Для разработки в браузере задайте VITE_DEV_INIT_DATA (cd core && uv run python -m core.scripts.dev_init_data)."
+        text={
+          // Подсказка про dev-вход нужна разработчику, а не человеку со ссылкой.
+          import.meta.env.DEV
+            ? 'Для входа в браузере задайте VITE_DEV_INIT_DATA (cd core && uv run python -m core.scripts.dev_init_data).'
+            : 'Откройте приложение из чата с ботом.'
+        }
       />
     );
   }

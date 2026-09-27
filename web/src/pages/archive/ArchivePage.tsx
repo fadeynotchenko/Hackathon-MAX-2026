@@ -1,7 +1,7 @@
 // Вкладка «Архив»: всё созданное — поиск, фильтр по виду и группы по клиентам.
 // Группа клиента — то, что в макете называлось «проект»: документы одной
 // сделки с одним контрагентом (отдельной сущности «проект» в API пока нет).
-import { Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
+import { Button, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -16,9 +16,8 @@ import {
   documentState,
   formatRelative,
   kindStyle,
-  pluralize,
 } from '@/lib/format';
-import { matchesQuery } from '@/lib/search';
+import { matchesQuery, needsSearch } from '@/lib/search';
 import { useAsync } from '@/lib/useAsync';
 
 const NO_CLIENT = 'Без клиента';
@@ -71,20 +70,22 @@ export function ArchivePage() {
   }, [documents, kind, kindByTitle, query]);
 
   return (
-    <Page title="Архив" subtitle="Документы, которые вы создали" tabs>
+    <Page title="Архив" tabs>
       {state.loading ? <Loading /> : null}
       {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : null}
       {state.data && documents.length === 0 ? (
         <EmptyState
           title="Документов пока нет"
-          text="Созданные документы и их отправки появятся здесь."
           action={<Button onClick={() => navigate('/create')}>Создать документ</Button>}
         />
       ) : null}
       {state.data && documents.length > 0 ? (
         <>
-          <SearchField value={query} onChange={setQuery} hint="Название, вид или клиент" />
-          {kinds.length > 1 ? (
+          {/* Поиск и фильтр — когда документов столько, что их уже не окинуть взглядом. */}
+          {needsSearch(documents.length) ? (
+            <SearchField value={query} onChange={setQuery} hint="Название или клиент" />
+          ) : null}
+          {needsSearch(documents.length) && kinds.length > 1 ? (
             <div className="chips" role="group" aria-label="Вид документа">
               <Button
                 size="small"
@@ -105,29 +106,13 @@ export function ArchivePage() {
               ))}
             </div>
           ) : null}
-          {groups.length === 0 ? (
-            <EmptyState
-              title="Ничего не нашлось"
-              text="Попробуйте другое слово или сбросьте фильтр."
-            />
-          ) : null}
+          {groups.length === 0 ? <EmptyState title="Ничего не нашлось" /> : null}
           {groups.map(([client, docs]) => (
             <CellList
               key={client}
               mode="island"
               filled
-              header={
-                <CellHeader
-                  innerClassNames={{ content: 'clamp-2' }}
-                  after={
-                    <Typography.Text variant="description" color="tertiary">
-                      {docs.length} {pluralize(docs.length, 'документ', 'документа', 'документов')}
-                    </Typography.Text>
-                  }
-                >
-                  {client}
-                </CellHeader>
-              }
+              header={<CellHeader innerClassNames={{ content: 'clamp-2' }}>{client}</CellHeader>}
             >
               {docs.map((doc) => {
                 const status = documentState(doc);

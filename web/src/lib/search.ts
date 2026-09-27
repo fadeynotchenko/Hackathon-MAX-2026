@@ -21,3 +21,11 @@ export function matchesCard(
 ): boolean {
   return matchesQuery([card.name, card.inn, ...Object.values(card.values)], query);
 }
+
+// Строка поиска нужна длинному списку: над тремя-пятью записями она только
+// занимает экран — их и так видно целиком.
+export const SEARCH_FROM = 6;
+
+export function needsSearch(count: number): boolean {
+  return count >= SEARCH_FROM;
+}

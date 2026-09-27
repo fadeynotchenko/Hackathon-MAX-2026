@@ -1,6 +1,7 @@
 // Форма реквизитов организации: своей или клиента. Можно заполнить с фото
 // карточки предприятия — распознанное подставляется в поля и помечается,
-// а сохраняет человек, проверив значения.
+// а сохраняет человек, проверив значения. Пример значения — плейсхолдером
+// в пустом поле, а не строкой под ним.
 import { CellList } from '@maxhub/max-ui';
 import { useState } from 'react';
 
@@ -43,15 +44,13 @@ export function RequisitesForm({ values, onChange, errors }: RequisitesFormProps
       const keys = Object.keys(found);
       onChange({ ...values, ...found });
       setRecognized(new Set(keys));
+      const skipped = result.errors.map((error) => `Не подставлено: ${error.message}`).join(' ');
       setNotice(
         keys.length > 0
           ? {
               tone: 'success',
-              title: `Распознано ${keys.length} ${pluralize(keys.length, 'поле', 'поля', 'полей')}${result.kind ? ` · ${result.kind}` : ''}`,
-              text: [
-                'Проверьте значения и сохраните.',
-                ...result.errors.map((error) => `Не подставлено: ${error.message}`),
-              ].join(' '),
+              title: `Заполнено ${keys.length} ${pluralize(keys.length, 'поле', 'поля', 'полей')} — сверьте с фото`,
+              ...(skipped ? { text: skipped } : {}),
             }
           : { tone: 'error', title: 'Реквизитов на файле не нашлось' },
       );
@@ -74,8 +73,7 @@ export function RequisitesForm({ values, onChange, errors }: RequisitesFormProps
         <FilePick
           icon={<IconCamera />}
           busy={busy}
-          title="Заполнить по фото"
-          subtitle="Карточка предприятия, выписка или счёт"
+          title="Заполнить с фото"
           onPick={(file) => void recognize(file)}
         />
       </CellList>
@@ -94,15 +92,11 @@ export function RequisitesForm({ values, onChange, errors }: RequisitesFormProps
                 key={field.key}
                 label={field.label}
                 type={field.type}
-                hint={
-                  field.example && !values[field.key] ? `Например: ${field.example}` : undefined
-                }
+                placeholder={field.example}
                 value={values[field.key] ?? ''}
                 maxLength={field.maxLength}
                 error={errors[field.key]}
-                source={
-                  recognized.has(field.key) ? { label: 'С фото · проверьте', draft: true } : null
-                }
+                source={recognized.has(field.key) ? { label: 'С фото', draft: true } : null}
                 onChange={(value) => {
                   setRecognized((prev) => {
                     const next = new Set(prev);

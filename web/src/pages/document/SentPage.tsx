@@ -10,11 +10,7 @@ import { closeApp, isInsideMax } from '@/max/webapp';
 export function SentPage() {
   const navigate = useNavigate();
   const documentId = Number(useParams().documentId);
-  const sent = useLocation().state as {
-    filename?: string;
-    format?: string;
-    withText?: boolean;
-  } | null;
+  const sent = useLocation().state as { filename?: string } | null;
   const inside = isInsideMax();
 
   return (
@@ -33,7 +29,7 @@ export function SentPage() {
             stretched
             onClick={() => navigate(`/documents/${documentId}`, { replace: true })}
           >
-            Открыть в архиве
+            Открыть документ
           </Button>
           <Button
             size="large"
@@ -41,7 +37,7 @@ export function SentPage() {
             stretched
             onClick={() => navigate('/create', { replace: true })}
           >
-            Создать ещё документ
+            Создать ещё
           </Button>
         </>
       }
@@ -50,16 +46,10 @@ export function SentPage() {
         <span className="result__icon">
           <IconCheck size={40} />
         </span>
-        <Typography.Text variant="header">Документ отправлен</Typography.Text>
+        <Typography.Text variant="header">Отправлено</Typography.Text>
         <Typography.Text variant="body" color="secondary">
-          {sent?.filename ? `Бот пришлёт «${sent.filename}» в чат` : 'Бот пришлёт файл в чат'} через
-          несколько секунд.{' '}
-          {sent?.withText === false
-            ? 'Перешлите его клиенту.'
-            : 'Перешлите его клиенту вместе с текстом.'}
-        </Typography.Text>
-        <Typography.Text variant="description" color="tertiary">
-          Документ сохранён в архиве: там видно, дошёл ли файл до чата.
+          {sent?.filename ? `«${sent.filename}» придёт в чат` : 'Файл придёт в чат'} через пару
+          секунд
         </Typography.Text>
       </div>
     </Page>

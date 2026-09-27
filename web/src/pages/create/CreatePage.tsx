@@ -16,30 +16,33 @@ import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { DocPreview } from '@/components/DocPreview';
 import { useAuth } from '@/auth/context';
 import { kindStyle } from '@/lib/format';
-import { matchesQuery } from '@/lib/search';
+import { matchesQuery, needsSearch } from '@/lib/search';
 import { useAsync } from '@/lib/useAsync';
 import { closeApp, haptic } from '@/max/webapp';
 
 import { catalogSections } from './catalog';
 
 export function CreatePage() {
-  const { api, user } = useAuth();
+  const { api } = useAuth();
   const navigate = useNavigate();
   const templates = useAsync(() => api.templates(), [api]);
   const [chatHint, setChatHint] = useState(false);
   const [query, setQuery] = useState('');
-  const visible =
-    templates.data?.filter((template) =>
-      matchesQuery(
-        [
-          template.title,
-          template.description,
-          kindStyle(template.kind).short,
-          kindStyle(template.kind).section,
-        ],
-        query,
-      ),
-    ) ?? [];
+  const all = templates.data ?? [];
+  const visible = all.filter((template) =>
+    matchesQuery(
+      [
+        template.title,
+        template.description,
+        kindStyle(template.kind).short,
+        kindStyle(template.kind).section,
+      ],
+      query,
+    ),
+  );
+  // Заголовок «Шаблоны» над единственной сеткой ничего не различает — разделы
+  // подписаны, только когда каталог делится по видам.
+  const grouped = all.some((template) => !template.is_builtin);
 
   const open = (template: Template) => {
     haptic('light');
@@ -51,21 +54,15 @@ export function CreatePage() {
   };
 
   return (
-    <Page
-      title="Создать документ"
-      subtitle={user?.first_name ? `${user.first_name}, выберите шаблон` : 'Выберите шаблон'}
-      tabs
-    >
+    <Page title="Новый документ" tabs>
       {templates.loading ? <Loading /> : null}
       {templates.error ? <ErrorState message={templates.error} onRetry={templates.reload} /> : null}
-      {templates.data && templates.data.length > 0 ? (
+      {needsSearch(all.length) ? (
         <SearchField value={query} onChange={setQuery} hint="Счёт, договор, КП" />
       ) : null}
-      {templates.data && templates.data.length > 0 && visible.length === 0 ? (
-        <EmptyState title="Ничего не нашлось" text="Попробуйте другое слово." />
-      ) : null}
+      {all.length > 0 && visible.length === 0 ? <EmptyState title="Ничего не нашлось" /> : null}
       {catalogSections(visible).map(([title, list]) => (
-        <Section key={title} title={title}>
+        <Section key={title} title={grouped ? title : undefined}>
           <TemplateGrid templates={list} onOpen={open} />
         </Section>
       ))}
@@ -73,7 +70,7 @@ export function CreatePage() {
       <CellList mode="island" filled header={<CellHeader>Свой шаблон</CellHeader>}>
         <CellSimple
           title="Из файла"
-          subtitle="Ваш DOCX или PDF — места для данных найдём сами"
+          subtitle="DOCX или PDF"
           before={
             <span className="themed-icon">
               <IconUpload />
@@ -84,7 +81,6 @@ export function CreatePage() {
         />
         <CellSimple
           title="Написать текст"
-          subtitle="Реквизиты сторон вставляются из каталога"
           before={
             <span className="themed-icon">
               <IconPlus />
@@ -95,10 +91,10 @@ export function CreatePage() {
         />
       </CellList>
 
-      <CellList mode="island" filled header={<CellHeader>Или начните в чате</CellHeader>}>
+      <CellList mode="island" filled>
         <CellSimple
           title="Написать боту"
-          subtitle="Текст, голосовое, фото или файл — бот заполнит документ"
+          subtitle="Текстом, голосом или фото"
           before={
             <span className="themed-icon">
               <IconChat />
@@ -111,8 +107,7 @@ export function CreatePage() {
       {chatHint ? (
         <div className="section">
           <Banner tone="info" title="Откройте чат с ботом в MAX">
-            Напишите, какой документ нужен, например: «Счёт на 120 000 для ООО Ромашка за разработку
-            сайта».
+            Например: «Счёт на 120 000 для ООО Ромашка»
           </Banner>
         </div>
       ) : null}
@@ -138,9 +133,13 @@ function TemplateGrid({
         >
           <DocPreview text={template.preview} marks={false} mini />
           <Typography.Text variant="detail-strong">{template.title}</Typography.Text>
-          <Typography.Text variant="description" color="tertiary">
-            {template.is_builtin ? 'Стандартный' : 'Ваш шаблон'}
-          </Typography.Text>
+          {/* Метка только у своего шаблона: «Стандартный» под каждой карточкой
+              ничего не различало. */}
+          {template.is_builtin ? null : (
+            <Typography.Text variant="description" color="tertiary">
+              Ваш шаблон
+            </Typography.Text>
+          )}
         </button>
       ))}
     </div>

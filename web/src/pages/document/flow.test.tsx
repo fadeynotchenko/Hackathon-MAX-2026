@@ -84,6 +84,9 @@ describe('document flow', () => {
     fireEvent.change(await screen.findByLabelText(/Название клиента/), {
       target: { value: 'ООО «Альфа»' },
     });
+    // Пустое необязательное поле свёрнуто, пока его не попросили.
+    expect(screen.queryByLabelText(/ИНН клиента/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ещё 1 поле' }));
     fireEvent.change(screen.getByLabelText(/ИНН клиента/), { target: { value: '123' } });
     fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
 
@@ -135,14 +138,14 @@ describe('document flow', () => {
       path: '/documents/:documentId/fill',
       route: '/documents/7/fill',
     });
-    expect(await screen.findByText('Из карточки клиента')).toBeInTheDocument();
+    expect(await screen.findByText('Из карточки')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/ИНН клиента/), { target: { value: '7707083894' } });
     fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
 
     expect(await screen.findByText('ИНН не проходит проверку')).toBeInTheDocument();
     expect(screen.getByLabelText(/ИНН клиента/)).toHaveValue('7707083894');
-    expect(screen.queryByText('Из карточки клиента')).not.toBeInTheDocument();
+    expect(screen.queryByText('Из карточки')).not.toBeInTheDocument();
   });
 
   it('asks to confirm recognized values before export', async () => {
@@ -174,7 +177,7 @@ describe('document flow', () => {
     expect(await screen.findByText('На фото: «Итого: 180 000,00»')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Всё верно' }));
     await waitFor(() => expect(confirm).toHaveBeenCalledWith(7));
-    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать формат файла' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Далее' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/documents/7/export');
   });
 

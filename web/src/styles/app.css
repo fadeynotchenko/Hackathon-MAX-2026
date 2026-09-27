@@ -41,7 +41,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--spacing-size-m);
-  padding: var(--spacing-size2xl) var(--spacing-size2xl) var(--spacing-size-m);
+  padding: var(--spacing-size4xl) var(--spacing-size3xl) var(--spacing-size-xl);
 }
 
 .screen__back {
@@ -60,28 +60,29 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Между блоками — 24px: разделы читаются по отступу, без лишних заголовков. */
 .screen__body {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-size2xl);
-  padding: var(--spacing-size-m) 0 var(--spacing-size4xl);
+  gap: var(--spacing-size4xl);
+  padding: var(--spacing-size-m) 0 calc(var(--spacing-size4xl) * 2);
   flex: 1;
 }
 
 /* Футер и таб-бар прилипают к низу экрана (sticky), а не висят поверх него
    (fixed): при двух-трёх кнопках фиксированный футер закрывал последние пункты,
-   а отступ под него пришлось бы угадывать для каждого экрана. */
+   а отступ под него пришлось бы угадывать для каждого экрана. Фон футера — фон
+   экрана, без плашки и линии: кнопка лежит на странице, а не на панели. */
 .screen__footer {
   position: sticky;
   bottom: 0;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-size-m);
-  padding: var(--spacing-size-xl) var(--spacing-size2xl)
+  gap: var(--spacing-size-s);
+  padding: var(--spacing-size-xl) var(--spacing-size-xl)
     calc(var(--spacing-size-xl) + env(safe-area-inset-bottom));
-  background: var(--background-primary);
-  border-top: 0.5px solid var(--divider-secondary);
+  background: var(--background-surface);
 }
 
 .section {
@@ -169,27 +170,41 @@ body {
   color: var(--icon-themed);
 }
 
-/* Шаги документа: «Шаг 2 из 3 · Проверка» и полоска прогресса. */
+/* Шаги документа: три отрезка с подписью под каждым. Пройденный и текущий —
+   цвет акцента, текущая подпись — ещё и основным цветом текста. */
 .steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-size-s);
-}
-
-.steps__bar {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--spacing-size-xs);
+  margin: 0;
+  padding: 0 var(--spacing-size-xl);
+  list-style: none;
 }
 
-.steps__segment {
+.steps__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-s);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-label-strong);
+}
+
+.steps__item::before {
+  content: '';
   height: 4px;
-  border-radius: var(--size-border-radius-semantic-border-radius-rounded);
+  border-radius: 2px;
   background: var(--controls-inactive);
 }
 
-.steps__segment--done {
+.steps__item--done::before,
+.steps__item--current::before {
   background: var(--controls-active);
+}
+
+.steps__item--current {
+  color: var(--text-primary);
 }
 
 /* Плашка статуса: подсказка, успех, внимание, ошибка. Фон — тот же токен цвета
@@ -260,8 +275,8 @@ body {
 .template-card {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-size-m);
-  padding: var(--spacing-size-xl);
+  gap: var(--spacing-size-l);
+  padding: var(--spacing-size-xl) var(--spacing-size-xl) var(--spacing-size2xl);
   border: 0;
   border-radius: var(--size-border-radius-semantic-border-radius-card);
   background: var(--background-primary);
@@ -429,8 +444,11 @@ body {
   border-radius: 2px;
 }
 
+/* Миниатюра — верх листа: бланки заполнены сверху, пустой низ А4 только
+   растягивал карточку каталога. */
 .sheet--mini .sheet__page {
   --sheet-font: 2.9cqw;
+  aspect-ratio: 1;
   min-height: 0;
   overflow: hidden;
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08);
@@ -470,12 +488,6 @@ input[type='search']::-webkit-search-cancel-button {
   flex-wrap: wrap;
   overflow: visible;
   padding: 0;
-}
-
-/* История документа: две строки на событие — нормальной высоте MAX UI (56px)
-   не хватает воздуха, события слипались. */
-.history-cell {
-  padding-block: var(--spacing-size-l);
 }
 
 /* Экран результата: иконка, заголовок, пояснение. */
@@ -886,4 +898,78 @@ input[type='search']::-webkit-search-cancel-button {
 
 .status-icon--wait {
   color: var(--icon-tertiary);
+}
+
+/* Тихое действие внутри карточки формы: «Ещё 2 поля». Цвет — акцентный текст,
+   без фона кнопки, чтобы не спорить с главной кнопкой экрана. */
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--spacing-size-s);
+  margin: calc(-1 * var(--spacing-size-s)) 0;
+  padding: var(--spacing-size-s) var(--spacing-size-xs);
+  border: 0;
+  background: none;
+  color: var(--text-themed);
+  font: inherit;
+  font-size: var(--font-size-detail);
+  cursor: pointer;
+}
+
+/* Плитки выбора (формат файла): активная обведена акцентом. Обводка — тенью
+   внутрь, чтобы выбор не сдвигал раскладку. */
+.segmented {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: var(--spacing-size-m);
+  padding: 0 var(--spacing-size-xl);
+}
+
+.segmented__option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-xs);
+  padding: var(--spacing-size2xl);
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--background-card);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+
+.segmented__option--active {
+  box-shadow: inset 0 0 0 2px var(--controls-active);
+}
+
+.segmented__option:has(:focus-visible) {
+  outline: 2px solid var(--controls-active);
+  outline-offset: 2px;
+}
+
+.segmented__title {
+  color: var(--text-primary);
+  font-size: var(--font-size-title);
+  line-height: var(--line-height-title);
+  font-weight: var(--font-weight-title);
+}
+
+.segmented__option--active .segmented__title {
+  color: var(--text-themed);
+}
+
+.segmented__note {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-description);
+  line-height: var(--line-height-description);
+}
+
+.link-button:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+/* Число в строке списка (сколько клиентов) — с отступом от шеврона. */
+.cell-count {
+  margin-inline-end: var(--spacing-size-s);
 }

@@ -1,16 +1,6 @@
-// Шаг 3 из 3 — экспорт. Формат и сопроводительный текст выбираются на одном
+// Шаг 3 из 3 — отправка. Формат и сопроводительный текст выбираются на одном
 // экране, файл приходит в чат с ботом: оттуда человек пересылает его клиенту.
-import {
-  Button,
-  CellAction,
-  CellHeader,
-  CellList,
-  CellSimple,
-  Radio,
-  Switch,
-  Textarea,
-  Typography,
-} from '@maxhub/max-ui';
+import { Button, CellList, CellSimple, Switch, Textarea, Typography } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 
@@ -18,6 +8,7 @@ import { ApiError, type DocumentView, type FileFormat } from '@/api/client';
 import { Banner } from '@/components/Banner';
 import { IconSparkle } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
+import { Segmented } from '@/components/Segmented';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { Steps } from '@/components/Steps';
 import { useAuth } from '@/auth/context';
@@ -25,11 +16,11 @@ import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 import { hapticResult } from '@/max/webapp';
 
-import { defaultCoverText, documentCaption } from './fields';
+import { defaultCoverText, documentTitle } from './fields';
 
-const FORMATS: Array<{ format: FileFormat; title: string; subtitle: string }> = [
-  { format: 'pdf', title: 'PDF', subtitle: 'Для отправки клиенту — выглядит одинаково везде' },
-  { format: 'docx', title: 'DOCX', subtitle: 'Для правок — откроется в Word или «Р7‑Офис»' },
+const FORMATS: Array<{ value: FileFormat; title: string; note: string }> = [
+  { value: 'pdf', title: 'PDF', note: 'Для клиента' },
+  { value: 'docx', title: 'DOCX', note: 'Для правок' },
 ];
 
 export function ExportPage() {
@@ -41,7 +32,7 @@ export function ExportPage() {
   const doc = state.data;
   if (!doc) {
     return (
-      <Page title="Выберите формат" onBack={back}>
+      <Page title="Документ" onBack={back}>
         {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : <Loading />}
       </Page>
     );
@@ -87,7 +78,7 @@ function ExportForm({ doc, onBack }: { doc: DocumentView; onBack: () => void }) 
       hapticResult('success');
       void navigate(`/documents/${doc.id}/sent`, {
         replace: true,
-        state: { filename: sent.filename, format: sent.format, withText },
+        state: { filename: sent.filename },
       });
     } catch (err) {
       hapticResult('error');
@@ -102,8 +93,7 @@ function ExportForm({ doc, onBack }: { doc: DocumentView; onBack: () => void }) 
 
   return (
     <Page
-      title="Выберите формат"
-      subtitle={documentCaption(doc)}
+      title={documentTitle(doc)}
       onBack={onBack}
       footer={
         <Button size="large" stretched loading={sending} onClick={() => void send()}>
@@ -111,50 +101,27 @@ function ExportForm({ doc, onBack }: { doc: DocumentView; onBack: () => void }) 
         </Button>
       }
     >
-      <div className="section">
-        <Steps current={3} />
-      </div>
+      <Steps current={3} />
       {error ? (
         <div className="section">
           <Banner tone="error" title={error} />
         </div>
       ) : null}
 
-      <CellList mode="island" filled header={<CellHeader>Формат файла</CellHeader>}>
-        {FORMATS.map((item) => (
-          <CellSimple
-            key={item.format}
-            as="label"
-            title={item.title}
-            subtitle={item.subtitle}
-            after={
-              <Radio
-                name="format"
-                value={item.format}
-                checked={format === item.format}
-                onChange={() => setFormat(item.format)}
-              />
-            }
-          />
-        ))}
-      </CellList>
+      <Segmented
+        name="format"
+        label="Формат файла"
+        options={FORMATS}
+        value={format}
+        onChange={setFormat}
+      />
 
-      <CellList mode="island" filled header={<CellHeader>Сопроводительный текст</CellHeader>}>
+      <CellList mode="island" filled>
         <CellSimple
           as="label"
-          title="Добавить текст к файлу"
-          subtitle="Бот пришлёт его вместе с файлом — перешлите клиенту"
+          title="Текст к файлу"
           after={<Switch checked={withText} onChange={(e) => setWithText(e.target.checked)} />}
         />
-        {withText ? (
-          <CellAction
-            before={<IconSparkle />}
-            disabled={drafting}
-            onClick={() => void draftWithAssistant()}
-          >
-            {drafting ? 'Помощник пишет…' : 'Написать с помощником'}
-          </CellAction>
-        ) : null}
       </CellList>
       {withText ? (
         <Section>
@@ -166,11 +133,24 @@ function ExportForm({ doc, onBack }: { doc: DocumentView; onBack: () => void }) 
             value={text}
             onChange={(event) => setText(event.target.value)}
           />
-          <Typography.Text variant="description" color="tertiary" style={{ padding: '0 12px' }}>
-            Файл и текст придут в чат с ботом. Контрагенту ничего не отправляется без вас.
-          </Typography.Text>
+          <button
+            type="button"
+            className="link-button"
+            disabled={drafting}
+            onClick={() => void draftWithAssistant()}
+          >
+            <IconSparkle size={20} />
+            {drafting ? 'Помощник пишет…' : 'Написать с помощником'}
+          </button>
         </Section>
       ) : null}
+      <Typography.Text
+        variant="description"
+        color="tertiary"
+        style={{ padding: '0 var(--spacing-size3xl)' }}
+      >
+        Файл придёт в ваш чат с ботом — оттуда перешлёте клиенту.
+      </Typography.Text>
     </Page>
   );
 }

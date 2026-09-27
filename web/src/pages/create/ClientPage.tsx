@@ -2,17 +2,17 @@
 // создания: сервер подставляет их реквизиты при создании черновика, поменять
 // стороны у готового черновика API не умеет. Выбранная организация живёт в адресе
 // (?org=), чтобы пережить поход в форму нового клиента и обратно.
-import { CellAction, CellHeader, CellList, CellSimple, Radio } from '@maxhub/max-ui';
+import { Button, CellAction, CellHeader, CellList, CellSimple, Radio } from '@maxhub/max-ui';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Banner } from '@/components/Banner';
-import { IconEdit, IconPlus } from '@/components/icons';
+import { IconPlus } from '@/components/icons';
 import { Page } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
-import { matchesCard } from '@/lib/search';
+import { matchesCard, needsSearch } from '@/lib/search';
 import { errorText, useAsync } from '@/lib/useAsync';
 
 export function ClientPage() {
@@ -62,12 +62,10 @@ export function ClientPage() {
   const manyOrganizations = (organizations.data?.length ?? 0) > 1;
   const busy = creating !== null;
 
+  const allClients = counterparties.data ?? [];
+
   return (
-    <Page
-      title={manyOrganizations ? 'Стороны документа' : 'Для кого документ?'}
-      subtitle="Реквизиты подставятся сами"
-      onBack={back}
-    >
+    <Page title={manyOrganizations ? 'Стороны документа' : 'Для кого документ?'} onBack={back}>
       {error ? (
         <div className="section">
           <Banner tone="error" title={error} />
@@ -79,7 +77,6 @@ export function ClientPage() {
             <CellSimple
               key={item.id}
               title={item.name}
-              subtitle={item.inn ? `ИНН ${item.inn}` : undefined}
               innerClassNames={{ title: 'ellipsis' }}
               after={
                 <Radio
@@ -94,6 +91,18 @@ export function ClientPage() {
           ))}
         </CellList>
       ) : null}
+
+      {counterparties.loading ? <Loading /> : null}
+      {counterparties.error ? (
+        <ErrorState message={counterparties.error} onRetry={counterparties.reload} />
+      ) : null}
+      {needsSearch(allClients.length) ? (
+        <SearchField value={query} onChange={setQuery} hint="Название или ИНН" />
+      ) : null}
+      {allClients.length > 0 && clients.length === 0 ? (
+        <EmptyState title="Ничего не нашлось" />
+      ) : null}
+      {/* Новый клиент — первой строкой того же списка: выбор и добавление в одном месте. */}
       <CellList
         mode="island"
         filled
@@ -112,45 +121,29 @@ export function ClientPage() {
         >
           Новый клиент
         </CellAction>
-        <CellAction
-          before={<IconEdit />}
-          mode="secondary"
+        {clients.map((item) => (
+          <CellSimple
+            key={item.id}
+            title={item.name}
+            subtitle={item.inn ? `ИНН ${item.inn}` : undefined}
+            innerClassNames={{ title: 'clamp-2' }}
+            showChevron
+            disabled={busy}
+            onClick={() => void create(item.id)}
+          />
+        ))}
+      </CellList>
+      <div className="section">
+        <Button
+          variant="ghost"
+          size="medium"
+          stretched
           disabled={busy}
           onClick={() => void create(null)}
         >
           Ввести вручную
-        </CellAction>
-      </CellList>
-
-      {counterparties.loading ? <Loading /> : null}
-      {counterparties.error ? (
-        <ErrorState message={counterparties.error} onRetry={counterparties.reload} />
-      ) : null}
-      {counterparties.data && counterparties.data.length > 0 ? (
-        <SearchField
-          value={query}
-          onChange={setQuery}
-          hint="Найти клиента: название или ИНН"
-        />
-      ) : null}
-      {counterparties.data && counterparties.data.length > 0 && clients.length === 0 ? (
-        <EmptyState title="Ничего не нашлось" text="Попробуйте другое слово." />
-      ) : null}
-      {clients.length > 0 ? (
-        <CellList mode="island" filled header={<CellHeader>Ваши клиенты</CellHeader>}>
-          {clients.map((item) => (
-            <CellSimple
-              key={item.id}
-              title={item.name}
-              subtitle={item.inn ? `ИНН ${item.inn}` : 'ИНН не указан'}
-              innerClassNames={{ title: 'clamp-2' }}
-              showChevron
-              disabled={busy}
-              onClick={() => void create(item.id)}
-            />
-          ))}
-        </CellList>
-      ) : null}
+        </Button>
+      </div>
     </Page>
   );
 }

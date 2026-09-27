@@ -1,5 +1,5 @@
 // Клиенты: карточки контрагентов, из которых подставляются реквизиты.
-import { CellAction, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
+import { CellAction, CellList, CellSimple } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -8,7 +8,7 @@ import { Page } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
-import { matchesCard } from '@/lib/search';
+import { matchesCard, needsSearch } from '@/lib/search';
 import { useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 
@@ -21,33 +21,25 @@ export function CounterpartiesPage() {
   const visible = state.data?.filter((item) => matchesCard(item, query)) ?? [];
 
   return (
-    <Page title="Клиенты" subtitle="Карточки контрагентов" onBack={back}>
-      <CellList mode="island" filled>
-        <CellAction before={<IconPlus />} onClick={() => navigate('/profile/counterparties/new')}>
-          Добавить клиента
-        </CellAction>
-      </CellList>
+    <Page title="Клиенты" onBack={back}>
       {state.loading ? <Loading /> : null}
       {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : null}
-      {state.data && state.data.length === 0 ? (
-        <EmptyState
-          title="Клиентов пока нет"
-          text="Добавьте карточку вручную или по фото — реквизиты будут подставляться в документы."
-        />
-      ) : null}
-      {state.data && state.data.length > 0 ? (
-        <SearchField value={query} onChange={setQuery} hint="Название, ИНН или подписант" />
+      {needsSearch(state.data?.length ?? 0) ? (
+        <SearchField value={query} onChange={setQuery} hint="Название или ИНН" />
       ) : null}
       {state.data && state.data.length > 0 && visible.length === 0 ? (
-        <EmptyState title="Ничего не нашлось" text="Попробуйте другое слово." />
+        <EmptyState title="Ничего не нашлось" />
       ) : null}
-      {visible.length > 0 ? (
-        <CellList mode="island" filled header={<CellHeader>Все клиенты</CellHeader>}>
+      {state.data ? (
+        <CellList mode="island" filled>
+          <CellAction before={<IconPlus />} onClick={() => navigate('/profile/counterparties/new')}>
+            Добавить клиента
+          </CellAction>
           {visible.map((item) => (
             <CellSimple
               key={item.id}
               title={item.name}
-              subtitle={item.inn ? `ИНН ${item.inn}` : 'ИНН не указан'}
+              subtitle={item.inn ? `ИНН ${item.inn}` : undefined}
               innerClassNames={{ title: 'clamp-2' }}
               showChevron
               onClick={() => navigate(`/profile/counterparties/${item.id}`)}

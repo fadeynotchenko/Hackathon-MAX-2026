@@ -108,8 +108,8 @@ export function inputKind(type: FieldType): InputKind {
 
 export const SOURCE_LABEL: Record<ValueSource, string> = {
   manual: 'Вручную',
-  profile: 'Из организации',
-  counterparty: 'Из карточки клиента',
+  profile: 'Из профиля',
+  counterparty: 'Из карточки',
   ocr: 'С фото',
   agent: 'От помощника',
   default: 'По умолчанию',

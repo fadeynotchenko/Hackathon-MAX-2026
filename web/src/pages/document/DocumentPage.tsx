@@ -1,5 +1,5 @@
-// Карточка документа из архива: состояние, путь (создан → отправлен →
-// доставлен), предпросмотр и действия — продолжить, отправить, взять за основу.
+// Карточка документа из архива: состояние одной строкой, действия, лист и
+// история (создан → отправлен → доставлен) — по строке на событие.
 import { Button, CellAction, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -8,45 +8,28 @@ import type { DocumentFact, DocumentView } from '@/api/client';
 import { Banner, type BannerTone } from '@/components/Banner';
 import { DocPreview } from '@/components/DocPreview';
 import { IconCopy, IconEdit, IconSend, IconTrash } from '@/components/icons';
-import { Page, Section } from '@/components/Page';
+import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
 import { FACT_LABEL, documentName, formatDate, formatDateTime } from '@/lib/format';
 import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 
-import { labelsOf } from './fields';
-
 function statusBanner(
   doc: DocumentView,
   history: DocumentFact[],
-): { tone: BannerTone; title: string; text?: string | undefined } {
+): { tone: BannerTone; title: string } {
   const last = [...history]
     .reverse()
     .find((fact) => ['sent', 'delivered', 'delivery_failed'].includes(fact.kind));
   const format = last?.format ? last.format.toUpperCase() : '';
-  if (last?.kind === 'delivered') {
-    return {
-      tone: 'success',
-      title: `${format} в чате`,
-      text: `Доставлен ${formatDateTime(last.at)}`,
-    };
-  }
+  if (last?.kind === 'delivered') return { tone: 'success', title: `${format} в чате` };
   if (last?.kind === 'delivery_failed') {
-    return { tone: 'error', title: 'Файл не дошёл до чата', text: 'Отправьте его ещё раз.' };
+    return { tone: 'error', title: 'Файл не дошёл до чата — отправьте ещё раз' };
   }
-  if (last?.kind === 'sent') {
-    return { tone: 'info', title: `${format} отправляется в чат`, text: formatDateTime(last.at) };
-  }
-  if (doc.ready && doc.unconfirmed.length === 0) {
-    return { tone: 'info', title: 'Готов к отправке' };
-  }
-  const rest = [...doc.missing, ...doc.unconfirmed];
-  return {
-    tone: 'warning',
-    title: 'Черновик',
-    text: rest.length > 0 ? `Осталось: ${labelsOf(doc, rest).join(', ')}.` : undefined,
-  };
+  if (last?.kind === 'sent') return { tone: 'info', title: `${format} отправляется в чат` };
+  if (doc.ready && doc.unconfirmed.length === 0) return { tone: 'info', title: 'Готов к отправке' };
+  return { tone: 'warning', title: 'Черновик' };
 }
 
 export function DocumentPage() {
@@ -130,33 +113,25 @@ export function DocumentPage() {
       }
     >
       <div className="section">
-        <Banner tone={banner.tone} title={banner.title}>
-          {banner.text}
-        </Banner>
+        <Banner tone={banner.tone} title={banner.title} />
         {error ? <Banner tone="error" title={error} /> : null}
       </div>
 
       <CellList mode="island" filled>
-        <CellAction before={<IconEdit />} onClick={() => navigate(`/documents/${doc.id}/fill`)}>
-          Изменить данные
+        {/* У черновика «Продолжить заполнение» уже внизу — второй вход в ту же форму лишний. */}
+        {ready ? (
+          <CellAction before={<IconEdit />} onClick={() => navigate(`/documents/${doc.id}/fill`)}>
+            Изменить данные
+          </CellAction>
+        ) : null}
+        <CellAction before={<IconCopy />} disabled={busy !== null} onClick={() => void copy()}>
+          На основе этого
         </CellAction>
-        <CellSimple
-          title="На основе этого"
-          subtitle="Новый документ: те же стороны и условия, новые номер и даты"
-          before={
-            <span className="themed-icon">
-              <IconCopy />
-            </span>
-          }
-          disabled={busy !== null}
-          showChevron
-          onClick={() => void copy()}
-        />
       </CellList>
 
-      <Section title="Как выглядит">
+      <div className="section">
         <DocPreview text={doc.preview} />
-      </Section>
+      </div>
 
       <CellList mode="island" filled header={<CellHeader>История</CellHeader>}>
         {history.length === 0 ? (
@@ -165,20 +140,18 @@ export function DocumentPage() {
           history.map((fact, index) => (
             <CellSimple
               key={`${fact.kind}-${fact.at}-${index}`}
-              className="history-cell"
-              separator={index < history.length - 1}
+              height="compact"
               title={
                 fact.kind === 'created' && fact.source === 'copy'
                   ? 'Создан на основе другого'
                   : (FACT_LABEL[fact.kind] ?? fact.kind)
               }
-              subtitle={formatDateTime(fact.at)}
               after={
-                fact.format ? (
-                  <Typography.Text variant="description" color="tertiary">
-                    {fact.format.toUpperCase()}
-                  </Typography.Text>
-                ) : null
+                <Typography.Text variant="description" color="tertiary" className="nowrap">
+                  {[fact.format?.toUpperCase(), formatDateTime(fact.at)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Typography.Text>
               }
             />
           ))
@@ -192,7 +165,7 @@ export function DocumentPage() {
           disabled={busy !== null}
           onClick={() => void remove()}
         >
-          {confirmDelete ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить документ'}
+          {confirmDelete ? 'Точно удалить?' : 'Удалить документ'}
         </CellAction>
       </CellList>
     </Page>

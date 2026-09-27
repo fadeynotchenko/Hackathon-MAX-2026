@@ -1,13 +1,12 @@
 // Вкладка «Профиль»: кто вошёл, свои организации и клиенты —
-// всё, что подставляется в документы. Каталог шаблонов живёт во вкладке
-// «Создать», здесь на него только ссылка.
-import { Avatar, Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
+// всё, что подставляется в документы. Каталог шаблонов — во вкладке «Создать».
+import { Avatar, Button, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useNavigate } from 'react-router-dom';
 
-import { IconBuilding, IconChart, IconTemplates, IconUsers } from '@/components/icons';
+import { IconBuilding, IconChart, IconUsers } from '@/components/icons';
 import { Page } from '@/components/Page';
 import { useAuth } from '@/auth/context';
-import { initials, pluralize } from '@/lib/format';
+import { initials } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
 export function ProfilePage() {
@@ -21,7 +20,7 @@ export function ProfilePage() {
   const organizationsSubtitle = !organizations
     ? '…'
     : !main
-      ? 'Не заполнено — заполните один раз'
+      ? 'Не заполнено'
       : organizations.length === 1
         ? main.name
         : `${main.name} и ещё ${organizations.length - 1}`;
@@ -44,7 +43,7 @@ export function ProfilePage() {
         />
       </CellList>
 
-      <CellList mode="island" filled header={<CellHeader>Для документов</CellHeader>}>
+      <CellList mode="island" filled>
         <CellSimple
           title="Мои организации"
           subtitle={organizationsSubtitle}
@@ -62,31 +61,23 @@ export function ProfilePage() {
         />
         <CellSimple
           title="Клиенты"
-          subtitle={
-            counterparties
-              ? counterparties.length > 0
-                ? `${counterparties.length} ${pluralize(counterparties.length, 'карточка', 'карточки', 'карточек')}`
-                : 'Пока нет карточек'
-              : '…'
-          }
           before={<IconUsers />}
+          after={
+            counterparties && counterparties.length > 0 ? (
+              <Typography.Text variant="body" color="tertiary" className="cell-count">
+                {counterparties.length}
+              </Typography.Text>
+            ) : null
+          }
           showChevron
           onClick={() => navigate('/profile/counterparties')}
-        />
-        <CellSimple
-          title="Шаблоны"
-          subtitle="Счёт, КП, договор и свои"
-          before={<IconTemplates />}
-          showChevron
-          onClick={() => navigate('/create')}
         />
       </CellList>
 
       {user.is_admin ? (
-        <CellList mode="island" filled header={<CellHeader>Администрирование</CellHeader>}>
+        <CellList mode="island" filled>
           <CellSimple
-            title="Метрики и рассылка"
-            subtitle="Пользователи, документы, воронка; сообщения через бота"
+            title="Метрики"
             before={<IconChart />}
             showChevron
             onClick={() => navigate('/admin')}

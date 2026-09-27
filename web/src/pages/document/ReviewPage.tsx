@@ -1,14 +1,13 @@
 // Шаг 2 из 3 — проверка. Документ так, как его соберёт шаблонизатор, и
-// одна плашка о состоянии: что не заполнено, что распознано и ждёт «Всё верно»,
-// или что всё готово. Распознанное без подтверждения дальше не пускает.
-import { Button, CellAction, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
+// одна строка о том, что мешает двигаться дальше: не заполнено или распознанное
+// ждёт «Всё верно». Распознанное без подтверждения дальше не пускает.
+import { Button, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { Banner } from '@/components/Banner';
 import { DocPreview } from '@/components/DocPreview';
-import { IconEdit } from '@/components/icons';
-import { Page, Section } from '@/components/Page';
+import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { Steps } from '@/components/Steps';
 import { useAuth } from '@/auth/context';
@@ -17,7 +16,7 @@ import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 import { hapticResult } from '@/max/webapp';
 
-import { documentCaption, fragmentLabel, labelsOf } from './fields';
+import { documentTitle, fragmentLabel, labelsOf } from './fields';
 
 export function ReviewPage() {
   const { api } = useAuth();
@@ -31,7 +30,7 @@ export function ReviewPage() {
   const doc = state.data;
   if (!doc) {
     return (
-      <Page title="Проверьте документ" onBack={back}>
+      <Page title="Документ" onBack={back}>
         {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : <Loading />}
       </Page>
     );
@@ -61,7 +60,7 @@ export function ReviewPage() {
       <Button size="large" stretched loading={confirming} onClick={() => void confirm()}>
         Всё верно
       </Button>
-      <Button size="large" variant="secondary" stretched onClick={toFill}>
+      <Button size="large" variant="ghost" stretched onClick={toFill}>
         Исправить
       </Button>
     </>
@@ -70,43 +69,40 @@ export function ReviewPage() {
       Заполнить недостающее
     </Button>
   ) : (
+    // Вернуться к данным — «Назад»: вторая кнопка здесь только спорила бы с «Далее».
     <Button
       size="large"
       stretched
       disabled={!canExport}
       onClick={() => navigate(`/documents/${doc.id}/export`)}
     >
-      Выбрать формат файла
+      Далее
     </Button>
   );
 
   return (
-    <Page title="Проверьте документ" subtitle={documentCaption(doc)} onBack={back} footer={footer}>
-      <div className="section">
-        <Steps current={2} />
-      </div>
+    <Page title={documentTitle(doc)} onBack={back} footer={footer}>
+      <Steps current={2} />
 
-      <div className="section">
-        {error ? <Banner tone="error" title={error} /> : null}
-        {!error && blocked ? (
-          <Banner tone="warning" title="Документ ещё не готов">
-            {doc.missing.length > 0
-              ? `Не заполнено: ${labelsOf(doc, doc.missing).join(', ')}.`
-              : 'Есть поля с ошибками.'}
-          </Banner>
-        ) : null}
-        {!error && !blocked && pending ? (
-          <Banner tone="info" title="Проверьте распознанные значения">
-            Сверьте их с оригиналом. Если всё верно — подтвердите, иначе исправьте в форме.
-          </Banner>
-        ) : null}
-        {!error && canExport ? (
-          <Banner tone="success" title="Все обязательные поля заполнены" />
-        ) : null}
-      </div>
+      {error || blocked ? (
+        <div className="section">
+          {error ? (
+            <Banner tone="error" title={error} />
+          ) : (
+            <Banner
+              tone="warning"
+              title={
+                doc.missing.length > 0
+                  ? `Не заполнено: ${labelsOf(doc, doc.missing).join(', ')}`
+                  : 'Есть поля с ошибками'
+              }
+            />
+          )}
+        </div>
+      ) : null}
 
       {pending ? (
-        <CellList mode="island" filled header={<CellHeader>Ждут подтверждения</CellHeader>}>
+        <CellList mode="island" filled header={<CellHeader>Сверьте с оригиналом</CellHeader>}>
           {doc.unconfirmed.map((key) => {
             const field = fieldsByKey.get(key);
             const value = doc.values[key];
@@ -124,15 +120,9 @@ export function ReviewPage() {
         </CellList>
       ) : null}
 
-      <Section title="Как будет выглядеть">
+      <div className="section">
         <DocPreview text={doc.preview} />
-      </Section>
-
-      <CellList mode="island" filled>
-        <CellAction before={<IconEdit />} onClick={toFill}>
-          Изменить данные
-        </CellAction>
-      </CellList>
+      </div>
     </Page>
   );
 }

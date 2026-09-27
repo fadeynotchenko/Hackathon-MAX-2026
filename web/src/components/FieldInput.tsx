@@ -1,5 +1,7 @@
 // Поле формы на компонентах MAX UI: подпись, ввод, источник значения и ошибка
 // рядом с полем. Тип ввода (дата, сумма, цифры) берётся из типа поля шаблона.
+// Пример значения и «необязательно» живут в пустом поле плейсхолдером, а не
+// отдельной строкой: форма короче, а подсказка исчезает, как только она не нужна.
 import { Input, Textarea, Typography } from '@maxhub/max-ui';
 import { useId } from 'react';
 
@@ -13,6 +15,7 @@ export interface FieldInputProps {
   onChange: (value: string) => void;
   required?: boolean | undefined;
   hint?: string | undefined;
+  placeholder?: string | undefined;
   error?: string | null | undefined;
   // Предел длины с сервера: лишнее не набирается, а не отклоняется после отправки.
   maxLength?: number | null | undefined;
@@ -27,6 +30,7 @@ export function FieldInput({
   onChange,
   required,
   hint,
+  placeholder,
   error,
   source,
   maxLength,
@@ -34,11 +38,16 @@ export function FieldInput({
   const id = useId();
   const kind = inputKind(type);
   const describedBy = error || hint ? `${id}-note` : undefined;
+  // У поля даты плейсхолдера не видно — «необязательно» остаётся в подписи.
+  const optionalInLabel = required === false && kind.type === 'date';
+  const shownPlaceholder =
+    placeholder ?? (required === false && !optionalInLabel ? 'Необязательно' : undefined);
   const common = {
     id,
     value,
     'aria-invalid': Boolean(error),
     'aria-describedby': describedBy,
+    ...(shownPlaceholder ? { placeholder: shownPlaceholder } : {}),
     ...(maxLength ? { maxLength } : {}),
   };
 
@@ -48,7 +57,7 @@ export function FieldInput({
         <Typography.Text variant="description-strong" color="secondary" asChild>
           <label htmlFor={id}>
             {label}
-            {required === false ? ' · необязательно' : ''}
+            {optionalInLabel ? ' · необязательно' : ''}
           </label>
         </Typography.Text>
         {source ? (

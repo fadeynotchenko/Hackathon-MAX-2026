@@ -18,8 +18,9 @@ note that this is
 please note that
 it'?s worth noting
 remember to (replace|update|change) this
-# Атрибут placeholder= у поля ввода — часть HTML, а не заглушка в тексте.
-placeholder(?!=)
+# placeholder как атрибут или свойство поля ввода (placeholder=, placeholder?:,
+# { placeholder: … }, shownPlaceholder) — часть API, а не заглушка в тексте.
+\bplaceholder\b(?!\s*[=?:,)}])
 lorem ipsum
 your[_ ]token[_ ]here
 insert .* here

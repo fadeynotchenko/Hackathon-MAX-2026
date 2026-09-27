@@ -2,6 +2,8 @@
 // источник, ошибка проверки — под полем. «Проверить документ» сохраняет и
 // пускает дальше, только когда ошибок и пустых обязательных полей нет:
 // исправление идёт здесь же, без отдельных экранов «ошибка» и «исправлено».
+// Пустые необязательные поля свёрнуты в «Ещё N полей»: на экране сначала то,
+// без чего документ не собрать.
 import { Button, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -10,7 +12,7 @@ import type { DocumentView } from '@/api/client';
 import { Banner } from '@/components/Banner';
 import { FieldInput } from '@/components/FieldInput';
 import { FilePick } from '@/components/FilePick';
-import { IconCamera } from '@/components/icons';
+import { IconCamera, IconPlus } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { Steps } from '@/components/Steps';
@@ -22,7 +24,7 @@ import { hapticResult } from '@/max/webapp';
 
 import {
   changedValues,
-  documentCaption,
+  documentTitle,
   draftFromDocument,
   fieldErrors,
   mergeAfterSave,
@@ -32,6 +34,10 @@ import {
 
 type Notice = { tone: 'success' | 'error' | 'info'; title: string; text?: string } | null;
 
+function filledKeys(draft: Draft): string[] {
+  return Object.keys(draft).filter((key) => draft[key]?.trim());
+}
+
 export function FillPage() {
   const { api } = useAuth();
   const documentId = Number(useParams().documentId);
@@ -40,7 +46,7 @@ export function FillPage() {
 
   if (!loaded.data) {
     return (
-      <Page title="Данные документа" onBack={back}>
+      <Page title="Документ" onBack={back}>
         {loaded.error ? <ErrorState message={loaded.error} onRetry={loaded.reload} /> : <Loading />}
       </Page>
     );
@@ -59,6 +65,12 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
   const [recognizing, setRecognizing] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [sellerOpen, setSellerOpen] = useState(false);
+  // Необязательное поле, раз показанное (есть значение или раскрыли группу),
+  // не прячется обратно, даже если его стереть.
+  const [revealed, setRevealed] = useState<Set<string>>(
+    () => new Set(filledKeys(draftFromDocument(loaded))),
+  );
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Отклонённое значение становится «исходным»: любая его правка, даже
   // стирание, уйдёт на повторную проверку, а без правки ошибка останется.
@@ -67,6 +79,7 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
     setDoc(next);
     setDraft(merged);
     setInitial(merged);
+    setRevealed((prev) => new Set([...prev, ...filledKeys(merged)]));
   };
 
   // Несохранённые правки уходят на сервер до распознавания и перед проверкой.
@@ -90,7 +103,6 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
         setNotice({
           tone: 'error',
           title: `Исправьте ${count} ${pluralize(count, 'поле', 'поля', 'полей')}`,
-          text: 'Они выделены ниже. Остальные данные сохранены.',
         });
         if (next.template.fields.some((f) => f.group === 'Продавец' && isBad(next, f.key))) {
           setSellerOpen(true);
@@ -118,14 +130,9 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
         filled > 0
           ? {
               tone: 'success',
-              title: `С файла заполнено ${filled} ${pluralize(filled, 'поле', 'поля', 'полей')}`,
-              text: 'Значения отмечены «С фото · проверьте» — сверьте их с оригиналом.',
+              title: `Заполнено ${filled} ${pluralize(filled, 'поле', 'поля', 'полей')} — сверьте с фото`,
             }
-          : {
-              tone: 'info',
-              title: 'На файле не нашлось данных для этого документа',
-              text: result.reply,
-            },
+          : { tone: 'info', title: 'На файле нет данных для документа', text: result.reply },
       );
     } catch (err) {
       setNotice({ tone: 'error', title: errorText(err, 'Не удалось распознать файл') });
@@ -144,8 +151,7 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
 
   return (
     <Page
-      title="Заполните данные"
-      subtitle={documentCaption(doc)}
+      title={documentTitle(doc)}
       onBack={onBack}
       footer={
         <Button size="large" stretched loading={saving} onClick={() => void check()}>
@@ -153,9 +159,7 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
         </Button>
       }
     >
-      <div className="section">
-        <Steps current={1} />
-      </div>
+      <Steps current={1} />
       {notice ? (
         <div className="section">
           <Banner tone={notice.tone} title={notice.title}>
@@ -168,8 +172,7 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
         <FilePick
           icon={<IconCamera />}
           busy={recognizing}
-          title="Заполнить с фото или скана"
-          subtitle="Карточка предприятия, счёт или договор"
+          title="Заполнить с фото"
           onPick={(file) => void recognize(file)}
         />
       </CellList>
@@ -181,17 +184,25 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
             <CellList key={group} mode="island" filled header={<CellHeader>{title}</CellHeader>}>
               <CellSimple
                 title={doc.values['seller_name']?.value ?? 'Реквизиты организации'}
-                subtitle="Из «Моих организаций» · нажмите, чтобы изменить"
+                subtitle="Из профиля"
                 showChevron
                 onClick={() => setSellerOpen(true)}
               />
             </CellList>
           );
         }
+        const shown = fields.filter(
+          (field) =>
+            field.required ||
+            expanded.has(group) ||
+            revealed.has(field.key) ||
+            Boolean(errors[field.key]),
+        );
+        const hidden = fields.length - shown.length;
         return (
           <Section key={group} title={title}>
             <div className="fields">
-              {fields.map((field) => (
+              {shown.map((field) => (
                 <div key={field.key} data-field={field.key}>
                   <FieldInput
                     label={field.label}
@@ -212,6 +223,16 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
                   />
                 </div>
               ))}
+              {hidden > 0 ? (
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => setExpanded((prev) => new Set(prev).add(group))}
+                >
+                  <IconPlus size={20} />
+                  Ещё {hidden} {pluralize(hidden, 'поле', 'поля', 'полей')}
+                </button>
+              ) : null}
             </div>
           </Section>
         );

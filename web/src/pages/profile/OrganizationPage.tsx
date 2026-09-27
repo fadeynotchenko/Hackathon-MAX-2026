@@ -110,7 +110,7 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
   return (
     <Page
       title={organization ? 'Организация' : 'Новая организация'}
-      subtitle="Подставляется в документы как ваша сторона"
+      {...(organization?.is_default ? { subtitle: 'Основная' } : {})}
       onBack={onBack}
       footer={
         <Button size="large" stretched loading={saving} onClick={() => void save()}>
@@ -121,13 +121,6 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
       {error ? (
         <div className="section">
           <Banner tone="error" title={error} />
-        </div>
-      ) : null}
-      {organization?.is_default ? (
-        <div className="section">
-          <Banner tone="info" title="Основная организация">
-            Документ создаётся от неё, если организацию не выбрали.
-          </Banner>
         </div>
       ) : null}
       <RequisitesForm values={values} onChange={setValues} errors={errors} />
@@ -148,7 +141,7 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
             disabled={saving || deleting}
             onClick={() => void remove()}
           >
-            {confirmDelete ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить организацию'}
+            {confirmDelete ? 'Точно удалить?' : 'Удалить организацию'}
           </CellAction>
         </CellList>
       ) : null}

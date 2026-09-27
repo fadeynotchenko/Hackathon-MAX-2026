@@ -5,7 +5,7 @@ import { makeDocument } from '@/test-utils';
 import {
   changedValues,
   defaultCoverText,
-  documentCaption,
+  documentTitle,
   fragmentLabel,
   draftFromDocument,
   fieldErrors,
@@ -104,15 +104,21 @@ describe('document form state', () => {
       },
     });
     const [client, , total, seller] = doc.template.fields;
-    expect(sourceOf(doc, total!)).toEqual({ label: 'С фото · проверьте', draft: true });
-    expect(sourceOf(doc, seller!)).toEqual({ label: 'Из организации', draft: false });
+    expect(sourceOf(doc, total!)).toEqual({ label: 'С фото', draft: true });
+    expect(sourceOf(doc, seller!)).toEqual({ label: 'Из профиля', draft: false });
     expect(sourceOf(doc, client!)).toBeNull();
   });
 
   it('writes a neutral cover text without declining the client name', () => {
     const doc = makeDocument({
       values: {
-        number: { value: '17', source: 'manual', confirmed: true, fragment: null, confidence: null },
+        number: {
+          value: '17',
+          source: 'manual',
+          confirmed: true,
+          fragment: null,
+          confidence: null,
+        },
         client_name: {
           value: 'Акционерное общество «Альфа»',
           source: 'counterparty',
@@ -126,21 +132,20 @@ describe('document form state', () => {
     expect(defaultCoverText(doc)).not.toContain('для Акционерное');
   });
 
-  it('captions a document without repeating its kind', () => {
-    const value = (v: string) => ({
-      value: v,
+  it('titles a document by its name and number', () => {
+    const number = {
+      value: '17',
       source: 'manual' as const,
       confirmed: true,
       fragment: null,
       confidence: null,
-    });
-    const plain = makeDocument({
-      title: 'Счёт на оплату',
-      values: { number: value('17'), client_name: value('ООО «Альфа»') },
-    });
-    expect(documentCaption(plain)).toBe('Счёт на оплату № 17 · ООО «Альфа»');
-    const named = makeDocument({ title: 'Счёт для Альфы', values: {} });
-    expect(documentCaption(named)).toBe('Счёт для Альфы · Счёт на оплату');
+    };
+    expect(documentTitle(makeDocument({ title: 'Счёт на оплату', values: { number } }))).toBe(
+      'Счёт на оплату № 17',
+    );
+    expect(documentTitle(makeDocument({ title: 'Счёт для Альфы', values: {} }))).toBe(
+      'Счёт для Альфы',
+    );
   });
 
   it('says where a value to confirm was read from', () => {

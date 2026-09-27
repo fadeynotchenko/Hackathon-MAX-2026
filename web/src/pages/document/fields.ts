@@ -55,21 +55,15 @@ export function sourceOf(
 ): { label: string; draft: boolean } | null {
   const value = document.values[field.key];
   if (!value || value.source === 'manual') return null;
+  // Распознанное и неподтверждённое выделено цветом — «проверьте» скажет шаг проверки.
   const draft = !value.confirmed && (value.source === 'ocr' || value.source === 'agent');
-  return {
-    label: draft ? `${SOURCE_LABEL[value.source]} · проверьте` : SOURCE_LABEL[value.source],
-    draft,
-  };
+  return { label: SOURCE_LABEL[value.source], draft };
 }
 
-// Подпись документа под заголовком экрана: «Счёт на оплату № 17 · ООО «Альфа»».
-// Вид шаблона — только если название своё, иначе он повторял бы название.
-export function documentCaption(doc: DocumentView): string {
-  const parts = [documentName(doc.title, doc.values['number']?.value)];
-  if (doc.title !== doc.template.title) parts.push(doc.template.title);
-  const client = doc.values['client_name']?.value;
-  if (client) parts.push(client);
-  return parts.join(' · ');
+// Заголовок экранов документа: «Счёт на оплату № 17». Клиент и вид шаблона
+// видны в самой форме и на листе, в шапке они только удлиняли строку.
+export function documentTitle(doc: DocumentView): string {
+  return documentName(doc.title, doc.values['number']?.value);
 }
 
 // Откуда прочитано значение, ждущее подтверждения: с фото — строка оригинала,

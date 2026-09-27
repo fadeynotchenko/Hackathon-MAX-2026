@@ -122,7 +122,6 @@ function CounterpartyForm({ initial, counterpartyId, onBack }: CounterpartyFormP
   return (
     <Page
       title={title}
-      subtitle="Реквизиты подставятся в документы для этого клиента"
       onBack={onBack}
       footer={
         <Button size="large" stretched loading={saving} onClick={() => void save()}>
@@ -144,7 +143,7 @@ function CounterpartyForm({ initial, counterpartyId, onBack }: CounterpartyFormP
             disabled={saving || deleting}
             onClick={() => void remove()}
           >
-            {confirmDelete ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить карточку'}
+            {confirmDelete ? 'Точно удалить?' : 'Удалить карточку'}
           </CellAction>
         </CellList>
       ) : null}
