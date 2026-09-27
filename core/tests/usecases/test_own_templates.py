@@ -24,7 +24,7 @@ from core.usecases.documents import (
     set_fields,
     update_template,
 )
-from core.usecases.documents.templates import CUSTOM_KIND, OWN_TEMPLATES_MAX
+from core.usecases.documents.templates import OWN_TEMPLATES_MAX, guess_kind
 from tests.usecases.test_documents import make_user
 
 ACT_BODY = """Акт № {{number}} от {{date}}
@@ -70,7 +70,7 @@ async def test_own_template_is_saved_and_fills_like_a_builtin(session: AsyncSess
 
     saved = await create_template(session, user_id=user_id, data=act(title="  Акт  "))
 
-    assert saved.title == "Акт" and saved.kind == CUSTOM_KIND and not saved.is_builtin
+    assert saved.title == "Акт" and saved.kind == "other" and not saved.is_builtin
     assert saved.slug.startswith("my-")
     fields = {spec.key: spec for spec in saved.fields}
     assert fields["client_inn"].type is FieldType.INN
@@ -115,6 +115,7 @@ async def test_own_template_is_saved_and_fills_like_a_builtin(session: AsyncSess
         ),
         (act(body="Просто текст", fields=()), "хотя бы одно поле"),
         (act(body="{{Сумма}}", fields=()), "поле {{Сумма}}"),
+        (act(kind="custom"), "Выберите тип документа"),
     ],
 )
 async def test_template_is_checked_before_saving(
@@ -221,3 +222,30 @@ async def test_own_templates_are_limited(session: AsyncSession) -> None:
     with pytest.raises(ValidationError) as error:
         await create_template(session, user_id=user_id, data=act())
     assert error.value.code == "template.limit"
+
+
+async def test_own_template_takes_the_chosen_kind(session: AsyncSession) -> None:
+    user_id = await make_user(session)
+    saved = await create_template(session, user_id=user_id, data=act(kind="contract"))
+    assert saved.kind == "contract"
+    edited = await update_template(
+        session, user_id=user_id, template_id=saved.id, data=act(kind="invoice")
+    )
+    assert edited.kind == "invoice"
+
+
+@pytest.mark.parametrize(
+    ("texts", "kind"),
+    [
+        (("Счёт на оплату по договору № 5",), "invoice"),
+        (("Договор оказания услуг",), "contract"),
+        (("Фирменный КП", "КП.docx"), "offer"),
+        (("Бланк", "blank.docx", "КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ"), "offer"),
+        (("Акт сверки", "Расчётный счёт в банке"), "other"),
+        (("Акт выполненных работ",), "other"),
+        (("Счет_45", "Счет_45.docx"), "invoice"),
+        (("Бланк", "b.docx", "ООО «Мастер», р/с 40702810", "Выставлен счёт № 17"), "invoice"),
+    ],
+)
+def test_kind_is_guessed_from_the_title_first(texts: tuple[str, ...], kind: str) -> None:
+    assert guess_kind(*texts) == kind

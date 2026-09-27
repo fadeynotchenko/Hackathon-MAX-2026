@@ -27,6 +27,7 @@ describe('template editor', () => {
       'Счёт для {{Название клиента}}, ИНН {{ИНН клиента}}\nИтого: {{Сумма к оплате}}',
     );
     expect(loaded.title).toBe('Счёт на оплату (копия)');
+    expect(loaded.kind).toBe('invoice');
     const request = toRequest(loaded);
     expect(request.body).toBe(template.body);
     expect(request.fields.map((field) => field.key)).toEqual([

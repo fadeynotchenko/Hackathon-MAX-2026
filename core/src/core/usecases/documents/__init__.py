@@ -47,6 +47,7 @@ from .organizations import (
 )
 from .requisites import REQUISITE_FIELDS
 from .templates import (
+    KINDS,
     TemplateField,
     TemplateInput,
     TemplateView,
@@ -60,6 +61,7 @@ from .templates import (
 
 __all__ = [
     "DOCX",
+    "KINDS",
     "PDF",
     "REQUISITE_FIELDS",
     "STATUS_DRAFT",

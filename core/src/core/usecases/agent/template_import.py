@@ -36,10 +36,13 @@ from core.usecases.agent.prompts import TEMPLATE_PLACES_INSTRUCTIONS
 from core.usecases.documents.templates import (
     CATALOG_KEYS,
     FIELDS_MAX,
+    KINDS,
     LABEL_MAX,
+    OTHER_KIND,
     PLACE_BEFORE_MAX,
     PLACE_MAX,
     TITLE_MAX,
+    guess_kind,
     required_by_default,
     requisite_type,
 )
@@ -79,6 +82,8 @@ class TemplateImport:
     fields: tuple[ImportedField, ...]
     found_by: str
     notice: str | None = None
+    # Вид документа: счёт, КП, договор или другой — человек может поменять.
+    kind: str = OTHER_KIND
 
 
 def _norm(label: str) -> str:
@@ -108,6 +113,7 @@ _PLACES_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "title": {"type": "string", "description": "Вид документа: «Коммерческое предложение»"},
+        "kind": {"type": "string", "enum": list(KINDS)},
         "places": {
             "type": "array",
             "items": {
@@ -124,7 +130,7 @@ _PLACES_SCHEMA: dict[str, Any] = {
             },
         },
     },
-    "required": ["title", "places"],
+    "required": ["title", "kind", "places"],
     "additionalProperties": False,
 }
 
@@ -207,6 +213,7 @@ async def import_template_file(
         raise AppError("В файле нет текста", code="template.file_empty", status_code=422)
 
     title = ""
+    kind = ""
     notice: str | None = None
     fields = marker_fields(lines)
     found_by = FOUND_BY_MARKERS if fields else FOUND_NONE
@@ -227,6 +234,7 @@ async def import_template_file(
         else:
             fields = suggested_fields(raw, lines)
             title = str(raw.get("title") or "").strip()
+            kind = str(raw.get("kind") or "")
             found_by = FOUND_BY_ASSISTANT if fields else FOUND_NONE
 
     name = PurePath(filename).name[:255] or f"template.{media.extension}"
@@ -235,13 +243,18 @@ async def import_template_file(
         repo = TemplateFileRepository(session)
         await repo.delete_unused(user_id, before=datetime.now(UTC) - UNUSED_FILE_TTL)
         file_id = (await repo.create(owner_user_id=user_id, filename=name, data=data, text=text)).id
+    title = (title or _title_from(name))[:TITLE_MAX]
+    if kind not in KINDS:
+        heading = [line for line in lines if line.strip()][:3]
+        kind = guess_kind(title, name, *heading)
     return TemplateImport(
         file_id=file_id,
         filename=name,
         format=media.extension,
-        title=(title or _title_from(name))[:TITLE_MAX],
+        title=title,
         text=text,
         fields=tuple(fields),
         found_by=found_by,
         notice=notice,
+        kind=kind,
     )

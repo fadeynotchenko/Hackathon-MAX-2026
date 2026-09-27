@@ -38,7 +38,7 @@ import {
   toRequest,
   withField,
 } from './editor';
-import { FieldPicker, FieldSettings } from './FieldControls';
+import { FieldPicker, FieldSettings, KindPicker } from './FieldControls';
 import { draftFromTemplate as sampleFromTemplate } from './sample';
 import { SampleEditor } from './TemplateSamplePage';
 
@@ -181,6 +181,7 @@ function TemplateEditor({ title, initial, templateId, onBack }: TemplateEditorPr
 
       <Section>
         <div className="fields">
+          <KindPicker value={draft.kind} onChange={(kind) => setDraft({ ...draft, kind })} />
           <FieldInput
             label="Название шаблона"
             type="text"

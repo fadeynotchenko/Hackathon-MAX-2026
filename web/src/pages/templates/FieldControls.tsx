@@ -5,6 +5,7 @@ import { Button, Switch, Typography } from '@maxhub/max-ui';
 import { useState, type ReactNode } from 'react';
 
 import { FieldInput } from '@/components/FieldInput';
+import { KIND_ORDER, KIND_STYLE, type TemplateKind } from '@/lib/format';
 
 import {
   CUSTOM_TYPES,
@@ -130,6 +131,39 @@ export function FieldSettings<T extends EditorField>({
         </div>
       )}
       {children}
+    </div>
+  );
+}
+
+// Тип документа, как в макете: по нему свой шаблон встаёт в каталоге рядом со
+// стандартным того же типа, а документы — в фильтр архива.
+export function KindPicker({
+  value,
+  onChange,
+}: {
+  value: TemplateKind;
+  onChange: (kind: TemplateKind) => void;
+}) {
+  return (
+    <div className="field">
+      <div className="field__label">
+        <Typography.Text variant="description-strong" color="secondary">
+          Тип документа
+        </Typography.Text>
+      </div>
+      <div className="chips chips--wrap" role="group" aria-label="Тип документа">
+        {KIND_ORDER.map((kind) => (
+          <Button
+            key={kind}
+            size="small"
+            variant={value === kind ? 'primary' : 'secondary'}
+            aria-pressed={value === kind}
+            onClick={() => onChange(kind)}
+          >
+            {KIND_STYLE[kind].short}
+          </Button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 // узнаётся и подставляется из организации или карточки клиента. Перевод
 // туда и обратно и список полей, собранный по тексту, живут здесь, без React.
 import type { FieldType, Template, TemplateRequest } from '@/api/client';
+import { asKind, type TemplateKind } from '@/lib/format';
 
 export interface EditorField {
   key: string;
@@ -16,6 +17,8 @@ export interface EditorField {
 
 export interface EditorDraft {
   title: string;
+  // Вид документа: счёт, КП, договор или другой.
+  kind: TemplateKind;
   description: string;
   // Текст с полями по названию: {{Название клиента}}.
   text: string;
@@ -322,6 +325,7 @@ export function toRequest(draft: EditorDraft): TemplateRequest {
   });
   return {
     title: draft.title.trim(),
+    kind: draft.kind,
     description: draft.description.trim(),
     body,
     fields: fields.map((field) => ({
@@ -346,6 +350,7 @@ export function draftFromTemplate(template: Template, { copy }: { copy: boolean 
   });
   return {
     title: copy ? `${template.title} (копия)`.slice(0, TITLE_MAX) : template.title,
+    kind: asKind(template.kind),
     description: template.description,
     text,
     known: template.fields.map((field) => ({
@@ -360,4 +365,10 @@ export function draftFromTemplate(template: Template, { copy }: { copy: boolean 
   };
 }
 
-export const EMPTY_DRAFT: EditorDraft = { title: '', description: '', text: '', known: [] };
+export const EMPTY_DRAFT: EditorDraft = {
+  title: '',
+  kind: 'other',
+  description: '',
+  text: '',
+  known: [],
+};

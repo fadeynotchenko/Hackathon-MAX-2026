@@ -1,7 +1,13 @@
 // Подписи и форматы для экранов. Хранение — каноническое (сумма «120000.00»,
 // дата ISO), показ — по-русски; обратно в API уходит то, что ввёл человек,
 // а приводит к канону сервер.
-import type { DocumentSummary, FieldSpec, FieldType, ValueSource } from '@/api/client';
+import type {
+  DocumentSummary,
+  FieldSpec,
+  FieldType,
+  TemplateRequest,
+  ValueSource,
+} from '@/api/client';
 
 const DATE = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 const DATE_SHORT = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
@@ -132,20 +138,31 @@ export function groupFields(fields: FieldSpec[]): Array<[string, FieldSpec[]]> {
   return [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b));
 }
 
-// Вид документа → метка во множественном числе для фильтров и графиков.
+// Вид документа → подписи: коротко для выбора типа, во множественном числе для
+// фильтров и графиков, полностью для разделов каталога.
+export type TemplateKind = TemplateRequest['kind'];
+
 export interface KindStyle {
+  short: string;
   plural: string;
+  section: string;
 }
 
-export const KIND_STYLE: Record<string, KindStyle> = {
-  invoice: { plural: 'Счета' },
-  offer: { plural: 'КП' },
-  contract: { plural: 'Договоры' },
-  custom: { plural: 'Свои шаблоны' },
+export const KIND_STYLE: Record<TemplateKind, KindStyle> = {
+  invoice: { short: 'Счёт', plural: 'Счета', section: 'Счета' },
+  offer: { short: 'КП', plural: 'КП', section: 'Коммерческие предложения' },
+  contract: { short: 'Договор', plural: 'Договоры', section: 'Договоры' },
+  other: { short: 'Другое', plural: 'Другие', section: 'Другие документы' },
 };
 
+export const KIND_ORDER: TemplateKind[] = ['invoice', 'offer', 'contract', 'other'];
+
+export function asKind(kind: string | undefined): TemplateKind {
+  return (KIND_ORDER as string[]).includes(kind ?? '') ? (kind as TemplateKind) : 'other';
+}
+
 export function kindStyle(kind: string | undefined): KindStyle {
-  return (kind && KIND_STYLE[kind]) || { plural: 'Другие' };
+  return KIND_STYLE[asKind(kind)];
 }
 
 export interface DocumentState {

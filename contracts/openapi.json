@@ -1681,6 +1681,17 @@
             "title": "Found By",
             "type": "string"
           },
+          "kind": {
+            "description": "Вид документа по мнению помощника или по заголовку",
+            "enum": [
+              "invoice",
+              "offer",
+              "contract",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "notice": {
             "anyOf": [
               {
@@ -1712,7 +1723,8 @@
           "text",
           "fields",
           "found_by",
-          "notice"
+          "notice",
+          "kind"
         ],
         "title": "TemplateImportSchema",
         "type": "object"
@@ -1753,6 +1765,18 @@
             ],
             "description": "Файл-образец DOCX из POST /templates/import",
             "title": "File Id"
+          },
+          "kind": {
+            "default": "other",
+            "description": "Вид документа: счёт, КП, договор или другой",
+            "enum": [
+              "invoice",
+              "offer",
+              "contract",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
           },
           "title": {
             "maxLength": 64,
@@ -1809,7 +1833,7 @@
             "type": "boolean"
           },
           "kind": {
-            "description": "invoice, offer, contract; custom — свой шаблон пользователя",
+            "description": "Вид документа: invoice, offer, contract или other",
             "title": "Kind",
             "type": "string"
           },

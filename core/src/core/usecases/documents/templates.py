@@ -28,8 +28,24 @@ from core.domain.places import Place, apply_places, found
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES, CLIENT, SELLER, SUBJECT
 from core.usecases.documents.requisites import CLIENT_PREFIX, REQUISITE_FIELDS, SELLER_PREFIX
 
-# Вид своего шаблона: в метриках свои шаблоны считаются отдельно от счетов и КП.
-CUSTOM_KIND = "custom"
+# Вид документа: по нему свой шаблон встаёт в каталоге рядом со стандартным
+# того же вида, а документы на нём — в фильтр архива и метрики по видам.
+INVOICE_KIND = "invoice"
+OFFER_KIND = "offer"
+CONTRACT_KIND = "contract"
+OTHER_KIND = "other"
+KINDS = (INVOICE_KIND, OFFER_KIND, CONTRACT_KIND, OTHER_KIND)
+# Слова, по которым вид узнаётся в названии или заголовке образца. «Счёт» —
+# только в начале или как «счёт на оплату», «счёт №»: «расчётный счёт» есть в
+# реквизитах почти любого бланка.
+_KIND_WORDS = (
+    (CONTRACT_KIND, re.compile(r"договор")),
+    (OFFER_KIND, re.compile(r"коммерческ|предложени|(?<![а-я])кп(?![а-я])")),
+    (
+        INVOICE_KIND,
+        re.compile(r"^\s*сч[её]т(?![а-я])|(?<![а-я])сч[её]т[\s-]+(?:на\s+оплату|оферт|№)"),
+    ),
+)
 TEXT_FORMAT = "text"
 DOCX_FORMAT = "docx"
 # Название шаблона становится текстом кнопки в чате бота, а там предел — 64 символа.
@@ -107,6 +123,23 @@ class TemplateInput:
     body: str
     fields: tuple[TemplateField, ...]
     file_id: int | None = None
+    kind: str = OTHER_KIND
+
+
+def guess_kind(*texts: str) -> str:
+    """Вид документа по названию или заголовку: «Счёт на оплату по договору» —
+    счёт, потому что слово «счёт» стоит раньше. Тексты смотрятся по очереди,
+    первый, где нашлось слово, и решает."""
+    for text in texts:
+        lowered = text.lower()
+        hits = [
+            (match.start(), kind)
+            for kind, pattern in _KIND_WORDS
+            if (match := pattern.search(lowered)) is not None
+        ]
+        if hits:
+            return min(hits)[1]
+    return OTHER_KIND
 
 
 def _specs_from_json(raw: list[dict[str, object]]) -> tuple[TemplateField, ...]:
@@ -276,6 +309,8 @@ def _clean(data: TemplateInput, file_lines: Sequence[str] | None = None) -> Temp
         errors.append(f"Описание — не длиннее {DESCRIPTION_MAX} символов")
     if len(data.fields) > FIELDS_MAX:
         errors.append(f"Полей в шаблоне — не больше {FIELDS_MAX}")
+    if data.kind not in KINDS:
+        errors.append("Выберите тип документа")
 
     fields: list[TemplateField] = []
     labels: set[str] = set()
@@ -336,7 +371,7 @@ def _clean(data: TemplateInput, file_lines: Sequence[str] | None = None) -> Temp
         errors.append("Добавьте в текст хотя бы одно поле — иначе заполнять нечего")
     if errors:
         raise ValidationError("; ".join(dict.fromkeys(errors)), code="template.invalid")
-    return TemplateInput(title, description, body, tuple(fields), data.file_id)
+    return TemplateInput(title, description, body, tuple(fields), data.file_id, data.kind)
 
 
 async def _file_lines(session: AsyncSession, user_id: int, file_id: int | None) -> list[str] | None:
@@ -379,7 +414,7 @@ async def create_template(
         owner_user_id=user_id,
         slug=_new_slug(),
         title=clean.title,
-        kind=CUSTOM_KIND,
+        kind=clean.kind,
         description=clean.description,
         fields=_specs_to_json(clean.fields),
         body=clean.body,
@@ -415,6 +450,7 @@ async def update_template(
         )
         await repo.move_documents(template.id, previous.id)
     template.title = clean.title
+    template.kind = clean.kind
     template.description = clean.description
     template.fields = _specs_to_json(clean.fields)
     template.body = clean.body

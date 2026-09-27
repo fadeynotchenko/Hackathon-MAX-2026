@@ -1376,6 +1376,12 @@ export interface components {
              */
             found_by: "markers" | "assistant" | "none";
             /**
+             * Kind
+             * @description Вид документа по мнению помощника или по заголовку
+             * @enum {string}
+             */
+            kind: "invoice" | "offer" | "contract" | "other";
+            /**
              * Notice
              * @description Почему места не искались помощником
              */
@@ -1411,6 +1417,13 @@ export interface components {
              * @description Файл-образец DOCX из POST /templates/import
              */
             file_id?: number | null;
+            /**
+             * Kind
+             * @description Вид документа: счёт, КП, договор или другой
+             * @default other
+             * @enum {string}
+             */
+            kind: "invoice" | "offer" | "contract" | "other";
             /** Title */
             title: string;
         };
@@ -1435,7 +1448,7 @@ export interface components {
             is_builtin: boolean;
             /**
              * Kind
-             * @description invoice, offer, contract; custom — свой шаблон пользователя
+             * @description Вид документа: invoice, offer, contract или other
              */
             kind: string;
             /**

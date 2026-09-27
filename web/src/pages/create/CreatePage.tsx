@@ -1,6 +1,8 @@
 // Вкладка «Создать»: каталог шаблонов — единственная точка выбора бланка
-// (в макете каталог жил и здесь, и в профиле). Свои шаблоны пользователя —
-// первым разделом, отсюда же создаётся новый. Второй вход — чат с ботом.
+// (в макете каталог жил и здесь, и в профиле). Когда у пользователя есть свои
+// шаблоны, каталог делится по видам документа: свой КП стоит рядом со
+// стандартным, как «Шаблоны КП» в макете. Отсюда же создаётся новый свой
+// шаблон. Второй вход — чат с ботом.
 import { CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -13,9 +15,12 @@ import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { DocPreview } from '@/components/DocPreview';
 import { useAuth } from '@/auth/context';
+import { kindStyle } from '@/lib/format';
 import { matchesQuery } from '@/lib/search';
 import { useAsync } from '@/lib/useAsync';
 import { closeApp, haptic } from '@/max/webapp';
+
+import { catalogSections } from './catalog';
 
 export function CreatePage() {
   const { api, user } = useAuth();
@@ -25,10 +30,16 @@ export function CreatePage() {
   const [query, setQuery] = useState('');
   const visible =
     templates.data?.filter((template) =>
-      matchesQuery([template.title, template.description], query),
+      matchesQuery(
+        [
+          template.title,
+          template.description,
+          kindStyle(template.kind).short,
+          kindStyle(template.kind).section,
+        ],
+        query,
+      ),
     ) ?? [];
-  const own = visible.filter((template) => !template.is_builtin);
-  const builtin = visible.filter((template) => template.is_builtin);
 
   const open = (template: Template) => {
     haptic('light');
@@ -53,16 +64,11 @@ export function CreatePage() {
       {templates.data && templates.data.length > 0 && visible.length === 0 ? (
         <EmptyState title="Ничего не нашлось" text="Попробуйте другое слово." />
       ) : null}
-      {own.length > 0 ? (
-        <Section title="Ваши шаблоны">
-          <TemplateGrid templates={own} onOpen={open} />
+      {catalogSections(visible).map(([title, list]) => (
+        <Section key={title} title={title}>
+          <TemplateGrid templates={list} onOpen={open} />
         </Section>
-      ) : null}
-      {builtin.length > 0 ? (
-        <Section title={own.length > 0 ? 'Стандартные' : 'Шаблоны'}>
-          <TemplateGrid templates={builtin} onOpen={open} />
-        </Section>
-      ) : null}
+      ))}
 
       <CellList mode="island" filled header={<CellHeader>Свой шаблон</CellHeader>}>
         <CellSimple

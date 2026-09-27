@@ -46,6 +46,7 @@ def _input(payload: TemplateRequest) -> TemplateInput:
             for field in payload.fields
         ),
         file_id=payload.file_id,
+        kind=payload.kind,
     )
 
 

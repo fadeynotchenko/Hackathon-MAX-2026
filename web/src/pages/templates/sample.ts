@@ -4,6 +4,7 @@
 // Поиск мест повторяет сервер (core.domain.places): по нему рисуется
 // предпросмотр, а окончательно места проверяет и применяет сервер.
 import type { FieldType, Place, Template, TemplateImport, TemplateRequest } from '@/api/client';
+import { asKind, type TemplateKind } from '@/lib/format';
 
 import {
   catalogByKey,
@@ -26,6 +27,7 @@ export interface SampleField extends EditorField {
 
 export interface SampleDraft {
   title: string;
+  kind: TemplateKind;
   description: string;
   // Образец DOCX на сервере; у PDF его нет — шаблон будет текстовым.
   fileId: number | null;
@@ -132,6 +134,7 @@ export function draftFromImport(result: TemplateImport): SampleDraft {
   }
   return {
     title: result.title,
+    kind: result.kind,
     description: '',
     fileId: result.file_id ?? null,
     filename: result.filename,
@@ -144,6 +147,7 @@ export function draftFromImport(result: TemplateImport): SampleDraft {
 export function draftFromTemplate(template: Template): SampleDraft {
   return {
     title: template.title,
+    kind: asKind(template.kind),
     description: template.description,
     fileId: template.file?.id ?? null,
     filename: template.file?.filename ?? '',
@@ -190,6 +194,7 @@ export function sampleProblems(draft: SampleDraft): string[] {
 export function toTextDraft(draft: SampleDraft): EditorDraft {
   return {
     title: draft.title.slice(0, TITLE_MAX),
+    kind: draft.kind,
     description: draft.description,
     text: labelText(draft),
     known: draft.fields.map(({ places: _places, ...field }) => field),
@@ -201,6 +206,7 @@ export function sampleRequest(draft: SampleDraft): TemplateRequest {
   if (draft.fileId === null) return toRequest(toTextDraft(draft));
   return {
     title: draft.title.trim(),
+    kind: draft.kind,
     description: draft.description.trim(),
     body: '',
     file_id: draft.fileId,

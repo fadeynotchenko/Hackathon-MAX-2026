@@ -20,6 +20,7 @@ const imported: TemplateImport = {
   title: 'Коммерческое предложение',
   text: 'ООО «Мастер»\nДля: ООО «Альфа»\nСтоимость: 180 000 руб.\nЗаказчик: ________ Исполнитель: ________',
   found_by: 'assistant',
+  kind: 'offer',
   notice: null,
   fields: [
     {
@@ -104,7 +105,7 @@ describe('template from a sample file', () => {
   it('saves DOCX as a sample with places and PDF as a text template', () => {
     const docx = draftFromImport(imported);
     const request = sampleRequest(docx);
-    expect(request).toMatchObject({ file_id: 9, body: '' });
+    expect(request).toMatchObject({ file_id: 9, body: '', kind: 'offer' });
     expect(request.fields[0]).toMatchObject({
       key: 'client_name',
       places: [{ text: 'ООО «Альфа»', before: '' }],

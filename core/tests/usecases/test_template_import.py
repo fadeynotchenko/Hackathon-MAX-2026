@@ -37,6 +37,8 @@ from tests.usecases.test_documents import make_user
 LIMIT = 10 * 1024 * 1024
 ASSISTANT_REPLY = {
     "title": "Коммерческое предложение",
+    # Помощник видит весь текст: его вид важнее слов в названии файла.
+    "kind": "contract",
     "places": [
         {
             "text": "ООО «Альфа»",
@@ -119,6 +121,7 @@ async def test_assistant_finds_places_and_server_keeps_only_real_ones(
     assert "Подпись" not in by_label
     (_, messages, _) = llm.calls[0]
     assert "ООО «Альфа»" in messages[1].content
+    assert draft.kind == "contract"
 
 
 async def test_marks_in_the_file_are_used_without_the_assistant(session: AsyncSession) -> None:
@@ -135,6 +138,7 @@ async def test_marks_in_the_file_are_used_without_the_assistant(session: AsyncSe
     )
 
     assert draft.found_by == "markers" and llm.calls == []
+    assert draft.kind == "offer", "без помощника вид — по названию файла и заголовку"
     assert [(f.label, f.places) for f in draft.fields] == [
         ("Название клиента", (Place("{{ Название клиента }}"),)),
         ("Сумма", (Place("{{Сумма}}"),)),
@@ -169,7 +173,7 @@ async def test_pdf_becomes_a_text_template_and_scans_are_refused(session: AsyncS
         llm=None,
         max_bytes=LIMIT,
     )
-    assert (draft.format, draft.file_id) == ("pdf", None)
+    assert (draft.format, draft.file_id, draft.kind) == ("pdf", None, "other")
     assert draft.text.startswith("Offer for ACME Corp")
 
     with pytest.raises(AppError) as scan:

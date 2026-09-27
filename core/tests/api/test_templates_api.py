@@ -33,7 +33,7 @@ async def test_own_template_round_trip(
     created = await client.post("/api/v1/templates", headers=headers, json=ACT)
     assert created.status_code == 201, created.text
     template = created.json()
-    assert (template["kind"], template["is_builtin"]) == ("custom", False)
+    assert (template["kind"], template["is_builtin"]) == ("other", False)
     assert template["body"] == ACT["body"]
     assert template["preview"].startswith("Акт от __________")
     date = next(f for f in template["fields"] if f["key"] == "date")
@@ -103,7 +103,7 @@ async def test_template_from_sample_file(
     )
     assert imported.status_code == 200, imported.text
     draft = imported.json()
-    assert (draft["format"], draft["found_by"]) == ("docx", "markers")
+    assert (draft["format"], draft["found_by"], draft["kind"]) == ("docx", "markers", "offer")
     assert [field["label"] for field in draft["fields"]] == ["Название клиента", "Сумма"]
 
     created = await client.post(
@@ -111,6 +111,7 @@ async def test_template_from_sample_file(
         headers=headers,
         json={
             "title": draft["title"],
+            "kind": draft["kind"],
             "file_id": draft["file_id"],
             "fields": [
                 {
@@ -130,6 +131,7 @@ async def test_template_from_sample_file(
     assert created.status_code == 201, created.text
     template = created.json()
     assert template["file"] == {"id": draft["file_id"], "filename": "КП.docx", "text": None}
+    assert template["kind"] == "offer"
     assert "Для: {{client_name}}" in template["body"]
     one = (await client.get(f"/api/v1/templates/{template['id']}", headers=headers)).json()
     assert one["file"]["text"] == draft["text"]

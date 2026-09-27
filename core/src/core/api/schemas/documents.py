@@ -58,7 +58,7 @@ class TemplateSchema(BaseModel):
     id: int
     slug: str
     title: str
-    kind: str = Field(description="invoice, offer, contract; custom — свой шаблон пользователя")
+    kind: str = Field(description="Вид документа: invoice, offer, contract или other")
     description: str
     body_format: str
     is_builtin: bool
@@ -95,8 +95,14 @@ class TemplateFieldRequest(BaseModel):
     )
 
 
+TemplateKind = Literal["invoice", "offer", "contract", "other"]
+
+
 class TemplateRequest(BaseModel):
     title: PrintableStr = Field(max_length=64)
+    kind: TemplateKind = Field(
+        default="other", description="Вид документа: счёт, КП, договор или другой"
+    )
     description: PrintableStr = Field(default="", max_length=300)
     body: PrintableStr = Field(
         default="",
@@ -135,6 +141,7 @@ class TemplateImportSchema(BaseModel):
         description="Кто нашёл места: метки {{…}} в файле, помощник или никто"
     )
     notice: str | None = Field(description="Почему места не искались помощником")
+    kind: TemplateKind = Field(description="Вид документа по мнению помощника или по заголовку")
 
 
 class FieldValueSchema(BaseModel):

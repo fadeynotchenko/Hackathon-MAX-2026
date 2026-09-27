@@ -15,6 +15,7 @@ const imported: TemplateImport = {
   title: 'Коммерческое предложение',
   text: 'Для: ООО «Альфа»\nСтоимость: 180 000 руб.\nОплата в течение 14 дней',
   found_by: 'assistant',
+  kind: 'offer',
   notice: null,
   fields: [
     {
@@ -54,6 +55,11 @@ describe('TemplateSamplePage', () => {
     expect(await screen.findByText('Помощник отметил 2 места для данных')).toBeInTheDocument();
     expect(importTemplate).toHaveBeenCalledWith(file);
     expect(screen.getByLabelText('Название шаблона')).toHaveValue('Коммерческое предложение');
+    expect(
+      within(screen.getByRole('group', { name: 'Тип документа' })).getByRole('button', {
+        name: 'КП',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Убрать поле «Срок оплаты»' }));
     fireEvent.change(screen.getByLabelText('Текст из файла'), { target: { value: '180 000' } });
@@ -69,6 +75,7 @@ describe('TemplateSamplePage', () => {
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/create/42'));
     expect(create).toHaveBeenCalledWith({
       title: 'Коммерческое предложение',
+      kind: 'offer',
       description: '',
       body: '',
       file_id: 9,

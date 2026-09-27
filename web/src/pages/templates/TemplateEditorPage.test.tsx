@@ -1,6 +1,6 @@
 // Свой шаблон с экрана: текст с полями, каталог реквизитов, тип поля и
 // сохранение — новый шаблон ведёт на его карточку, правка уходит PUT.
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { makeTemplate, mockApi, renderScreen } from '@/test-utils';
@@ -18,6 +18,11 @@ describe('TemplateEditorPage', () => {
     fireEvent.change(screen.getByLabelText('Название шаблона'), {
       target: { value: 'Акт выполненных работ' },
     });
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Тип документа' })).getByRole('button', {
+        name: 'Договор',
+      }),
+    );
     const text = screen.getByLabelText('Текст документа');
     fireEvent.change(text, { target: { value: 'Акт для \nСрок: {{Срок поставки}}' } });
     (text as HTMLTextAreaElement).setSelectionRange(8, 8);
@@ -40,6 +45,7 @@ describe('TemplateEditorPage', () => {
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/create/42'));
     expect(create).toHaveBeenCalledWith({
       title: 'Акт выполненных работ',
+      kind: 'contract',
       description: '',
       body: 'Акт для {{client_name}}\nСрок: {{srok_postavki}}',
       fields: [

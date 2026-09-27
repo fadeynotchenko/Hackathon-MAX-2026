@@ -22,7 +22,7 @@ import { useBack } from '@/lib/useBack';
 import { haptic, hapticResult } from '@/max/webapp';
 
 import { DESCRIPTION_MAX, marker, TITLE_MAX } from './editor';
-import { FieldPicker, FieldSettings } from './FieldControls';
+import { FieldPicker, FieldSettings, KindPicker } from './FieldControls';
 import {
   addPlace,
   draftFromImport,
@@ -260,6 +260,7 @@ export function SampleEditor({ initial, templateId, onBack, found, onReplace }: 
 
       <Section>
         <div className="fields">
+          <KindPicker value={draft.kind} onChange={(kind) => setDraft({ ...draft, kind })} />
           <FieldInput
             label="Название шаблона"
             type="text"
