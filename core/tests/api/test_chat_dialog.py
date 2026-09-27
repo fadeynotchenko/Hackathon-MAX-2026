@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.repositories import ChatStateRepository, UserRepository
+from core.db.repositories import ChatStateRepository, UserRepository, UserUpsert
+from core.domain.documents import FieldSpec
 from core.events import (
     BOT_ATTACHMENT,
     BOT_CALLBACK,
@@ -25,11 +27,13 @@ from core.usecases.agent.chat import (
     ASK_MEDIA_TEMPLATE_TEXT,
     DISABLED_TEXT,
     DOWNLOAD_FAILED_TEXT,
+    KEYBOARD_ROWS,
     LLM_DOWN_TEXT,
     UNKNOWN_BUTTON_TEXT,
     UNSUPPORTED_FILE_TEXT,
 )
-from core.usecases.documents import ensure_builtin_templates
+from core.usecases.documents import TemplateInput, create_template, ensure_builtin_templates
+from core.usecases.documents.templates import OWN_TEMPLATES_MAX
 from tests.api.test_events_worker import _handlers
 from tests.fakes import FakeLLM
 
@@ -109,6 +113,37 @@ async def test_unclear_request_offers_template_buttons(
     (reply,) = await _replies(redis)
     payloads = {row[0].payload for row in reply.buttons or []}
     assert payloads == {"doc:new:invoice", "doc:new:offer", "doc:new:service-contract"}
+
+
+async def test_own_templates_are_offered_within_keyboard_limits(
+    db: None, session: AsyncSession, redis
+) -> None:
+    await ensure_builtin_templates(session)
+    user = await UserRepository(session).upsert_from_max(
+        UserUpsert(max_user_id=USER, first_name="Фадей"), touch_login=False, now=datetime.now(UTC)
+    )
+    for index in range(OWN_TEMPLATES_MAX):
+        await create_template(
+            session,
+            user_id=user.id,
+            data=TemplateInput(
+                f"Акт № {index}",
+                "",
+                "Акт для {{client_name}}",
+                (FieldSpec("client_name", "Клиент"),),
+            ),
+        )
+    await session.commit()
+    handlers = _handlers(redis, llm=FakeLLM(json_reply={"intent": "new", "template": ""}))
+
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Нужен документ")))
+
+    (reply,) = await _replies(redis)
+    rows = reply.buttons or []
+    assert len(rows) <= KEYBOARD_ROWS
+    titles = [button.text for row in rows for button in row]
+    assert len(titles) == OWN_TEMPLATES_MAX + 3
+    assert titles[:3] == ["Договор оказания услуг", "Коммерческое предложение", "Счёт на оплату"]
 
 
 async def test_question_about_active_document_is_answered(

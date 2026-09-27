@@ -75,7 +75,7 @@ export function ProfilePage() {
         />
         <CellSimple
           title="Шаблоны"
-          subtitle="Счёт, КП, договор"
+          subtitle="Счёт, КП, договор и свои"
           before={<IconTemplates />}
           showChevron
           onClick={() => navigate('/create')}

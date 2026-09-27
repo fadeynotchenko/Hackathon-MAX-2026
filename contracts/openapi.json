@@ -947,6 +947,12 @@
             "title": "Required",
             "type": "boolean"
           },
+          "today_by_default": {
+            "default": false,
+            "description": "Пустая дата при создании документа — сегодняшняя",
+            "title": "Today By Default",
+            "type": "boolean"
+          },
           "type": {
             "$ref": "#/components/schemas/FieldType"
           }
@@ -1459,8 +1465,97 @@
         "title": "SetFieldsRequest",
         "type": "object"
       },
+      "TemplateFieldRequest": {
+        "properties": {
+          "carry_over": {
+            "default": true,
+            "title": "Carry Over",
+            "type": "boolean"
+          },
+          "hint": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Hint",
+            "type": "string"
+          },
+          "key": {
+            "description": "Ключ маркера в тексте; seller_* и client_* — реквизиты сторон",
+            "maxLength": 48,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 100,
+            "title": "Label",
+            "type": "string"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "today_by_default": {
+            "default": false,
+            "title": "Today By Default",
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FieldType",
+            "default": "text"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "TemplateFieldRequest",
+        "type": "object"
+      },
+      "TemplateRequest": {
+        "properties": {
+          "body": {
+            "description": "Текст с маркерами {{key}}; каждый маркер описан в fields",
+            "maxLength": 20000,
+            "title": "Body",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Description",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateFieldRequest"
+            },
+            "maxItems": 50,
+            "title": "Fields",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 64,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "body",
+          "fields"
+        ],
+        "title": "TemplateRequest",
+        "type": "object"
+      },
       "TemplateSchema": {
         "properties": {
+          "body": {
+            "description": "Текст шаблона с маркерами {{key}} на месте полей",
+            "title": "Body",
+            "type": "string"
+          },
           "body_format": {
             "title": "Body Format",
             "type": "string"
@@ -1485,6 +1580,7 @@
             "type": "boolean"
           },
           "kind": {
+            "description": "invoice, offer, contract; custom — свой шаблон пользователя",
             "title": "Kind",
             "type": "string"
           },
@@ -1511,6 +1607,7 @@
           "body_format",
           "is_builtin",
           "fields",
+          "body",
           "preview"
         ],
         "title": "TemplateSchema",
@@ -4340,9 +4437,151 @@
         "tags": [
           "documents"
         ]
+      },
+      "post": {
+        "operationId": "create_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Сохранить свой шаблон",
+        "tags": [
+          "documents"
+        ]
       }
     },
     "/api/v1/templates/{template_id}": {
+      "delete": {
+        "description": "Шаблон пропадает из библиотеки; документы на нём остаются в архиве.",
+        "operationId": "delete_template",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Template Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Удалить свой шаблон",
+        "tags": [
+          "documents"
+        ]
+      },
       "get": {
         "operationId": "get_template",
         "parameters": [
@@ -4401,6 +4640,89 @@
           }
         },
         "summary": "Шаблон и описание его полей",
+        "tags": [
+          "documents"
+        ]
+      },
+      "put": {
+        "description": "Документы, созданные раньше, сохраняют прежний текст шаблона.",
+        "operationId": "update_template",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Template Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Изменить свой шаблон",
         "tags": [
           "documents"
         ]

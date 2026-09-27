@@ -46,7 +46,16 @@ from .organizations import (
     update_organization,
 )
 from .requisites import REQUISITE_FIELDS
-from .templates import TemplateView, ensure_builtin_templates, get_template, list_templates
+from .templates import (
+    TemplateInput,
+    TemplateView,
+    create_template,
+    delete_template,
+    ensure_builtin_templates,
+    get_template,
+    list_templates,
+    update_template,
+)
 
 __all__ = [
     "DOCX",
@@ -62,15 +71,18 @@ __all__ = [
     "Fact",
     "OrganizationView",
     "SendState",
+    "TemplateInput",
     "TemplateView",
     "confirm_fields",
     "copy_document",
     "create_counterparty",
     "create_draft",
     "create_organization",
+    "create_template",
     "delete_counterparty",
     "delete_document",
     "delete_organization",
+    "delete_template",
     "document_history",
     "document_name",
     "ensure_builtin_templates",
@@ -91,4 +103,5 @@ __all__ = [
     "set_fields",
     "update_counterparty",
     "update_organization",
+    "update_template",
 ]

@@ -530,7 +530,8 @@ export interface paths {
         /** Библиотека шаблонов */
         get: operations["list_templates"];
         put?: never;
-        post?: never;
+        /** Сохранить свой шаблон */
+        post: operations["create_template"];
         delete?: never;
         options?: never;
         head?: never;
@@ -546,9 +547,17 @@ export interface paths {
         };
         /** Шаблон и описание его полей */
         get: operations["get_template"];
-        put?: never;
+        /**
+         * Изменить свой шаблон
+         * @description Документы, созданные раньше, сохраняют прежний текст шаблона.
+         */
+        put: operations["update_template"];
         post?: never;
-        delete?: never;
+        /**
+         * Удалить свой шаблон
+         * @description Шаблон пропадает из библиотеки; документы на нём остаются в архиве.
+         */
+        delete: operations["delete_template"];
         options?: never;
         head?: never;
         patch?: never;
@@ -985,6 +994,12 @@ export interface components {
             max_length: number | null;
             /** Required */
             required: boolean;
+            /**
+             * Today By Default
+             * @description Пустая дата при создании документа — сегодняшняя
+             * @default false
+             */
+            today_by_default: boolean;
             type: components["schemas"]["FieldType"];
         };
         /**
@@ -1222,8 +1237,62 @@ export interface components {
                 [key: string]: components["schemas"]["FieldValueSchema"];
             };
         };
+        /** TemplateFieldRequest */
+        TemplateFieldRequest: {
+            /**
+             * Carry Over
+             * @default true
+             */
+            carry_over: boolean;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /**
+             * Key
+             * @description Ключ маркера в тексте; seller_* и client_* — реквизиты сторон
+             */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /**
+             * Today By Default
+             * @default false
+             */
+            today_by_default: boolean;
+            /** @default text */
+            type: components["schemas"]["FieldType"];
+        };
+        /** TemplateRequest */
+        TemplateRequest: {
+            /**
+             * Body
+             * @description Текст с маркерами {{key}}; каждый маркер описан в fields
+             */
+            body: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Fields */
+            fields: components["schemas"]["TemplateFieldRequest"][];
+            /** Title */
+            title: string;
+        };
         /** TemplateSchema */
         TemplateSchema: {
+            /**
+             * Body
+             * @description Текст шаблона с маркерами {{key}} на месте полей
+             */
+            body: string;
             /** Body Format */
             body_format: string;
             /** Description */
@@ -1234,7 +1303,10 @@ export interface components {
             id: number;
             /** Is Builtin */
             is_builtin: boolean;
-            /** Kind */
+            /**
+             * Kind
+             * @description invoice, offer, contract; custom — свой шаблон пользователя
+             */
             kind: string;
             /**
              * Preview
@@ -3240,6 +3312,66 @@ export interface operations {
             };
         };
     };
+    create_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_template: {
         parameters: {
             query?: never;
@@ -3285,6 +3417,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

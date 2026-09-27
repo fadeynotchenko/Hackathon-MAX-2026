@@ -24,6 +24,9 @@ class FieldSpecSchema(BaseModel):
     carry_over: bool = Field(
         default=True, description="Значение переносится в копию документа (номер и даты — нет)"
     )
+    today_by_default: bool = Field(
+        default=False, description="Пустая дата при создании документа — сегодняшняя"
+    )
 
 
 class TemplateSchema(BaseModel):
@@ -32,12 +35,37 @@ class TemplateSchema(BaseModel):
     id: int
     slug: str
     title: str
-    kind: str
+    kind: str = Field(description="invoice, offer, contract; custom — свой шаблон пользователя")
     description: str
     body_format: str
     is_builtin: bool
     fields: list[FieldSpecSchema]
+    body: str = Field(description="Текст шаблона с маркерами {{key}} на месте полей")
     preview: str = Field(description="Текст пустого бланка — предпросмотр до заполнения")
+
+
+class TemplateFieldRequest(BaseModel):
+    key: str = Field(
+        min_length=1,
+        max_length=48,
+        pattern=r"^[a-z][a-z0-9_]*$",
+        description="Ключ маркера в тексте; seller_* и client_* — реквизиты сторон",
+    )
+    label: PrintableStr = Field(max_length=100)
+    type: FieldType = FieldType.TEXT
+    required: bool = True
+    hint: PrintableStr = Field(default="", max_length=200)
+    carry_over: bool = True
+    today_by_default: bool = False
+
+
+class TemplateRequest(BaseModel):
+    title: PrintableStr = Field(max_length=64)
+    description: PrintableStr = Field(default="", max_length=300)
+    body: PrintableStr = Field(
+        max_length=20000, description="Текст с маркерами {{key}}; каждый маркер описан в fields"
+    )
+    fields: list[TemplateFieldRequest] = Field(max_length=50)
 
 
 class FieldValueSchema(BaseModel):

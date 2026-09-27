@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -165,8 +166,15 @@ def _failure_text(exc: AppError) -> str:
     return exc.public_message
 
 
+# Inline-клавиатура MAX — не больше 30 рядов. Со своими шаблонами пользователя
+# кнопок выбора бывает больше: тогда они встают по несколько в ряд.
+KEYBOARD_ROWS = 30
+
+
 def _template_buttons(templates: list[TemplateView]) -> tuple[tuple[ChatButton, ...], ...]:
-    return tuple((ChatButton(t.title, f"doc:new:{t.slug}"),) for t in templates)
+    buttons = [ChatButton(t.title, f"doc:new:{t.slug}") for t in templates]
+    per_row = max(1, math.ceil(len(buttons) / KEYBOARD_ROWS))
+    return tuple(tuple(buttons[i : i + per_row]) for i in range(0, len(buttons), per_row))
 
 
 def _document_buttons(document: DocumentView) -> tuple[tuple[ChatButton, ...], ...]:

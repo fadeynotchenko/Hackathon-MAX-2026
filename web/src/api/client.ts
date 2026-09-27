@@ -16,6 +16,7 @@ export type NotifyRequest = components['schemas']['NotifyRequest'];
 export type NotifyResponse = components['schemas']['NotifyResponse'];
 export type DevInitDataResponse = components['schemas']['DevInitDataResponse'];
 export type Template = components['schemas']['TemplateSchema'];
+export type TemplateRequest = components['schemas']['TemplateRequest'];
 export type FieldSpec = components['schemas']['FieldSpecSchema'];
 export type FieldType = components['schemas']['FieldType'];
 export type FieldValue = components['schemas']['FieldValueSchema'];
@@ -204,6 +205,19 @@ export class ApiClient {
 
   template(templateId: number): Promise<Template> {
     return this.request<Template>(`/api/v1/templates/${templateId}`);
+  }
+
+  createTemplate(body: TemplateRequest): Promise<Template> {
+    return this.request<Template>('/api/v1/templates', { method: 'POST', body });
+  }
+
+  // Документы, созданные раньше, остаются на прежнем тексте шаблона.
+  updateTemplate(templateId: number, body: TemplateRequest): Promise<Template> {
+    return this.request<Template>(`/api/v1/templates/${templateId}`, { method: 'PUT', body });
+  }
+
+  deleteTemplate(templateId: number): Promise<void> {
+    return this.request<void>(`/api/v1/templates/${templateId}`, { method: 'DELETE' });
   }
 
   documents(): Promise<DocumentSummary[]> {

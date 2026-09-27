@@ -1,11 +1,13 @@
 // Вкладка «Создать»: каталог шаблонов — единственная точка выбора бланка
-// (в макете каталог жил и здесь, и в профиле). Второй вход — чат с ботом.
+// (в макете каталог жил и здесь, и в профиле). Свои шаблоны пользователя —
+// первым разделом, отсюда же создаётся новый. Второй вход — чат с ботом.
 import { CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import type { Template } from '@/api/client';
 import { Banner } from '@/components/Banner';
-import { IconChat } from '@/components/icons';
+import { IconChat, IconPlus } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
@@ -25,6 +27,13 @@ export function CreatePage() {
     templates.data?.filter((template) =>
       matchesQuery([template.title, template.description], query),
     ) ?? [];
+  const own = visible.filter((template) => !template.is_builtin);
+  const builtin = visible.filter((template) => template.is_builtin);
+
+  const open = (template: Template) => {
+    haptic('light');
+    void navigate(`/create/${template.id}`);
+  };
 
   const toChat = () => {
     if (!closeApp()) setChatHint(true);
@@ -44,29 +53,30 @@ export function CreatePage() {
       {templates.data && templates.data.length > 0 && visible.length === 0 ? (
         <EmptyState title="Ничего не нашлось" text="Попробуйте другое слово." />
       ) : null}
-      {visible.length > 0 ? (
-        <Section title="Шаблоны">
-          <div className="templates">
-            {visible.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                className="template-card"
-                onClick={() => {
-                  haptic('light');
-                  void navigate(`/create/${template.id}`);
-                }}
-              >
-                <DocPreview text={template.preview} marks={false} mini />
-                <Typography.Text variant="detail-strong">{template.title}</Typography.Text>
-                <Typography.Text variant="description" color="tertiary">
-                  {template.is_builtin ? 'Стандартный' : 'Ваш шаблон'}
-                </Typography.Text>
-              </button>
-            ))}
-          </div>
+      {own.length > 0 ? (
+        <Section title="Ваши шаблоны">
+          <TemplateGrid templates={own} onOpen={open} />
         </Section>
       ) : null}
+      {builtin.length > 0 ? (
+        <Section title={own.length > 0 ? 'Стандартные' : 'Шаблоны'}>
+          <TemplateGrid templates={builtin} onOpen={open} />
+        </Section>
+      ) : null}
+
+      <CellList mode="island" filled>
+        <CellSimple
+          title="Свой шаблон"
+          subtitle="Ваш текст — реквизиты сторон подставятся сами"
+          before={
+            <span className="themed-icon">
+              <IconPlus />
+            </span>
+          }
+          showChevron
+          onClick={() => navigate('/templates/new')}
+        />
+      </CellList>
 
       <CellList mode="island" filled header={<CellHeader>Или начните в чате</CellHeader>}>
         <CellSimple
@@ -90,5 +100,32 @@ export function CreatePage() {
         </div>
       ) : null}
     </Page>
+  );
+}
+
+function TemplateGrid({
+  templates,
+  onOpen,
+}: {
+  templates: Template[];
+  onOpen: (template: Template) => void;
+}) {
+  return (
+    <div className="templates">
+      {templates.map((template) => (
+        <button
+          key={template.id}
+          type="button"
+          className="template-card"
+          onClick={() => onOpen(template)}
+        >
+          <DocPreview text={template.preview} marks={false} mini />
+          <Typography.Text variant="detail-strong">{template.title}</Typography.Text>
+          <Typography.Text variant="description" color="tertiary">
+            {template.is_builtin ? 'Стандартный' : 'Ваш шаблон'}
+          </Typography.Text>
+        </button>
+      ))}
+    </div>
   );
 }

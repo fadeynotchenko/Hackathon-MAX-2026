@@ -141,6 +141,7 @@ export const KIND_STYLE: Record<string, KindStyle> = {
   invoice: { plural: 'Счета' },
   offer: { plural: 'КП' },
   contract: { plural: 'Договоры' },
+  custom: { plural: 'Свои шаблоны' },
 };
 
 export function kindStyle(kind: string | undefined): KindStyle {

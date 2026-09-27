@@ -30,7 +30,12 @@ from core.domain.exceptions import NotFoundError
 from core.usecases.documents.journal import COPY_SOURCE, Fact, SendState, last_sends, record
 from core.usecases.documents.organizations import seller_for_document
 from core.usecases.documents.requisites import CLIENT_PREFIX, SELLER_PREFIX
-from core.usecases.documents.templates import TemplateView, get_template, to_view
+from core.usecases.documents.templates import (
+    TemplateView,
+    get_template,
+    latest_template,
+    to_view,
+)
 
 STATUS_DRAFT = "draft"
 STATUS_READY = "ready"
@@ -219,9 +224,9 @@ async def copy_document(
     Реквизиты сторон берутся заново из той же организации и карточки контрагента —
     они могли измениться с прошлого раза; удалённую организацию заменяет основная.
     Поля с ``carry_over=False`` (номер, даты) не переносятся: у нового документа
-    они свои."""
+    они свои. Свой шаблон, который с тех пор правили, берётся в новой редакции."""
     source = await _load(session, user_id=user_id, document_id=document_id)
-    template = to_view(source.template)
+    template = await latest_template(session, source.template)
     carried = {spec.key for spec in template.fields if spec.carry_over}
     values = {key: v for key, v in load_values(source.values).items() if key in carried}
     prefilled, seller_id = await _prefill(

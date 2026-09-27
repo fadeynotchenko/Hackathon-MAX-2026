@@ -126,8 +126,13 @@ class Template(Base):
     """Шаблон документа: спецификация полей плюс тело для подстановки.
 
     ``owner_user_id`` пуст у встроенных шаблонов. Слуг уникален глобально:
-    шаблон компании получит слуг с префиксом владельца, поэтому частичный
+    свой шаблон пользователя получает случайный слуг ``my-…``, поэтому частичный
     индекс «уникально среди системных» не нужен.
+
+    Документ читает тело шаблона при каждом показе, поэтому шаблон, на котором
+    уже есть документы, не переписывается и не удаляется: прошлая редакция
+    уходит в архивную копию (``archived_at``, ``origin_id`` — на живой шаблон),
+    и документы переезжают на неё; удалённый шаблон только скрывается.
     """
 
     __tablename__ = "templates"
@@ -144,6 +149,10 @@ class Template(Base):
     fields: Mapped[list[dict[str, object]]] = mapped_column(JsonDict, default=list)
     body: Mapped[str] = mapped_column(Text, default="")
     body_format: Mapped[str] = mapped_column(String(16), default="text")
+    # Скрыт из библиотеки: удалён владельцем или это прошлая редакция.
+    archived_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    # У прошлой редакции — живой шаблон: «на основе этого» берёт свежий текст.
+    origin_id: Mapped[int | None] = mapped_column(ForeignKey("templates.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()

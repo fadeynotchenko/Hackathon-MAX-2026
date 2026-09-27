@@ -401,6 +401,11 @@ BLANK = "__________"
 _MARKER = re.compile(r"{{\s*(\w+)\s*}}")
 
 
+def template_markers(body: str) -> list[str]:
+    """Ключи полей в теле шаблона по порядку появления, без повторов."""
+    return list(dict.fromkeys(_MARKER.findall(body)))
+
+
 def fill_text_template(body: str, context: Mapping[str, str], *, blank: str = BLANK) -> str:
     """Подстановка ``{{key}}`` в тело шаблона.
 
