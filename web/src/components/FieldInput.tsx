@@ -4,11 +4,14 @@
 // отдельной строкой: форма короче, а подсказка исчезает, как только она не нужна.
 // Модификатор однострочное/многострочное — для широкого экрана: там однострочные
 // поля встают по два в ряд, а адрес и длинный текст занимают всю строку.
+// Позиции счёта — своя таблица строк (ItemsInput) с тем же видом подписи и ошибки.
 import { Input, Textarea, Typography } from '@maxhub/max-ui';
 import { useId } from 'react';
 
 import type { FieldType } from '@/api/client';
 import { inputKind } from '@/lib/format';
+
+import { ItemsInput } from './ItemsInput';
 
 export interface FieldInputProps {
   label: string;
@@ -39,6 +42,18 @@ export function FieldInput({
 }: FieldInputProps) {
   const id = useId();
   const kind = inputKind(type);
+  if (type === 'items') {
+    return (
+      <ItemsInput
+        label={label}
+        value={value}
+        onChange={onChange}
+        hint={hint}
+        error={error}
+        source={source}
+      />
+    );
+  }
   const describedBy = error || hint ? `${id}-note` : undefined;
   // У поля даты плейсхолдера не видно — «необязательно» остаётся в подписи.
   const optionalInLabel = required === false && kind.type === 'date';

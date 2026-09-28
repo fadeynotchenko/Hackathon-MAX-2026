@@ -24,7 +24,6 @@ from core.events import (
 )
 from core.files import FilesConfig, InboundFileError, InboundFileTooLargeError
 from core.usecases.agent.chat import (
-    ASK_FILE_TEXT,
     ASK_MEDIA_TEMPLATE_TEXT,
     DISABLED_TEXT,
     DOWNLOAD_FAILED_TEXT,
@@ -56,6 +55,10 @@ async def _replies(redis) -> list[NotifyUser]:
     ]
 
 
+# Позиция счёта, как её отдаёт модель: списком объектов, цена — как в сообщении.
+SITE = [{"name": "Сайт", "quantity": "1", "unit": "", "price": "120 000"}]
+
+
 def _message(text: str) -> dict:
     return BotMessage(max_user_id=USER, chat_id=1, text=text, first_name="Фадей").model_dump()
 
@@ -68,18 +71,20 @@ async def test_message_creates_document_and_asks_for_confirmation(
     llm = FakeLLM(
         json_replies=[
             {"intent": "new", "template": "invoice"},
-            {"total": "120 000", "client_name": "ООО «Ромашка»"},
+            {"items": SITE, "client_name": "ООО «Ромашка»"},
         ]
     )
     handlers = _handlers(redis, llm=llm)
 
-    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт на 120 000 для ООО Ромашка")))
+    await handlers[BOT_MESSAGE](
+        _event(BOT_MESSAGE, _message("Счёт на 120 000 за сайт для ООО Ромашка"))
+    )
 
     (reply,) = await _replies(redis)
     assert reply.max_user_id == USER
     assert reply.format == "html", "ответ размечен: заголовок и значения жирным"
     assert reply.text.startswith("🧾 <b>Счёт на оплату</b>")
-    assert "• Сумма к оплате: <b>120 000,00</b>" in reply.text
+    assert "• Позиции: <b>1. Сайт — 1 × 120 000,00 = 120 000,00</b>" in reply.text
     labels = [[b.text for b in row] for row in reply.buttons or []]
     assert labels == [["👍 Всё верно"], ["➕ Новый документ"]]
 
@@ -118,9 +123,7 @@ async def test_unclear_request_offers_template_buttons(
     assert payloads == {f"doc:new:{template.slug}" for template in BUILTIN_TEMPLATES}
 
 
-async def test_own_templates_are_offered_within_keyboard_limits(
-    db: None, session: AsyncSession, redis
-) -> None:
+async def test_chat_offers_only_standard_templates(db: None, session: AsyncSession, redis) -> None:
     await ensure_builtin_templates(session)
     user = await UserRepository(session).upsert_from_max(
         UserUpsert(max_user_id=USER, first_name="Фадей"), touch_login=False, now=datetime.now(UTC)
@@ -145,7 +148,8 @@ async def test_own_templates_are_offered_within_keyboard_limits(
     rows = reply.buttons or []
     assert len(rows) <= KEYBOARD_ROWS
     titles = [button.text for row in rows for button in row]
-    assert len(titles) == OWN_TEMPLATES_MAX + len(BUILTIN_TEMPLATES)
+    # Свои шаблоны заводят и правят в мини-приложении, в чате — только стандартные.
+    assert len(titles) == len(BUILTIN_TEMPLATES)
     standard = titles[: len(BUILTIN_TEMPLATES)]
     assert standard[0] == "🤝 Договор оказания услуг", "основной договор — первым в своём виде"
     assert "💼 Коммерческое предложение" in standard and "🧾 Счёт на оплату" in standard
@@ -177,10 +181,10 @@ async def test_confirm_button_and_unknown_button(
 ) -> None:
     await ensure_builtin_templates(session)
     await session.commit()
-    llm = FakeLLM(json_replies=[{"intent": "new", "template": "invoice"}, {"total": "120 000"}])
+    llm = FakeLLM(json_replies=[{"intent": "new", "template": "invoice"}, {"items": SITE}])
     files = FilesConfig(tmp_path / "documents", "soffice", 5)
     handlers = _handlers(redis, llm=llm, files=files)
-    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт на 120 000"), "evt-m"))
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт на 120 000 за сайт"), "evt-m"))
     confirm_payload = (await _replies(redis))[0].buttons[0][0].payload  # type: ignore[index]
 
     await handlers[BOT_CALLBACK](
@@ -370,9 +374,9 @@ async def test_voice_is_transcribed_and_handled_as_text(
     await session.commit()
     llm = FakeLLM(
         json_replies=[
-            {"text": "Счёт на 120 000 для ООО Ромашка"},
+            {"text": "Счёт на 120 000 за сайт для ООО Ромашка"},
             {"intent": "new", "template": "invoice"},
-            {"total": "120 000", "client_name": "ООО «Ромашка»"},
+            {"items": SITE, "client_name": "ООО «Ромашка»"},
         ]
     )
     storage = FakeStorage(VOICE)
@@ -381,9 +385,11 @@ async def test_voice_is_transcribed_and_handled_as_text(
     await handlers[BOT_ATTACHMENT](_event(BOT_ATTACHMENT, _attachment("audio"), "evt-v"))
 
     (reply,) = await _replies(redis)
-    assert reply.text.startswith("🎙 <b>Расслышал:</b> <i>«Счёт на 120 000 для ООО Ромашка»</i>")
-    assert "• Сумма к оплате: <b>120\u00a0000,00</b>" in reply.text
-    assert llm.calls[1][1][1].content == "Счёт на 120 000 для ООО Ромашка"
+    assert reply.text.startswith(
+        "🎙 <b>Расслышал:</b> <i>«Счёт на 120 000 за сайт для ООО Ромашка»</i>"
+    )
+    assert "• Позиции: <b>1. Сайт — 1 × 120\u00a0000,00 = 120\u00a0000,00</b>" in reply.text
+    assert llm.calls[1][1][1].content == "Счёт на 120 000 за сайт для ООО Ромашка"
 
 
 async def test_attachment_problems_are_explained(db: None, session: AsyncSession, redis) -> None:
@@ -411,9 +417,9 @@ async def test_attachment_problems_are_explained(db: None, session: AsyncSession
     download, unsupported, pending, large = await _replies(redis)
     assert download.text == DOWNLOAD_FAILED_TEXT
     assert unsupported.text == UNSUPPORTED_FILE_TEXT
-    # PDF без текущего документа: изменить сам файл или перенести данные в другой.
-    assert pending.text == ASK_FILE_TEXT
-    assert pending.buttons is not None and pending.buttons[0][0].payload == "doc:file"
+    # PDF без текущего документа — реквизиты для стандартного документа; правка
+    # самого файла только в мини-приложении.
+    assert pending.text == ASK_MEDIA_TEMPLATE_TEXT
     assert large.text.startswith("😔 Файл больше 10 МБ")
     assert broken.urls == ["https://i.max.test/p/1"], "xlsx даже не скачивали"
 

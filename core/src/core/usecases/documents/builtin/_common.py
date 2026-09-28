@@ -128,6 +128,17 @@ def quantity(*, unit: str = "усл.") -> tuple[FieldSpec, ...]:
     )
 
 
+def items(*, unit: str = "усл.") -> FieldSpec:
+    """Позиции таблицы: строка бланка повторяется на каждую, итог, НДС и сумма
+    прописью считаются из них — отдельного поля «Сумма» у такого шаблона нет."""
+    return subject(
+        "items",
+        "Позиции",
+        FieldType.ITEMS,
+        hint=f"Наименование, количество, единица ({unit}) и цена за единицу",
+    )
+
+
 def signer_position() -> FieldSpec:
     return seller(
         "position",

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -41,6 +42,10 @@ class FieldType(StrEnum):
     OGRN = "ogrn"
     BIC = "bic"
     ACCOUNT = "account"
+    # Позиции таблицы счёта: список «наименование, количество, единица, цена»,
+    # хранится JSON-строкой (``items_json``). Строка таблицы бланка повторяется
+    # на каждую позицию, сумма и итог считаются сами (``fill_context``).
+    ITEMS = "items"
 
 
 class ValueSource(StrEnum):
@@ -253,13 +258,184 @@ def format_money(amount: Decimal) -> str:
     return f"{groups},{frac}"
 
 
+@dataclass(frozen=True)
+class Item:
+    """Позиция счёта: строка таблицы «Товары (работы, услуги)»."""
+
+    name: str
+    quantity: Decimal
+    unit: str
+    price: Decimal
+
+    @property
+    def amount(self) -> Decimal:
+        return (self.quantity * self.price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+# Столбцы строки позиций в бланке: ``{{items.name}}``; ``n`` — номер строки.
+ITEM_COLUMNS = ("n", "name", "quantity", "unit", "price", "amount")
+ITEMS_MAX = 100
+ITEM_NAME_MAX = 1000
+ITEM_UNIT_MAX = 20
+# Количество с тремя знаками после запятой: «0,125 т», «1,5 ч»; дальше — опечатка.
+MAX_QUANTITY = Decimal("999999999")
+_QUANTITY_PLACES = 3
+# Названия ключей, которыми позицию присылают помощник и форма: «qty», «цена».
+_ITEM_KEYS = {
+    "name": ("name", "title", "наименование", "название"),
+    "quantity": ("quantity", "qty", "count", "количество"),
+    "unit": ("unit", "единица"),
+    "price": ("price", "цена"),
+}
+
+
+def parse_quantity(raw: str) -> Decimal | None:
+    cleaned = _SPACES.sub("", raw).replace(",", ".")
+    try:
+        quantity = Decimal(cleaned)
+    except InvalidOperation:
+        return None
+    if not quantity.is_finite() or quantity <= 0 or quantity > MAX_QUANTITY:
+        return None
+    if quantity.as_tuple().exponent < -_QUANTITY_PLACES:  # type: ignore[operator]
+        return None
+    return quantity
+
+
+def format_quantity(quantity: Decimal) -> str:
+    """«2», «1,5»: без хвостовых нулей и с запятой, как в документе."""
+    text = f"{quantity.normalize():f}"
+    return text.replace(".", ",")
+
+
+def _item_field(raw: Mapping[str, object], name: str) -> str:
+    for key in _ITEM_KEYS[name]:
+        value = raw.get(key)
+        if value is not None and str(value).strip():
+            return _INVISIBLE.sub("", str(value)).strip()
+    return ""
+
+
+def _item(raw: object, number: int) -> tuple[Item | None, str | None]:
+    """Позиция из JSON или ``None`` для пустой строки формы (все ячейки пусты)."""
+    if not isinstance(raw, Mapping):
+        return None, f"позиция {number} — не строка таблицы"
+    name = _SPACES.sub(" ", _item_field(raw, "name"))
+    quantity_raw = _item_field(raw, "quantity")
+    unit = _SPACES.sub(" ", _item_field(raw, "unit"))
+    price_raw = _item_field(raw, "price")
+    if not (name or quantity_raw or price_raw):
+        return None, None
+    if not name:
+        return None, f"у позиции {number} нет наименования"
+    if len(name) > ITEM_NAME_MAX or len(unit) > ITEM_UNIT_MAX:
+        return None, f"позиция {number} слишком длинная"
+    if _CONTROL.search(name + unit):
+        return None, f"в позиции {number} есть служебные символы"
+    quantity = parse_quantity(quantity_raw) if quantity_raw else Decimal(1)
+    if quantity is None:
+        return None, f"количество в позиции {number} — число больше нуля"
+    if not price_raw:
+        return None, f"укажите цену позиции {number}"
+    price = parse_money(price_raw)
+    if price is None:
+        return None, f"цена позиции {number} не похожа на сумму"
+    return Item(name, quantity, unit, price), None
+
+
+def parse_items(raw: str) -> tuple[list[Item], str | None]:
+    """Позиции из JSON-списка — формы, помощника или распознавания.
+
+    Список — объекты ``{name, quantity, unit, price}``; числа можно строкой
+    («1 500,50», «2,5»). Пустые строки формы пропускаются, количество по
+    умолчанию — 1. Ошибка — первая найденная, с номером позиции."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return [], "список позиций не читается — заполните таблицу заново"
+    if isinstance(data, Mapping):
+        data = [data]
+    if not isinstance(data, list):
+        return [], "список позиций не читается — заполните таблицу заново"
+    items: list[Item] = []
+    for number, entry in enumerate(data, 1):
+        item, problem = _item(entry, number)
+        if problem is not None:
+            return [], problem
+        if item is not None:
+            items.append(item)
+    if len(items) > ITEMS_MAX:
+        return [], f"не больше {ITEMS_MAX} позиций"
+    if sum((item.amount for item in items), Decimal(0)) > MAX_MONEY:
+        return [], "итог больше триллиона — проверьте цены"
+    return items, None
+
+
+def items_json(items: list[Item]) -> str:
+    """Канонический вид хранения: числа строками, как у суммы и количества полей."""
+    return json.dumps(
+        [
+            {
+                "name": item.name,
+                "quantity": f"{item.quantity.normalize():f}",
+                "unit": item.unit,
+                "price": f"{item.price:.2f}",
+            }
+            for item in items
+        ],
+        ensure_ascii=False,
+    )
+
+
+def items_total(items: list[Item]) -> Decimal:
+    return sum((item.amount for item in items), Decimal("0.00"))
+
+
+def items_text(items: list[Item]) -> str:
+    """Позиции текстом — для чата, помощника и текстовых шаблонов:
+    «1. Разработка сайта — 2 шт. × 1 500,00 = 3 000,00»."""
+    lines = []
+    for number, item in enumerate(items, 1):
+        unit = f" {item.unit}" if item.unit else ""
+        lines.append(
+            f"{number}. {item.name} — {format_quantity(item.quantity)}{unit}"
+            f" × {format_money(item.price)} = {format_money(item.amount)}"
+        )
+    return "\n".join(lines)
+
+
+def legacy_items(values: Mapping[str, FieldValue]) -> FieldValue | None:
+    """Позиции из счёта прошлой редакции: одно поле «Наименование» (``item``),
+    количество, единица и сумма на всё. Копия такого счёта на новом бланке
+    получает ту же строку таблицы, а не пустую, — цена за единицу считается из суммы."""
+    name = values.get("item")
+    total = values.get("total")
+    if name is None or not name.value.strip():
+        return None
+    quantity_value = values.get("quantity")
+    quantity = parse_quantity(quantity_value.value) if quantity_value is not None else None
+    quantity = quantity or Decimal(1)
+    amount = parse_money(total.value) if total is not None else None
+    if amount is None:
+        return None
+    unit_value = values.get("unit")
+    price = (amount / quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    item = Item(
+        _SPACES.sub(" ", name.value).strip()[:ITEM_NAME_MAX],
+        quantity,
+        (unit_value.value if unit_value is not None else "")[:ITEM_UNIT_MAX],
+        price,
+    )
+    return replace(name, value=items_json([item]))
+
+
 # Невидимые символы (пробел нулевой ширины, BOM) превращали пустое поле в
 # «заполненное»; управляющие не принимает PostgreSQL (NUL) и сборка DOCX (XML).
 _INVISIBLE = re.compile("[\u200b-\u200d\u2060\ufeff\u00ad]")
 _CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Предел длины по типу, если шаблон не задал свой: реквизит или адрес длиннее —
 # вставленный по ошибке текст, а не значение.
-DEFAULT_MAX_LENGTH = {FieldType.MULTILINE: 5000, FieldType.EMAIL: 254}
+DEFAULT_MAX_LENGTH = {FieldType.MULTILINE: 5000, FieldType.EMAIL: 254, FieldType.ITEMS: 50_000}
 TEXT_MAX_LENGTH = 1000
 INTEGER_MAX_DIGITS = 9
 
@@ -336,6 +512,11 @@ def normalize(spec: FieldSpec, raw: str) -> tuple[str, FieldError | None]:
             if len(digits) != 20:
                 return bad("field.account_invalid", f"«{spec.label}»: счёт из 20 цифр")
             return digits, None
+        case FieldType.ITEMS:
+            items, problem = parse_items(value)
+            if problem is not None:
+                return bad("field.items_invalid", f"«{spec.label}»: {problem}")
+            return (items_json(items) if items else ""), None
         case _:
             return _SPACES.sub(" ", value) if spec.type is not FieldType.MULTILINE else value, None
 
@@ -441,6 +622,9 @@ def render_context(
                 out[spec.key] = parsed.strftime("%d.%m.%Y") if parsed else value.value
             case FieldType.PHONE:
                 out[spec.key] = format_phone(value.value)
+            case FieldType.ITEMS:
+                items, _problem = parse_items(value.value)
+                out[spec.key] = items_text(items)
             case _:
                 out[spec.key] = value.value
     return out
@@ -449,12 +633,22 @@ def render_context(
 BLANK = "__________"
 # Маркер поля: {{total}} — значение как есть, {{total|words}} — вариант записи
 # того же значения (сумма прописью, дата словами). Варианты считает fill_context.
-MARKER = re.compile(r"{{\s*(\w+)(?:\s*\|\s*([\w:]+))?\s*}}")
+# {{items.name}} — столбец строки позиций: строка бланка с ним повторяется на
+# каждую позицию и получает маркеры с номером, {{items.2.name}}.
+MARKER = re.compile(r"{{\s*(\w+)((?:\.\w+){0,2})(?:\s*\|\s*([\w:]+))?\s*}}")
+# Условный кусок: [[, КПП {{seller_kpp}}]] печатается, только когда заполнены
+# все поля внутри, иначе исчезает целиком вместе с подписью и запятой. Так
+# необязательный реквизит пропадает из фразы, а не оставляет в ней «КПП ______».
+# Кусок живёт в одной строке (абзаце) и не вкладывается в другой.
+CONDITIONAL = re.compile(r"\[\[([^\n]*?)\]\]")
+# Разделитель, с которого после выпавшего куска начинается строка: «[[Тел.
+# {{phone}}]][[, почта {{email}}]]» без телефона — «почта …», а не «, почта …».
+LEADING_SEPARATOR = re.compile(r"^(\s*)[,;]\s*")
 
 
 def marker_name(match: re.Match[str]) -> str:
-    """Ключ значения в контексте подстановки: ``total`` или ``total|words``."""
-    key, variant = match.group(1), match.group(2)
+    """Ключ значения в контексте подстановки: ``total``, ``total|words``, ``items.2.name``."""
+    key, variant = match.group(1) + match.group(2), match.group(3)
     return f"{key}|{variant}" if variant else key
 
 
@@ -464,10 +658,61 @@ def template_markers(body: str) -> list[str]:
     keys: list[str] = []
     for match in MARKER.finditer(body):
         keys.append(match.group(1))
-        variant = match.group(2) or ""
+        variant = match.group(3) or ""
         if ":" in variant:
             keys.append(variant.split(":", 1)[1])
     return list(dict.fromkeys(keys))
+
+
+def row_column(match: re.Match[str]) -> str | None:
+    """Столбец маркера строки позиций: ``name`` у ``{{items.name}}``; у маркера
+    с номером строки (``{{items.2.name}}``) и у обычного — ``None``."""
+    parts = match.group(2).split(".")[1:]
+    return parts[0] if len(parts) == 1 else None
+
+
+def row_key(text: str) -> str | None:
+    """Поле-список, чья строка позиций — эта строка текста (абзац, строка таблицы)."""
+    for match in MARKER.finditer(text):
+        if row_column(match) is not None:
+            return match.group(1)
+    return None
+
+
+def row_count(context: Mapping[str, str], key: str) -> int:
+    """Сколько раз повторить строку позиций: пустой список — одна пустая строка,
+    место для записи от руки, как у пустого поля."""
+    count = context.get(f"{key}|count") or "0"
+    return max(int(count) if count.isdigit() else 0, 1)
+
+
+def row_marker(match: re.Match[str], index: int) -> str:
+    """``{{items.name}}`` в ``index``-й копии строки → ``{{items.<index>.name}}``."""
+    variant = f"|{match.group(3)}" if match.group(3) else ""
+    return "{{" + f"{match.group(1)}.{index}.{row_column(match)}{variant}" + "}}"
+
+
+def marker_value(match: re.Match[str], context: Mapping[str, str], blank: str) -> str:
+    """Что встанет на место маркера. Пустое поле — ``blank``, линия для записи
+    от руки. Пустой столбец позиции (у «Доставки» нет единицы) — пусто: это
+    не пропущенное поле, а ячейка строки, которой нечего показать."""
+    value = context.get(marker_name(match))
+    if value is None or (not value and match.group(2).count(".") < 2):
+        return blank
+    return value
+
+
+def conditional_spans(text: str, context: Mapping[str, str]) -> list[tuple[int, int, bool]]:
+    """Условные куски строки: начало, конец и остаётся ли кусок — все маркеры
+    внутри заполнены. Кусок без маркеров остаётся всегда."""
+    return [
+        (
+            match.start(),
+            match.end(),
+            all(context.get(marker_name(inner)) for inner in MARKER.finditer(match.group(1))),
+        )
+        for match in CONDITIONAL.finditer(text)
+    ]
 
 
 def _money_variants(key: str, amount: Decimal) -> dict[str, str]:
@@ -491,13 +736,31 @@ def _date_variants(key: str, day: date) -> dict[str, str]:
     }
 
 
+def _items_context(key: str, items: list[Item]) -> dict[str, str]:
+    """Строки позиций по номерам и итог списка: ``{{items|sum}}``, ``{{items|count}}``."""
+    out = {f"{key}|count": str(len(items)), f"{key}|sum": format_money(items_total(items))}
+    for index, item in enumerate(items, 1):
+        row = f"{key}.{index}"
+        out |= {
+            f"{row}.n": str(index),
+            f"{row}.name": item.name,
+            f"{row}.quantity": format_quantity(item.quantity),
+            f"{row}.unit": item.unit,
+            f"{row}.price": format_money(item.price),
+            f"{row}.amount": format_money(item.amount),
+        }
+    return out
+
+
 def fill_context(specs: tuple[FieldSpec, ...], values: Mapping[str, FieldValue]) -> dict[str, str]:
     """Всё, что подставляется в шаблон: значения полей и варианты их записи.
 
     Сумма — ещё и прописью, рублями и копейками отдельно («120 000 (сто двадцать
     тысяч) рублей 00 копеек»), ценой за единицу и НДС в том числе, если в шаблоне
     есть целое число (``{{total|per:quantity}}``, ``{{total|vat:vat_rate}}``);
-    дата — словами и по частям для бланков вида «____» ________ 20__ г.»."""
+    дата — словами и по частям для бланков вида «____» ________ 20__ г.».
+    Список позиций — строками по номерам и итогом, у которого те же варианты
+    суммы: ``{{items|sum}}``, ``{{items|words}}``, ``{{items|vat:vat_rate}}``."""
     out = render_context(specs, values)
     numbers = {
         spec.key: int(values[spec.key].value)
@@ -510,20 +773,63 @@ def fill_context(specs: tuple[FieldSpec, ...], values: Mapping[str, FieldValue])
         value = values.get(spec.key)
         if value is None:
             continue
-        if spec.type is FieldType.MONEY and (amount := parse_money(value.value)) is not None:
-            out |= _money_variants(spec.key, amount)
-            for number_key, number in numbers.items():
-                if number > 0:
-                    share = (amount / number).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                    out[f"{spec.key}|per:{number_key}"] = format_money(share)
-                # НДС в том числе по ставке из целого поля: 120 000 при 20% — 20 000,00.
-                vat = (amount * number / (100 + number)).quantize(
-                    Decimal("0.01"), rounding=ROUND_HALF_UP
-                )
-                out[f"{spec.key}|vat:{number_key}"] = format_money(vat)
+        amount: Decimal | None = None
+        if spec.type is FieldType.MONEY:
+            amount = parse_money(value.value)
+        elif spec.type is FieldType.ITEMS:
+            items, _problem = parse_items(value.value)
+            if items:
+                out |= _items_context(spec.key, items)
+                amount = items_total(items)
         elif spec.type is FieldType.DATE and (day := parse_date(value.value)) is not None:
             out |= _date_variants(spec.key, day)
+        if amount is None:
+            continue
+        out |= _money_variants(spec.key, amount)
+        for number_key, number in numbers.items():
+            if number > 0:
+                share = (amount / number).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                out[f"{spec.key}|per:{number_key}"] = format_money(share)
+            # НДС в том числе по ставке из целого поля: 120 000 при 20% — 20 000,00.
+            vat = (amount * number / (100 + number)).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            out[f"{spec.key}|vat:{number_key}"] = format_money(vat)
     return out
+
+
+def _repeat_row(line: str, context: Mapping[str, str]) -> list[str]:
+    """Строка позиций текстом: копия на позицию. Значение документа в ней
+    (не столбец позиции) печатается в первой копии, как объединённая ячейка."""
+    key = row_key(line)
+    if key is None:
+        return [line]
+    rows = []
+    for index in range(1, row_count(context, key) + 1):
+
+        def indexed(match: re.Match[str], index: int = index) -> str:
+            if row_column(match) is not None:
+                return row_marker(match, index)
+            return match.group(0) if index == 1 else ""
+
+        rows.append(MARKER.sub(indexed, line))
+    return rows
+
+
+def _fill_line(line: str, context: Mapping[str, str], blank: str) -> str | None:
+    """Строка с подставленными значениями или ``None``, если её не печатать:
+    выпал условный кусок, и в строке не осталось ни одного значения — только
+    подпись («Адрес: »), которой нечего подписывать."""
+    dropped = False
+    for start, end, keep in reversed(conditional_spans(line, context)):
+        inner = line[start + 2 : end - 2] if keep else ""
+        dropped = dropped or not keep
+        line = line[:start] + inner + line[end:]
+    if dropped and not MARKER.search(line):
+        return None
+    if dropped and (separator := LEADING_SEPARATOR.match(line)) is not None:
+        line = separator.group(1) + line[separator.end() :]
+    return MARKER.sub(lambda m: marker_value(m, context, blank), line)
 
 
 def fill_text_template(body: str, context: Mapping[str, str], *, blank: str = BLANK) -> str:
@@ -531,7 +837,14 @@ def fill_text_template(body: str, context: Mapping[str, str], *, blank: str = BL
 
     Пустое поле остаётся видимой прочерк-строкой, а не исчезает: документ с
     молча пропавшим реквизитом выглядит готовым и уходит контрагенту таким.
+    Исчезает только необязательное, взятое в условный кусок ``[[…]]``.
     Синтаксис маркера совпадает с DOCX-шаблонами, чтобы тело одного шаблона
     можно было перенести в файл без правки текста.
     """
-    return MARKER.sub(lambda m: context.get(marker_name(m)) or blank, body)
+    lines: list[str] = []
+    for line in body.split("\n"):
+        for row in _repeat_row(line, context):
+            filled = _fill_line(row, context, blank)
+            if filled is not None:
+                lines.append(filled)
+    return "\n".join(lines)

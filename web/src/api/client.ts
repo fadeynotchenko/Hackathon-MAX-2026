@@ -60,6 +60,14 @@ export interface ApiClientOptions {
   onSessionLost?: () => void;
 }
 
+export interface PreviewSource {
+  kind: 'template' | 'document';
+  id: number;
+}
+
+// thumb — карточка каталога, page — лист во весь экран.
+export type PreviewSize = 'thumb' | 'page';
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -91,8 +99,33 @@ export class ApiClient {
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    const response = await this.send(path, options, 'application/json');
+    if (response.status === 204) return undefined as T;
+    return (await response.json()) as T;
+  }
+
+  // Картинка страницы (предпросмотр листом): запрос с Bearer, поэтому <img src>
+  // напрямую не годится — отдаём Blob, а число страниц берём из заголовка.
+  async previewPage(
+    source: PreviewSource,
+    page: number,
+    size: PreviewSize,
+  ): Promise<{ image: Blob; pages: number }> {
+    const base = source.kind === 'template' ? 'templates' : 'documents';
+    const response = await this.send(
+      `/api/v1/${base}/${source.id}/preview?page=${page}&size=${size}`,
+      {},
+      'image/jpeg',
+    );
+    return {
+      image: await response.blob(),
+      pages: Number(response.headers.get('X-Page-Count')) || 1,
+    };
+  }
+
+  private async send(path: string, options: RequestOptions, accept: string): Promise<Response> {
     const { method = 'GET', body, file, auth = true, retryOn401 = true } = options;
-    const headers: Record<string, string> = { Accept: 'application/json' };
+    const headers: Record<string, string> = { Accept: accept };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (file !== undefined) headers['Content-Type'] = file.type || 'application/octet-stream';
     if (auth && this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
@@ -106,11 +139,10 @@ export class ApiClient {
     });
 
     if (response.status === 401 && auth && retryOn401 && (await this.refresh())) {
-      return this.request<T>(path, { ...options, retryOn401: false });
+      return this.send(path, { ...options, retryOn401: false }, accept);
     }
     if (!response.ok) throw await this.toError(response);
-    if (response.status === 204) return undefined as T;
-    return (await response.json()) as T;
+    return response;
   }
 
   // Один refresh на все параллельные 401: второй вызов ждёт первый.

@@ -48,6 +48,13 @@ interface Party {
   email: string;
 }
 
+interface MockItem {
+  name: string;
+  quantity: number;
+  unit: string;
+  price: number;
+}
+
 interface Project {
   title: string;
   // «Оказание услуг по …» — дательный падеж для предмета договора.
@@ -243,7 +250,11 @@ const GENERIC_LINES = [
 
 // Пределы длины сервера (normalize): max_length поля, иначе по типу. «0» там
 // тоже значит «не задан» — Python читает его как ложь.
-const TYPE_LIMIT: Partial<Record<FieldType, number>> = { multiline: 5000, email: 254 };
+const TYPE_LIMIT: Partial<Record<FieldType, number>> = {
+  multiline: 5000,
+  email: 254,
+  items: 50_000,
+};
 const TEXT_LIMIT = 1000;
 
 // --- случайность ---------------------------------------------------------
@@ -607,6 +618,8 @@ function textKind(field: FieldSpec): TextKind | undefined {
 // Не длиннее предела сервера: у длинного текста сначала отпадают строки, потом
 // слова; обрезанное значение по-прежнему непустое.
 function fit(field: FieldSpec, value: string): string {
+  // Позиции — JSON: обрезанный посередине список сервер не прочтёт.
+  if (field.type === 'items') return value;
   const limit = field.max_length || TYPE_LIMIT[field.type] || TEXT_LIMIT;
   const length = (text: string) => [...text].length;
   if (limit <= 0 || length(value) <= limit) return value;
@@ -634,10 +647,24 @@ function generator(fields: readonly FieldSpec[], random: Random, today: Date) {
     )?.key;
   let project: Project | undefined;
   let total: number | undefined;
+  let lines: MockItem[] | undefined;
+  // Есть таблица позиций — итог документа и НДС считаются из неё, как на сервере.
+  const withItems = fields.some((field) => field.type === 'items');
 
   const amount = () => int(random, 10, 500) * 1000;
-  const totalAmount = () => (total ??= amount());
   const theProject = () => (project ??= pick(random, PROJECTS));
+  // Цена кратна 500 ₽, количество — от 1 до 5: итог круглый, НДС сходится с ним.
+  const theItems = (): MockItem[] =>
+    (lines ??= sample(random, theProject().items, int(random, 1, 4)).map((name) => ({
+      name,
+      quantity: int(random, 1, 5),
+      unit: pick(random, ['усл.', 'шт.', 'ч']),
+      price: int(random, 1, 100) * 500,
+    })));
+  const totalAmount = () =>
+    (total ??= withItems
+      ? theItems().reduce((sum, item) => sum + item.quantity * item.price, 0)
+      : amount());
 
   const party = (name: Side): Party => {
     const known = parties.get(name);
@@ -851,6 +878,15 @@ function generator(fields: readonly FieldSpec[], random: Random, today: Date) {
         return sideParty(field).person;
       case 'address':
         return sideParty(field).address;
+      case 'items':
+        return JSON.stringify(
+          theItems().map((item) => ({
+            name: item.name,
+            quantity: String(item.quantity),
+            unit: item.unit,
+            price: String(item.price),
+          })),
+        );
       default:
         return text(field);
     }

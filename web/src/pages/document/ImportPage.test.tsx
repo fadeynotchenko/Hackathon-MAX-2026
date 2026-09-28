@@ -65,8 +65,11 @@ describe('importNotice', () => {
 
   it('passes the PDF warning through', () => {
     const notice = importNotice(
-      imported({ format: 'pdf', notice: 'Из PDF переносится только текст' }),
+      imported({ format: 'pdf', notice: 'Помощник выключен — отметьте места для данных сами' }),
     );
-    expect(notice).toMatchObject({ tone: 'info', text: 'Из PDF переносится только текст' });
+    expect(notice).toMatchObject({
+      tone: 'info',
+      text: 'Помощник выключен — отметьте места для данных сами',
+    });
   });
 });

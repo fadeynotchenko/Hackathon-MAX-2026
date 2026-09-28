@@ -250,7 +250,7 @@ function TemplateEditor({ title, initial, templateId, onBack }: TemplateEditorPr
             aria-expanded={picking}
             onClick={() => setPicking(!picking)}
           >
-            {picking ? 'Готово' : 'Вставить поле'}
+            {picking ? 'Скрыть поля' : 'Вставить поле в текст'}
           </Button>
           {picking ? <FieldPicker onInsert={insert} /> : null}
         </div>

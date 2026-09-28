@@ -360,17 +360,32 @@ body {
   gap: var(--spacing-size-m);
 }
 
+.picker__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-xs);
+}
+
+.picker__done {
+  padding: var(--spacing-size-m) var(--spacing-size-l);
+  border-radius: var(--spacing-size-m);
+  background: var(--background-tertiary);
+  color: var(--text-positive, var(--text-primary));
+}
+
 .template-field {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-size-m);
+  gap: var(--spacing-size-l);
+  padding: var(--spacing-size2xl);
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--background-card);
 }
 
-.template-field__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-size-m);
+/* Поля — карточками с воздухом между ними: сплошной колонкой переключатели и
+   кнопки разных полей читались как одно. */
+.fields:has(> .template-field) {
+  gap: var(--spacing-size-xl);
 }
 
 .template-field__titles {
@@ -381,26 +396,24 @@ body {
   overflow-wrap: anywhere;
 }
 
-.template-field__places {
+.template-field__place {
+  padding: var(--spacing-size-m) var(--spacing-size-l);
+  border-radius: var(--spacing-size-m);
+  background: var(--background-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.template-field__actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-size-m);
 }
 
-.template-field__places > :first-child {
-  min-width: 0;
-}
-
-.template-field__places > button {
-  flex: none;
-}
-
 .template-field__required {
   display: flex;
   align-items: center;
-  gap: var(--spacing-size-s);
-  flex: none;
+  gap: var(--spacing-size-m);
   cursor: pointer;
 }
 
@@ -447,6 +460,34 @@ body {
 
 /* Миниатюра — верх листа: бланки заполнены сверху, пустой низ А4 только
    растягивал карточку каталога. */
+/* Лист картинкой (SheetPreview): страницы PDF одна под другой, как в
+   просмотрщике; у миниатюры — верх первой страницы в квадрате карточки. */
+.sheet--image {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-l);
+}
+
+.sheet__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.06),
+    0 2px 12px rgb(0 0 0 / 0.12);
+  user-select: none;
+}
+
+.sheet--mini .sheet__image {
+  aspect-ratio: 1;
+  object-fit: cover;
+  object-position: top;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08);
+  pointer-events: none;
+}
+
 .sheet--mini .sheet__page {
   --sheet-font: 2.9cqw;
   aspect-ratio: 1;

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,8 +100,15 @@ async def test_document_flow_from_requisites_to_preview(
             "values": {
                 "number": {"value": "17"},
                 "date": {"value": "23.09.2026"},
-                "item": {"value": "Разработка мини-приложения MAX"},
-                "total": {"value": "450 000"},
+                "items": {
+                    "value": json.dumps(
+                        [
+                            {"name": "Разработка мини-приложения MAX", "price": "400 000"},
+                            {"name": "Сопровождение", "quantity": "2", "price": "25000"},
+                        ],
+                        ensure_ascii=False,
+                    )
+                },
             },
             "title": "Счёт № 17",
         },
@@ -108,8 +117,11 @@ async def test_document_flow_from_requisites_to_preview(
     body = filled.json()
     assert body["ready"] is True and body["status"] == "ready"
     assert body["title"] == "Счёт № 17"
-    assert "450 000,00" in body["preview"]
-    assert "ПАО Сбербанк" in body["preview"]
+    # Разряды суммы — неразрывным пробелом, как в format_money.
+    preview = body["preview"].replace("\u00a0", " ")
+    assert "2 Сопровождение 2 25 000,00 50 000,00" in " ".join(preview.split()), preview
+    assert "Всего наименований 2, на сумму 450 000,00 руб." in preview
+    assert "ПАО Сбербанк" in preview
 
     history = await client.get("/api/v1/documents", headers=headers)
     assert [item["title"] for item in history.json()] == ["Счёт № 17"]

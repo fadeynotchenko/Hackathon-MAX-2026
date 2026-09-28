@@ -163,7 +163,12 @@ class TemplateImportSchema(BaseModel):
 class FieldValueSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    value: str
+    value: str = Field(
+        description=(
+            "Значение строкой; у поля типа items — JSON-список позиций"
+            ' [{"name", "quantity", "unit", "price"}]'
+        )
+    )
     source: ValueSource = ValueSource.MANUAL
     confidence: float | None = Field(default=None, ge=0, le=1)
     confirmed: bool = True

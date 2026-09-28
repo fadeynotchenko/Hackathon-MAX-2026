@@ -1,0 +1,88 @@
+/* Позиции счёта в форме (components/ItemsInput.tsx): каждая позиция — своя
+   карточка: заголовок с номером и удалением, наименование во всю ширину, под
+   ним три числа с подписями и сумма строки. Раньше наименование делило строку
+   с кнопкой и обрезалось, а числа без подписей было не различить. */
+.items__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-l);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.items__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-m);
+  padding: var(--spacing-size-l) var(--spacing-size-l) var(--spacing-size-xl);
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--background-tertiary);
+}
+
+.items__row .field__box {
+  background: var(--background-primary);
+}
+
+.items__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
+
+.items__remove {
+  display: inline-flex;
+  flex: none;
+  padding: var(--spacing-size-s);
+  margin: calc(-1 * var(--spacing-size-s));
+  border: 0;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.items__numbers {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: var(--spacing-size-m);
+}
+
+.items__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-xs);
+  min-width: 0;
+}
+
+.items__amount {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: var(--spacing-size-s);
+}
+
+.items__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-size-s);
+  width: 100%;
+  margin-top: var(--spacing-size-l);
+  padding: var(--spacing-size-l);
+  border: 1px dashed var(--stroke-secondary, rgb(127 127 127 / 40%));
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: none;
+  color: var(--text-themed, var(--text-primary));
+  font: inherit;
+  cursor: pointer;
+}
+
+.items__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: var(--spacing-size-l);
+  padding-top: var(--spacing-size-l);
+  border-top: 1px solid var(--stroke-secondary, rgb(127 127 127 / 25%));
+}

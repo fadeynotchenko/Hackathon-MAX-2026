@@ -9,6 +9,8 @@ import type {
   ValueSource,
 } from '@/api/client';
 
+import { parseItems } from './items';
+
 const DATE = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 const DATE_SHORT = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
 const TIME = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -58,8 +60,19 @@ export function formatMoney(raw: string): string {
     .replace(/\s/g, ' ');
 }
 
-// Значение из API → строка для показа: сумма и дата по-русски.
+// Позиции строками для экрана проверки: «1. Разработка сайта — 2 усл. × 1 500 ₽».
+export function itemsSummary(raw: string): string {
+  return parseItems(raw)
+    .map((row, index) => {
+      const unit = row.unit ? ` ${row.unit}` : '';
+      return `${index + 1}. ${row.name} — ${row.quantity || '1'}${unit} × ${formatMoney(row.price)} ₽`;
+    })
+    .join('\n');
+}
+
+// Значение из API → строка для показа: сумма и дата по-русски, позиции — списком.
 export function displayValue(type: FieldType, raw: string): string {
+  if (type === 'items') return itemsSummary(raw);
   if (type === 'date') {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
     return match ? `${match[3]}.${match[2]}.${match[1]}` : raw;
@@ -85,6 +98,7 @@ export function inputKind(type: FieldType): InputKind {
     // Адрес в одну строку на телефоне не перечитать: видно только начало.
     case 'address':
     case 'multiline':
+    case 'items':
       return { type: 'text', multiline: true };
     case 'email':
       return { type: 'email', inputMode: 'email' };
@@ -116,9 +130,10 @@ export const SOURCE_LABEL: Record<ValueSource, string> = {
   file: 'Из файла',
 };
 
-// Группы полей шаблона → разделы формы. Порядок — как в сценарии: кому,
-// что и на каких условиях, затем свои реквизиты (обычно уже из профиля).
-export const GROUP_ORDER = ['Клиент', 'Предмет', 'Продавец'] as const;
+// Группы полей шаблона → разделы формы. Сначала стороны — от кого и кому, —
+// потом условия: так документ заполняют владельцы, стороны определяют, какие
+// условия вообще писать.
+export const GROUP_ORDER = ['Продавец', 'Клиент', 'Предмет'] as const;
 export const GROUP_TITLE: Record<string, string> = {
   Клиент: 'Клиент',
   Предмет: 'Условия',

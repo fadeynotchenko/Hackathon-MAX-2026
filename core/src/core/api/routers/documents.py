@@ -6,6 +6,13 @@ from urllib.parse import quote
 from fastapi import APIRouter, Query, Request, Response, status
 
 from core.api.dependencies import CurrentUserDep, RedisDep, SessionDep, StateDep
+from core.api.previews import (
+    PREVIEW_RESPONSES,
+    PageQuery,
+    PreviewSize,
+    SizeQuery,
+    preview_response,
+)
 from core.api.schemas.common import ErrorResponse, IdPath, OkResponse
 from core.api.schemas.documents import (
     ConfirmFieldsRequest,
@@ -33,6 +40,7 @@ from core.usecases.documents import (
     create_draft,
     delete_document,
     document_history,
+    document_preview,
     get_document,
     list_document_files,
     list_documents,
@@ -249,6 +257,32 @@ async def render(
         cfg=state.files_config,
     )
     return DocumentFileSchema.model_validate(file)
+
+
+@router.get(
+    "/{document_id}/preview",
+    response_class=Response,
+    responses=PREVIEW_RESPONSES,
+    operation_id="document_preview",
+    summary="Документ картинкой страницы, как в PDF",
+)
+async def preview(
+    document_id: IdPath,
+    current: CurrentUserDep,
+    session: SessionDep,
+    state: StateDep,
+    page: int = PageQuery,
+    size: PreviewSize = SizeQuery,
+) -> Response:
+    found = await document_preview(
+        session,
+        user_id=current.id,
+        document_id=document_id,
+        page=page,
+        size=size,
+        cfg=state.files_config,
+    )
+    return preview_response(found)
 
 
 @router.get(

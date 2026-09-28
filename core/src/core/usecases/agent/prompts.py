@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from core.domain.calendar import local_day
-from core.domain.documents import FieldSpec, FieldValue, render_context
+from core.domain.documents import FieldSpec, FieldType, FieldValue, render_context
 from core.usecases.documents import DocumentView
 
 FILL_INSTRUCTIONS = """Ты помощник, который заполняет поля делового документа по сообщению владельца бизнеса.
@@ -25,6 +25,7 @@ FILL_INSTRUCTIONS = """Ты помощник, который заполняет 
 - Срок в днях для поля-даты («оплата в течение 5 дней», «поменяй срок на 10 дней») — это дата: сегодняшняя плюс столько дней. Для поля, где срок указан в днях, пиши просто число.
 - Если пользователь просит изменить уже заполненное поле, верни новое значение этого поля.
 - «Уже заполнено» — только для справки: эти значения не повторяй и другие поля из них не выводи. Всё, что названо в сообщении, заполняй.
+- Поле-список позиций (тип items) — таблица счёта: каждая позиция — наименование (name), количество (quantity, по умолчанию 1), единица (unit: шт., усл., ч) и цена за единицу (price). «Счёт на 120 000 за разработку сайта» — одна позиция с ценой 120000. Просят добавить или поменять позицию — верни весь список целиком, вместе с уже записанными позициями.
 - Значения без названий полей — столбиком или через запятую — это ответы на поля из списка «Ещё не заполнено», строго по порядку. Строку, которая не подходит полю по смыслу, пропусти."""
 
 ASK_INSTRUCTIONS = """Ты помощник по подготовке деловых документов в мессенджере MAX.
@@ -70,12 +71,17 @@ def fill_instructions(now: datetime | None = None) -> str:
     return FILL_INSTRUCTIONS.format(today=f"{local_day(now or datetime.now(UTC)):%d.%m.%Y}")
 
 
+# Как записывать значение списка позиций, когда ответ — строка (распознавание).
+ITEMS_FORMAT = 'список позиций, JSON-массив [{"name", "quantity", "unit", "price"}]'
+
+
 def describe_fields(fields: tuple[FieldSpec, ...]) -> str:
     lines = []
     for spec in fields:
         hint = f" ({spec.hint})" if spec.hint else ""
         required = "обязательное" if spec.required else "необязательное"
-        lines.append(f"- {spec.key}: {spec.label}, {required}{hint}")
+        kind = f", {ITEMS_FORMAT}" if spec.type is FieldType.ITEMS else ""
+        lines.append(f"- {spec.key}: {spec.label}, {required}{kind}{hint}")
     return "\n".join(lines)
 
 
@@ -101,11 +107,32 @@ def describe_document(document: DocumentView) -> str:
     )
 
 
+ITEM_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "Наименование товара, работы или услуги"},
+        "quantity": {"type": "string", "description": "Количество числом"},
+        "unit": {"type": "string", "description": "Единица: шт., усл., ч"},
+        "price": {"type": "string", "description": "Цена за единицу числом"},
+    },
+    "required": ["name", "quantity", "unit", "price"],
+    "additionalProperties": False,
+}
+
+
+def _field_schema(spec: FieldSpec) -> dict[str, object]:
+    if spec.type is FieldType.ITEMS:
+        return {"type": "array", "description": spec.label, "items": ITEM_SCHEMA}
+    return {"type": "string", "description": spec.label}
+
+
 def fields_schema(fields: tuple[FieldSpec, ...]) -> dict[str, object]:
-    """JSON-схема ответа: одно строковое свойство на поле шаблона и ничего сверх."""
+    """JSON-схема ответа: свойство на поле шаблона и ничего сверх. Строка —
+    у всех полей, кроме списка позиций: его модель отдаёт массивом объектов,
+    строкой с JSON она ошибалась бы в кавычках."""
     return {
         "type": "object",
-        "properties": {spec.key: {"type": "string", "description": spec.label} for spec in fields},
+        "properties": {spec.key: _field_schema(spec) for spec in fields},
         "additionalProperties": False,
     }
 

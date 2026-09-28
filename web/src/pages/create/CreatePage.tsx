@@ -8,16 +8,17 @@ import { CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useNavigate } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
-import { IconEdit, IconPlus, IconUpload } from '@/components/icons';
+import { IconEdit, IconPlus } from '@/components/icons';
 import { FilterChips } from '@/components/FilterChips';
 import { Page, Section } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
-import { DocPreview } from '@/components/DocPreview';
+import { SheetPreview } from '@/components/SheetPreview';
 import { useAuth } from '@/auth/context';
 import { asKind, kindStyle } from '@/lib/format';
 import { matchesQuery, needsSearch } from '@/lib/search';
 import { useScreenState } from '@/lib/screenMemory';
+import { templateVersion } from '@/lib/templateVersion';
 import { useAsync } from '@/lib/useAsync';
 import { haptic } from '@/max/webapp';
 
@@ -54,26 +55,18 @@ export function CreatePage() {
   return (
     <Page title="Новый документ" tabs>
       <CellList mode="island" filled header={<CellHeader>Свой шаблон</CellHeader>}>
+        {/* Один вход вместо «Из файла» и «Написать текст»: выбор между ними —
+            уже на экране шаблона, где видно, чем они отличаются. */}
         <CellSimple
-          title="Из файла"
-          subtitle="DOCX или PDF"
-          before={
-            <span className="themed-icon">
-              <IconUpload />
-            </span>
-          }
-          showChevron
-          onClick={() => navigate('/templates/upload')}
-        />
-        <CellSimple
-          title="Написать текст"
+          title="Сделать свой шаблон"
+          subtitle="Из своего файла или текстом"
           before={
             <span className="themed-icon">
               <IconPlus />
             </span>
           }
           showChevron
-          onClick={() => navigate('/templates/new')}
+          onClick={() => navigate('/templates/upload')}
         />
       </CellList>
 
@@ -99,7 +92,16 @@ export function CreatePage() {
       ) : null}
       {templates.loading ? <Loading /> : null}
       {templates.error ? <ErrorState message={templates.error} onRetry={templates.reload} /> : null}
-      {all.length > 0 && visible.length === 0 ? <EmptyState title="Ничего не нашлось" /> : null}
+      {all.length > 0 && visible.length === 0 ? (
+        tag === OWN_TAG && !query.trim() ? (
+          <EmptyState
+            title="Своих шаблонов пока нет"
+            text="Сделайте его из файла или текста — «Свой шаблон» вверху экрана."
+          />
+        ) : (
+          <EmptyState title="Ничего не нашлось" />
+        )
+      ) : null}
       {/* Заголовок и у единственной сетки: «Стандартные» под «Своим шаблоном»
           говорит, что это общие бланки, а свой делается выше. */}
       {catalogSections(visible, all).map(([title, list]) => (
@@ -128,7 +130,13 @@ function TemplateGrid({
           className="template-card"
           onClick={() => onOpen(template)}
         >
-          <DocPreview text={template.preview} marks={false} mini />
+          <SheetPreview
+            source={{ kind: 'template', id: template.id }}
+            version={templateVersion(template)}
+            text={template.preview}
+            marks={false}
+            mini
+          />
           <Typography.Text variant="detail-strong">{template.title}</Typography.Text>
         </button>
       ))}

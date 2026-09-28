@@ -1,4 +1,9 @@
-"""Счета: стандартный (банк получателя и сумма прописью), на товар и с НДС по ставке."""
+"""Счета: стандартный (банк получателя и сумма прописью), на товар и с НДС по ставке.
+
+Строк в таблице счёта сколько угодно (поле ``items``): итог, «Всего наименований»
+и сумма прописью считаются из позиций. Прошлая редакция — одно наименование и
+сумма на всё (``item`` + ``total``) — осталась у документов, сделанных до неё,
+а копия такого счёта переносит его строку в позиции (``legacy_items``)."""
 
 from __future__ import annotations
 
@@ -8,8 +13,8 @@ from ._common import (
     BuiltinTemplate,
     client,
     date,
+    items,
     number,
-    quantity,
     seller,
     signer_position,
     subject,
@@ -42,7 +47,6 @@ _SIGNERS = (
         hint="Если его нет — оставьте пустым",
     ),
 )
-_TOTAL = subject("total", "Сумма к оплате", FieldType.MONEY)
 _VAT_TEXT = subject(
     "vat",
     "НДС",
@@ -53,7 +57,7 @@ _VAT_TEXT = subject(
 )
 
 
-def _invoice_fields(*, item_label: str, unit: str, position: bool = True) -> tuple:
+def _invoice_fields(*, unit: str, position: bool = True) -> tuple:
     return (
         number("Номер счёта"),
         date("Дата счёта"),
@@ -61,9 +65,7 @@ def _invoice_fields(*, item_label: str, unit: str, position: bool = True) -> tup
         *_BANK,
         *_CLIENT,
         client("address", "Адрес клиента", FieldType.ADDRESS, required=False),
-        subject("item", item_label, FieldType.MULTILINE),
-        *quantity(unit=unit),
-        _TOTAL,
+        items(unit=unit),
         _VAT_TEXT,
         *((signer_position(),) if position else ()),
         *_SIGNERS,
@@ -74,9 +76,9 @@ INVOICE = BuiltinTemplate(
     slug="invoice",
     title="Счёт на оплату",
     kind="invoice",
-    description="Счёт с банком получателя, позицией, НДС и суммой прописью.",
+    description="Счёт с банком получателя, позициями, НДС и суммой прописью.",
     blank="invoice.docx",
-    fields=_invoice_fields(item_label="Наименование работ или услуг", unit="усл."),
+    fields=_invoice_fields(unit="усл."),
 )
 
 INVOICE_GOODS = BuiltinTemplate(
@@ -87,7 +89,7 @@ INVOICE_GOODS = BuiltinTemplate(
     blank="invoice-goods.docx",
     fields=(
         # Подписи в образце — одной строкой, без должности.
-        *_invoice_fields(item_label="Товар", unit="шт.", position=False),
+        *_invoice_fields(unit="шт.", position=False),
         subject(
             "payment_note",
             "Условия отпуска товара",
@@ -127,9 +129,7 @@ INVOICE_VAT = BuiltinTemplate(
             required=False,
             hint="Договор поставки от 01.08.2026 № 17",
         ),
-        subject("item", "Товар или услуга", FieldType.MULTILINE),
-        *quantity(),
-        _TOTAL,
+        items(),
         vat_rate(),
         *_SIGNERS,
     ),

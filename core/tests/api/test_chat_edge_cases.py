@@ -336,17 +336,17 @@ async def test_repeating_the_same_value_says_nothing_changed(
     llm = FakeLLM(
         json_replies=[
             {"intent": "new", "template": "invoice"},
-            {"total": "120 000"},
+            {"items": [{"name": "Сайт", "quantity": "1", "unit": "", "price": "120 000"}]},
             {"intent": "fill", "template": ""},
-            {"total": "120000"},
+            {"items": [{"name": "Сайт", "quantity": "1", "unit": "", "price": "120000"}]},
         ]
     )
     handlers = _handlers(redis, llm=llm)
-    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт на 120 000"), "evt-1"))
-    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Сумма 120000"), "evt-2"))
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт на 120 000 за сайт"), "evt-1"))
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Сайт 120000"), "evt-2"))
 
     reply = (await _replies(redis))[-1]
-    assert "Ничего не поменял — в документе уже так: сумма к оплате." in reply.text
+    assert "Ничего не поменял — в документе уже так: позиции." in reply.text
     assert "не нашёл значений" not in reply.text
 
 
@@ -358,18 +358,18 @@ async def test_rejected_edit_is_not_reported_as_written(
     llm = FakeLLM(
         json_replies=[
             {"intent": "new", "template": "invoice"},
-            {"total": "120 000"},
+            {"items": [{"name": "Сайт", "quantity": "1", "unit": "", "price": "120 000"}]},
             {"intent": "fill", "template": ""},
-            {"total": "сто пятьдесят"},
+            {"items": [{"name": "Сайт", "quantity": "1", "unit": "", "price": "сто пятьдесят"}]},
         ]
     )
     handlers = _handlers(redis, llm=llm)
-    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт на 120 000"), "evt-1"))
-    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("сумма сто пятьдесят"), "evt-2"))
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт на 120 000 за сайт"), "evt-1"))
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("сайт за сто пятьдесят"), "evt-2"))
 
     reply = (await _replies(redis))[-1]
-    assert "❗ <b>Не записал:</b>\n• «Сумма к оплате»: не похоже на сумму" in reply.text
-    assert "• Сумма к оплате" not in reply.text, "прежняя сумма осталась, но это не запись"
+    assert "❗ <b>Не записал:</b>\n• «Позиции»: цена позиции 1 не похожа на сумму" in reply.text
+    assert "• Позиции" not in reply.text, "прежние позиции остались, но это не запись"
     assert "не нашёл значений" not in reply.text
 
 

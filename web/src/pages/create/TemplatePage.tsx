@@ -13,8 +13,9 @@ import { Banner } from '@/components/Banner';
 import { IconCopy, IconEdit, IconTrash } from '@/components/icons';
 import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
-import { DocPreview } from '@/components/DocPreview';
+import { SheetPreview } from '@/components/SheetPreview';
 import { useAuth } from '@/auth/context';
+import { templateVersion } from '@/lib/templateVersion';
 import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 
@@ -92,22 +93,13 @@ export function TemplatePage() {
         </div>
       ) : null}
       <div className="section">
-        <DocPreview text={template.preview} marks={false} />
+        <SheetPreview
+          source={{ kind: 'template', id: template.id }}
+          version={templateVersion(template)}
+          text={template.preview}
+          marks={false}
+        />
       </div>
-      {template.file ? (
-        <div className="section">
-          <Banner
-            tone="info"
-            title={
-              template.is_builtin
-                ? 'Выше — только текст документа'
-                : `Выше — только текст «${template.file.filename}»`
-            }
-          >
-            Готовый PDF и DOCX будут оформлены как настоящий бланк: с таблицами, линиями и шрифтами.
-          </Banner>
-        </div>
-      ) : null}
       <TemplateActions template={template} onGone={back} />
     </Page>
   );

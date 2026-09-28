@@ -28,11 +28,12 @@ FROM base AS runtime
 # Liberation, Carlito и Caladea метрически совпадают с Times New Roman, Arial,
 # Courier New, Calibri и Cambria, которыми свёрстаны бланки и образцы клиентов:
 # без них LibreOffice подставил бы DejaVu, и PDF переносил бы строки иначе, чем DOCX.
+# poppler-utils (pdftoppm) рисует страницы PDF картинками для предпросмотра листом.
 ARG WITH_PDF=false
 RUN if [ "$WITH_PDF" = "true" ]; then \
       apt-get update && apt-get install -y --no-install-recommends \
         libreoffice-writer-nogui fonts-dejavu fonts-liberation \
-        fonts-crosextra-carlito fonts-crosextra-caladea \
+        fonts-crosextra-carlito fonts-crosextra-caladea poppler-utils \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 RUN uv sync --frozen --no-dev --no-install-project

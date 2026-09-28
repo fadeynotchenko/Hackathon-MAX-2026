@@ -34,9 +34,17 @@ export interface ScreenActivity {
   // Сколько раз на экран вернулись; смена — повод тихо обновить данные,
   // которые мог поменять экран выше.
   returns: number;
+  // Под экраном в стеке есть другой: «Назад» — шаг по истории. Нет — экран
+  // открыт первым (ссылкой из бота, кнопкой open_app), и шаг по истории увёл
+  // бы в никуда: ключ записи после замены корня уже не «default».
+  canGoBack: boolean;
 }
 
-export const ScreenContext = createContext<ScreenActivity>({ active: true, returns: 0 });
+export const ScreenContext = createContext<ScreenActivity>({
+  active: true,
+  returns: 0,
+  canGoBack: false,
+});
 
 export function useScreenActivity(): ScreenActivity {
   return useContext(ScreenContext);

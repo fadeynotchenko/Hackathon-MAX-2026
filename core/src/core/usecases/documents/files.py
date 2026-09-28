@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -23,7 +24,7 @@ from core.db.repositories import (
     DownloadTokenRepository,
     TemplateFileRepository,
 )
-from core.domain.documents import BLANK, fill_context
+from core.domain.documents import BLANK, FieldValue, fill_context
 from core.domain.exceptions import AppError, ConflictError, NotFoundError
 from core.events import DocumentReady, EventBus
 from core.files import (
@@ -34,9 +35,11 @@ from core.files import (
     build_docx,
     convert_to_pdf,
     fill_docx,
+    fill_pdf,
 )
 from core.usecases.documents.drafts import DocumentView, document_name, get_document
 from core.usecases.documents.journal import Fact, record
+from core.usecases.documents.templates import TemplateView
 
 DOCX = "docx"
 PDF = "pdf"
@@ -99,21 +102,52 @@ async def list_document_files(
     return [to_view(row, current_source=current) for row in rows]
 
 
-async def _build_docx(session: AsyncSession, document: DocumentView) -> bytes:
-    """DOCX документа: из текста шаблона или в копии файла-образца компании."""
-    template = document.template
+async def template_docx(
+    session: AsyncSession,
+    template: TemplateView,
+    values: Mapping[str, FieldValue],
+    *,
+    title: str,
+    text: str,
+) -> bytes:
+    """DOCX по шаблону. У образца-PDF DOCX в его оформлении не собрать —
+    тогда DOCX текстовый, а оформление остаётся за PDF."""
+    source, is_pdf = await template_source(session, template, values, title=title, text=text)
+    return build_docx(title, text) if is_pdf else source
+
+
+async def template_source(
+    session: AsyncSession,
+    template: TemplateView,
+    values: Mapping[str, FieldValue],
+    *,
+    title: str,
+    text: str,
+) -> tuple[bytes, bool]:
+    """Файл документа в оформлении образца и признак «это уже PDF»: из текста
+    шаблона или копии DOCX-образца — DOCX, из PDF-образца — сам PDF с новыми
+    значениями на листе. Без значений — пустой бланк, как в каталоге."""
     if template.file is None:
-        return build_docx(document.title, document.preview)
+        return build_docx(title, text), False
     source = await TemplateFileRepository(session).data(template.file.id)
     if source is None:
         raise NotFoundError("Файл-образец шаблона не найден", code="template.file_not_found")
+    context = fill_context(template.fields, values)
     try:
+        if source.startswith(b"%PDF"):
+            # Пустое обязательное — линия, как в DOCX; пустое необязательное
+            # просто закрыто: в исходном PDF на его месте стоял текст образца.
+            filled = {
+                spec.key: context.get(spec.key) or (BLANK if spec.required else "")
+                for spec in template.fields
+            }
+            return fill_pdf(source, places=template.places, values=filled), True
         return fill_docx(
             source,
             places=template.places,
-            context=fill_context(template.fields, document.values),
+            context=context,
             blank=BLANK,
-        )
+        ), False
     except TemplateFileError as exc:
         raise AppError(
             "Файл-образец шаблона не открылся — загрузите его заново",
@@ -137,11 +171,19 @@ async def render_document(
         )
 
     started = time.monotonic()
-    docx_bytes = await _build_docx(session, document)
-    if fmt == PDF:
+    source, is_pdf = await template_source(
+        session,
+        document.template,
+        document.values,
+        title=document.title,
+        text=document.preview,
+    )
+    if is_pdf:
+        data = source if fmt == PDF else build_docx(document.title, document.preview)
+    elif fmt == PDF:
         try:
             data = await convert_to_pdf(
-                docx_bytes,
+                source,
                 soffice_bin=cfg.soffice_bin,
                 timeout_seconds=cfg.pdf_timeout_seconds,
             )
@@ -153,7 +195,7 @@ async def render_document(
                 log_message=str(exc),
             ) from exc
     else:
-        data = docx_bytes
+        data = source
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     stored = DocumentStorage(cfg.documents_dir).save(

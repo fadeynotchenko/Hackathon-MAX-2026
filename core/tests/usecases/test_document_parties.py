@@ -230,8 +230,7 @@ async def test_status_follows_the_parties(session: AsyncSession) -> None:
         document_id=draft.id,
         values={
             "number": FieldValue("17"),
-            "item": FieldValue("Разработка мини-приложения"),
-            "total": FieldValue("450 000"),
+            "items": FieldValue('[{"name": "Разработка мини-приложения", "price": "450000"}]'),
         },
     )
 

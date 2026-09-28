@@ -1,5 +1,5 @@
 import { MaxUI } from '@maxhub/max-ui';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +53,14 @@ describe('App start route', () => {
   it('opens a document by doc_<id>', async () => {
     renderApp('doc_12');
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/documents/12'));
+  });
+
+  it('goes back to the parent screen when the bot opened a screen directly', async () => {
+    renderApp('doc_12');
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/documents/12'));
+    // Истории под экраном нет: шаг назад по ней ничего бы не сделал.
+    fireEvent.click(await screen.findByRole('button', { name: 'Назад' }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/archive'));
   });
 
   it('falls back to the catalog without a start parameter', async () => {

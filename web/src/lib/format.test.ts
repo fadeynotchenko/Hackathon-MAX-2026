@@ -35,9 +35,9 @@ describe('format helpers', () => {
     expect(documentName('Счёт № 17 для Альфы', '17')).toBe('Счёт № 17 для Альфы');
   });
 
-  it('orders form sections: client, terms, own organization', () => {
+  it('orders form sections: own organization, client, then terms', () => {
     const groups = groupFields(makeTemplate().fields).map(([group]) => group);
-    expect(groups).toEqual(['Клиент', 'Предмет', 'Продавец']);
+    expect(groups).toEqual(['Продавец', 'Клиент', 'Предмет']);
   });
 
   it('describes a document by its latest sending', () => {

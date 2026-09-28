@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from core.domain.documents import (
     FieldValue,
     ValueSource,
     normalize,
+    parse_items,
 )
 from core.domain.exceptions import AppError
 from core.llm import ChatMessage, LLMClient, LLMError, LLMInputError, LLMUnavailableError
@@ -97,10 +99,22 @@ def grounded(spec: FieldSpec, value: str, message: str) -> bool:
     Даты, суммы и сроки не проверяются: «сегодня» и «200к» законно пишутся иначе."""
     if spec.type in _DIGITS_ONLY:
         return re.sub(r"\D", "", value) in re.sub(r"\D", "", message)
+    if spec.type is FieldType.ITEMS:
+        # Список опирается на сообщение, если в нём названа хоть одна позиция:
+        # прежние позиции модель возвращает вместе с новой, так и задумано.
+        items, _problem = parse_items(value)
+        return not items or bool(stems(" ".join(item.name for item in items)) & stems(message))
     if spec.type in _WORDED:
         value_stems = stems(value)
         return not value_stems or bool(value_stems & stems(message))
     return True
+
+
+def _as_text(value: object) -> str:
+    """Значение из ответа модели строкой: список позиций приходит массивом."""
+    if isinstance(value, list | dict):
+        return json.dumps(value, ensure_ascii=False) if value else ""
+    return str(value).strip()
 
 
 def require_llm(llm: LLMClient | None) -> LLMClient:
@@ -202,7 +216,7 @@ async def fill_from_message(
     proposals: dict[str, FieldValue] = {}
     unchanged: list[str] = []
     for key, value in raw.items():
-        text = str(value).strip()
+        text = _as_text(value)
         if key not in specs or not text:
             continue
         # Модель повторяет значения из «Уже заполнено»: без этой проверки реквизиты

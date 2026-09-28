@@ -40,6 +40,7 @@ import { ErrorState, Loading } from '@/components/StateViews';
 import { Steps } from '@/components/Steps';
 import { useAuth } from '@/auth/context';
 import { GROUP_TITLE, groupFields, pluralize } from '@/lib/format';
+import { useScreenActivity } from '@/lib/screenMemory';
 import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 import { hapticResult } from '@/max/webapp';
@@ -82,6 +83,19 @@ export function FillPage() {
   // Свои организации — для ячейки «От кого»: как зовут текущую и есть ли из чего
   // выбирать. Грузятся вместе с документом; ошибка списка форму не держит.
   const organizations = useAsync(() => api.organizations(), [api]);
+  // Экран способа или выбора стороны оставляет плашку и шагает назад. Форма
+  // берёт её здесь, а не у себя: по возвращении она может пересобраться из
+  // свежего документа, и своя плашка пропала бы вместе с ней.
+  const { returns } = useScreenActivity();
+  const [seenReturns, setSeenReturns] = useState(returns);
+  const [returned, setReturned] = useState<FillNotice | null>(null);
+  if (seenReturns !== returns) {
+    setSeenReturns(returns);
+    setReturned(peekNotice(documentId));
+  }
+  useEffect(() => {
+    dropNotice(documentId);
+  }, [documentId, returns]);
 
   if (!loaded.data || organizations.loading) {
     return (
@@ -95,9 +109,10 @@ export function FillPage() {
     // меняет документ на сервере, и по возвращении форма собирается заново из
     // свежей версии; вернулись без изменений — остаётся как была.
     <FillForm
-      key={`${loaded.data.id}:${loaded.data.updated_at}`}
+      key={`${loaded.data.id}:${loaded.data.updated_at}:${JSON.stringify(loaded.data.values)}`}
       loaded={loaded.data}
       organizations={organizations.data}
+      returned={returned}
       onBack={back}
     />
   );
@@ -107,10 +122,11 @@ interface FillFormProps {
   loaded: DocumentView;
   // null — список не загрузился: «От кого» берёт название из самого документа.
   organizations: Organization[] | null;
+  returned: FillNotice | null;
   onBack: () => void;
 }
 
-function FillForm({ loaded, organizations, onBack }: FillFormProps) {
+function FillForm({ loaded, organizations, returned, onBack }: FillFormProps) {
   const { api, user } = useAuth();
   const navigate = useNavigate();
   const [doc, setDoc] = useState(loaded);
@@ -124,7 +140,7 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
   // Сколько полей пусто — пока открыт вопрос «оставить пустыми?».
   const [emptyAsk, setEmptyAsk] = useState<number | null>(null);
   // Плашка, оставленная экраном способа или выбора стороны, показывается один раз.
-  const [notice, setNotice] = useState<FillNotice | null>(() => peekNotice(loaded.id));
+  const [notice, setNotice] = useState<FillNotice | null>(() => returned ?? peekNotice(loaded.id));
   const [sellerOpen, setSellerOpen] = useState(false);
   // Необязательное поле, раз показанное (есть значение или раскрыли группу),
   // не прячется обратно, даже если его стереть.
@@ -135,6 +151,14 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
   // Второй тап может прийти раньше перерисовки с busy.
   const running = useRef(false);
   const mounted = useRef(false);
+
+  // Плашка, пришедшая с возвращением на форму (FillPage): форма могла не
+  // пересобраться, если документ не поменялся.
+  const [seenReturned, setSeenReturned] = useState(returned);
+  if (seenReturned !== returned) {
+    setSeenReturned(returned);
+    if (returned) setNotice(returned);
+  }
 
   useEffect(() => {
     dropNotice(loaded.id);

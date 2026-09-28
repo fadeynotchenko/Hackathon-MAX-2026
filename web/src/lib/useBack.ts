@@ -1,17 +1,21 @@
-// «Назад» по истории, а если истории нет (мини-апп открыт ссылкой или
-// кнопкой бота прямо на этом экране) — на понятный родительский экран.
+// «Назад» по истории, если под экраном в стеке есть прежний; если экран открыт
+// первым (ссылкой или кнопкой бота прямо на нём) — на понятный родительский
+// экран. Ключ записи истории для этого не годится: мини-апп заменяет корневую
+// запись экраном из параметра запуска, и ключ уже не «default», а шаг назад
+// уводил в пустоту — системная стрелка MAX ничего не делала.
 import { useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+
+import { useScreenActivity } from './screenMemory';
 
 export function useBack(fallback: string): () => void {
   const navigate = useNavigate();
-  const location = useLocation();
-  const hasHistory = location.key !== 'default';
+  const { canGoBack } = useScreenActivity();
   return useCallback(() => {
-    if (hasHistory) {
+    if (canGoBack) {
       void navigate(-1);
     } else {
       void navigate(fallback, { replace: true });
     }
-  }, [hasHistory, navigate, fallback]);
+  }, [canGoBack, navigate, fallback]);
 }

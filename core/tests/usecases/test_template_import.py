@@ -188,7 +188,7 @@ async def test_nothing_found_leaves_places_to_the_person(session: AsyncSession) 
     assert draft.notice and "сами" in draft.notice
 
 
-async def test_pdf_becomes_a_text_template_and_scans_are_refused(session: AsyncSession) -> None:
+async def test_pdf_is_kept_as_a_sample_and_scans_are_refused(session: AsyncSession) -> None:
     user_id = await make_user(session)
     draft = await import_template_file(
         session,
@@ -198,7 +198,8 @@ async def test_pdf_becomes_a_text_template_and_scans_are_refused(session: AsyncS
         llm=None,
         max_bytes=LIMIT,
     )
-    assert (draft.format, draft.file_id, draft.kind) == ("pdf", None, "other")
+    # PDF хранится образцом, как DOCX: документ соберётся на его листе.
+    assert (draft.format, draft.kind) == ("pdf", "other") and draft.file_id is not None
     assert draft.text.startswith("Offer for ACME Corp")
 
     with pytest.raises(AppError) as scan:

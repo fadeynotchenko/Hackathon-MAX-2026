@@ -8,8 +8,8 @@
 значения правятся формой в мини-аппе или сообщением боту, проверяются теми
 же правилами, а файл собирается в копии присланного — меняются только места.
 
-Из PDF оформление не перенести, поэтому документ по PDF — текстовый; об этом
-человеку говорит ``notice``.
+PDF собирается на его же листе: значения меняются поверх исходных
+(core.files.pdf_overlay); DOCX по такому документу — текстовый.
 """
 
 from __future__ import annotations
@@ -39,7 +39,6 @@ from core.usecases.documents import (
 )
 from core.usecases.documents.requisites import CLIENT_PREFIX, SELLER_PREFIX
 
-PDF_NOTICE = "Из PDF переносится только текст — чтобы сохранить оформление, пришлите DOCX"
 _SIDES = {SELLER_PREFIX: "продавца", CLIENT_PREFIX: "клиента"}
 _CATALOG_LABELS = {
     "number": ("Номер документа", FieldType.TEXT),
@@ -152,5 +151,4 @@ async def document_from_file(
         field.key: FieldValue(value, source=ValueSource.FILE) for field, value in pairs if value
     }
     document = await create_from_values(session, user_id=user_id, template=template, values=values)
-    notice = PDF_NOTICE if found.file_id is None else found.notice
-    return DocumentFromFile(document, found.format, found.found_by, notice)
+    return DocumentFromFile(document, found.format, found.found_by, found.notice)

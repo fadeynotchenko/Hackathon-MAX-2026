@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from fakeredis import aioredis as fakeredis_aio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.models import DocumentEvent, UserActivityDay
+from core.db.models import DocumentEvent, Template, UserActivityDay
 from core.db.repositories import DownloadTokenRepository, UserRepository
 from core.domain.documents import FieldValue, ValueSource
 from core.events import EventBus
@@ -202,8 +203,11 @@ async def test_copy_takes_terms_but_not_number_and_dates(session: AsyncSession) 
         values={
             "number": FieldValue("7"),
             "date": FieldValue("24.09.2026"),
-            "item": FieldValue("Сопровождение сайта"),
-            "total": FieldValue("30 000", ValueSource.AGENT, confirmed=False),
+            "items": FieldValue(
+                '[{"name": "Сопровождение сайта", "price": "30 000"}]',
+                ValueSource.AGENT,
+                confirmed=False,
+            ),
         },
     )
     await update_organization(
@@ -219,13 +223,54 @@ async def test_copy_takes_terms_but_not_number_and_dates(session: AsyncSession) 
     assert copy.id != source.id and copy.title == "Счёт №7"
     assert "number" not in copy.values
     assert copy.values["date"].source is ValueSource.DEFAULT, "дата копии своя, не из источника"
-    assert copy.values["item"].value == "Сопровождение сайта"
-    assert copy.values["total"].confirmed is False, "непроверенное остаётся непроверенным"
+    assert "Сопровождение сайта" in copy.values["items"].value
+    assert copy.values["items"].confirmed is False, "непроверенное остаётся непроверенным"
     assert copy.values["seller_name"].value == "ООО «Новое»", (
         "реквизиты — свежие, той же организации"
     )
     history = await document_history(session, user_id=user_id, document_id=copy.id)
     assert [(f.kind, f.source) for f in history] == [(Fact.CREATED, "copy")]
+
+
+async def test_copy_of_an_old_single_item_invoice_gets_its_row_as_a_position(
+    session: AsyncSession,
+) -> None:
+    """Счёт прошлой редакции — одно наименование и сумма на всё. Его копия
+    берётся на новом бланке с позициями, и строка счёта не теряется."""
+    user_id = await make_user(session)
+    await ensure_builtin_templates(session)
+    invoice = (await list_templates(session, user_id=user_id, slug="invoice"))[0]
+    row = await session.get(Template, invoice.id)
+    assert row is not None
+    row.fields = [
+        {"key": "item", "label": "Наименование", "type": "multiline", "group": "Предмет"},
+        {"key": "quantity", "label": "Количество", "type": "integer", "required": False},
+        {"key": "unit", "label": "Единица", "type": "text", "required": False},
+        {"key": "total", "label": "Сумма к оплате", "type": "money", "group": "Предмет"},
+    ]
+    row.body = "Счёт: {{item}}, {{quantity}} {{unit}}, {{total}}"
+    await session.flush()
+    source = await create_draft(session, user_id=user_id, template_id=invoice.id)
+    await set_fields(
+        session,
+        user_id=user_id,
+        document_id=source.id,
+        values={
+            "item": FieldValue("Сопровождение сайта"),
+            "quantity": FieldValue("3"),
+            "unit": FieldValue("мес."),
+            "total": FieldValue("90 000"),
+        },
+    )
+    await ensure_builtin_templates(session)
+
+    copy = await copy_document(session, user_id=user_id, document_id=source.id)
+
+    assert copy.template.id == invoice.id, "копия — на живом бланке"
+    assert json.loads(copy.values["items"].value) == [
+        {"name": "Сопровождение сайта", "quantity": "3", "unit": "мес.", "price": "30000.00"}
+    ]
+    assert "items" not in copy.missing and not copy.errors
 
 
 async def test_activity_is_one_row_per_user_and_day(session: AsyncSession) -> None:

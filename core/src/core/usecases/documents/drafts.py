@@ -23,10 +23,12 @@ from core.domain.calendar import local_day
 from core.domain.documents import (
     FieldError,
     FieldSpec,
+    FieldType,
     FieldValue,
     ValueSource,
     fill_context,
     fill_text_template,
+    legacy_items,
     validate_fields,
 )
 from core.domain.exceptions import NotFoundError
@@ -313,7 +315,9 @@ async def copy_document(
     source = await _load(session, user_id=user_id, document_id=document_id)
     template = await latest_template(session, source.template)
     carried = {spec.key for spec in template.fields if spec.carry_over}
-    values = {key: v for key, v in load_values(source.values).items() if key in carried}
+    previous = load_values(source.values)
+    values = {key: v for key, v in previous.items() if key in carried}
+    values |= _legacy_items(template.fields, previous, values)
     prefilled, seller_id = await _prefill(
         session,
         user_id=user_id,
@@ -346,6 +350,23 @@ async def copy_document(
         source=COPY_SOURCE,
     )
     return _view(document, template)
+
+
+def _legacy_items(
+    specs: tuple[FieldSpec, ...],
+    previous: Mapping[str, FieldValue],
+    values: Mapping[str, FieldValue],
+) -> dict[str, FieldValue]:
+    """Копия счёта прошлой редакции (одно наименование и сумма) на бланке с
+    позициями: его строка становится первой позицией, а не пропадает."""
+    legacy = legacy_items(previous)
+    if legacy is None:
+        return {}
+    return {
+        spec.key: legacy
+        for spec in specs
+        if spec.type is FieldType.ITEMS and spec.carry_over and spec.key not in values
+    }
 
 
 def _without_stale_requisites(

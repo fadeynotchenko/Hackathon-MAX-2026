@@ -27,7 +27,7 @@ describe('TemplateEditorPage', () => {
     fireEvent.change(text, { target: { value: 'Акт для \nСрок: {{Срок поставки}}' } });
     (text as HTMLTextAreaElement).setSelectionRange(8, 8);
     fireEvent.select(text);
-    fireEvent.click(screen.getByRole('button', { name: 'Вставить поле' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Вставить поле в текст' }));
     const client = screen.getByRole('group', { name: 'Клиент' });
     fireEvent.click(
       Array.from(client.querySelectorAll('button')).find((b) => b.textContent === 'Название')!,
@@ -39,6 +39,8 @@ describe('TemplateEditorPage', () => {
     );
 
     expect(screen.getByText('Название клиента')).toBeInTheDocument();
+    // Вставку видно сразу, без поиска курсора в тексте.
+    expect(screen.getByText('Вставили {{Название клиента}}')).toBeInTheDocument();
     expect(screen.getByText(/подставится из карточки клиента/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить шаблон' }));
 

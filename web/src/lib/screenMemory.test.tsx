@@ -52,7 +52,15 @@ function Screen({ name }: { name: string }) {
   );
 }
 
-function Entry({ location, active }: { location: Location; active: boolean }) {
+function Entry({
+  location,
+  active,
+  canGoBack,
+}: {
+  location: Location;
+  active: boolean;
+  canGoBack: boolean;
+}) {
   const [returns, setReturns] = useState(0);
   const [wasActive, setWasActive] = useState(active);
   if (wasActive !== active) {
@@ -60,7 +68,7 @@ function Entry({ location, active }: { location: Location; active: boolean }) {
     if (active) setReturns((n) => n + 1);
   }
   return (
-    <ScreenContext.Provider value={{ active, returns }}>
+    <ScreenContext.Provider value={{ active, returns, canGoBack }}>
       <div hidden={!active}>
         <Routes location={location}>
           <Route path="/a" element={<Screen name="a" />} />
@@ -76,8 +84,13 @@ function Shell() {
   const location = useLocation();
   const stack = useScreenStack();
   useScrollMemory(TABS);
-  return stack.map((entry) => (
-    <Entry key={entry.key} location={entry} active={entry.key === location.key} />
+  return stack.map((entry, index) => (
+    <Entry
+      key={entry.key}
+      location={entry}
+      active={entry.key === location.key}
+      canGoBack={index > 0}
+    />
   ));
 }
 

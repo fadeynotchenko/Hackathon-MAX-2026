@@ -95,7 +95,7 @@ describe('CreatePage', () => {
     expect(screen.getByText('Фирменный КП')).toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Мои' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Свои шаблоны' }));
     expect(screen.getByText('Счёт для своих')).toBeInTheDocument();
     expect(screen.queryByText('Счёт-оферта')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Счета' }));

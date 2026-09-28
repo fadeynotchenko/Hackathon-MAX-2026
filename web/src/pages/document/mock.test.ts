@@ -67,8 +67,7 @@ const INVOICE = [
   spec('client_name', 'Название клиента', 'text', CLIENT),
   spec('client_inn', 'ИНН клиента', 'inn', { ...CLIENT, ...OPTIONAL }),
   spec('client_address', 'Адрес клиента', 'address', { ...CLIENT, ...OPTIONAL }),
-  spec('item', 'Наименование работ или услуг', 'multiline', SUBJECT),
-  spec('total', 'Сумма к оплате', 'money', SUBJECT),
+  spec('items', 'Позиции', 'items', SUBJECT),
   spec('vat', 'НДС', 'text', {
     ...SUBJECT,
     ...OPTIONAL,
@@ -155,6 +154,7 @@ const TYPE_LABEL: Record<FieldType, string> = {
   ogrn: 'ОГРН',
   bic: 'БИК',
   account: 'Расчётный счёт',
+  items: 'Позиции',
 };
 const EVERY_TYPE = (Object.entries(TYPE_LABEL) as Array<[FieldType, string]>).map(([type, label]) =>
   spec(`custom_${type}`, label, type, OPTIONAL),
@@ -234,8 +234,38 @@ function moneyValid(value: string): boolean {
   return /^[0-9]+(\.[0-9]{1,2})?$/.test(cleaned) && Number(cleaned) <= 999_999_999_999.99;
 }
 
+// Копия core.domain.documents.parse_items: список объектов с наименованием,
+// количеством больше нуля (по умолчанию 1) и ценой; итог — не больше триллиона.
+function itemsValid(value: string): boolean {
+  let data: unknown;
+  try {
+    data = JSON.parse(value);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(data) || data.length === 0 || data.length > 100) return false;
+  let total = 0;
+  for (const entry of data as Array<Record<string, unknown>>) {
+    const text = (key: string) => {
+      const value = entry[key];
+      return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+    };
+    const quantity = Number((text('quantity') || '1').replace(/\s+/g, '').replace(',', '.'));
+    if (!text('name') || [...text('name')].length > 1000 || [...text('unit')].length > 20) {
+      return false;
+    }
+    if (!(quantity > 0) || !moneyValid(text('price'))) return false;
+    total += quantity * Number(text('price').replace(/\s+/g, '').replace(',', '.'));
+  }
+  return total <= 999_999_999_999.99;
+}
+
 function limitOf(field: FieldSpec): number {
-  const byType: Partial<Record<FieldType, number>> = { multiline: 5000, email: 254 };
+  const byType: Partial<Record<FieldType, number>> = {
+    multiline: 5000,
+    email: 254,
+    items: 50_000,
+  };
   return field.max_length || byType[field.type] || 1000;
 }
 
@@ -264,6 +294,8 @@ function typeValid(field: FieldSpec, value: string): boolean {
       return digits.length === 9 && digits.startsWith('04');
     case 'account':
       return digits.length === 20;
+    case 'items':
+      return itemsValid(value);
     default:
       return true;
   }
@@ -437,10 +469,14 @@ describe('mockValues — тестовые данные для админа', () 
       `${grouped(Math.floor(kopecks / 100))},${String(kopecks % 100).padStart(2, '0')}`;
     for (const seed of SEEDS) {
       const values = generate(INVOICE, seed);
-      const total = Number((values['total'] ?? '').replace(/\s/g, ''));
-      expect(total % 1000).toBe(0);
-      expect(total).toBeGreaterThanOrEqual(10_000);
-      expect(total).toBeLessThanOrEqual(500_000);
+      const items = JSON.parse(values['items'] ?? '[]') as Array<Record<string, string>>;
+      const total = items.reduce(
+        (sum, item) => sum + Number(item['quantity']) * Number(item['price']),
+        0,
+      );
+      expect(items.length).toBeGreaterThanOrEqual(1);
+      expect(items.length).toBeLessThanOrEqual(4);
+      expect(total % 500).toBe(0);
       const vat = values['vat'];
       if (vat !== 'Без НДС') expect(vat).toBe(`20% — ${format(Math.round((total * 100) / 6))}`);
     }

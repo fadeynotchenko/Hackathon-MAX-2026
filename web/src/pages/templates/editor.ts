@@ -85,9 +85,21 @@ export interface CatalogItem {
   field: EditorField;
 }
 
-export const FIELD_CATALOG: Array<{ title: string; items: CatalogItem[] }> = [
+// Порядок — как в форме документа: сначала стороны, потом сам документ.
+export const FIELD_CATALOG: Array<{ title: string; note: string; items: CatalogItem[] }> = [
+  ...SIDES.map((side) => ({
+    title: side.title,
+    note: `Подставится ${side.source}`,
+    items: REQUISITES.map(([key, label, type]) => ({
+      short: label,
+      field: makeField(`${side.prefix}${key}`, `${label} ${side.suffix}`, type, {
+        required: REQUIRED_REQUISITES.has(key),
+      }),
+    })),
+  })),
   {
     title: 'Документ',
+    note: 'Впишете при заполнении',
     items: [
       {
         short: 'Номер',
@@ -103,15 +115,6 @@ export const FIELD_CATALOG: Array<{ title: string; items: CatalogItem[] }> = [
       { short: 'Сумма', field: makeField('total', 'Сумма', 'money') },
     ],
   },
-  ...SIDES.map((side) => ({
-    title: side.title,
-    items: REQUISITES.map(([key, label, type]) => ({
-      short: label,
-      field: makeField(`${side.prefix}${key}`, `${label} ${side.suffix}`, type, {
-        required: REQUIRED_REQUISITES.has(key),
-      }),
-    })),
-  })),
 ];
 
 const CATALOG_FIELDS = FIELD_CATALOG.flatMap((group) => group.items.map((item) => item.field));
@@ -152,6 +155,7 @@ export const TYPE_LABEL: Record<FieldType, string> = {
   ogrn: 'ОГРН',
   bic: 'БИК',
   account: 'Расчётный счёт',
+  items: 'Позиции',
 };
 
 // Типы, которые человек выбирает своему полю; реквизиты сторон — из каталога.

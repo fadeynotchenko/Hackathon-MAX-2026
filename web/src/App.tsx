@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
-import { Navigate, Route, Routes, useLocation, type Location } from 'react-router-dom';
+import { Navigate, Route, Routes, type Location } from 'react-router-dom';
 
 import { useAuth } from '@/auth/context';
+import { ScreenStack } from '@/components/ScreenStack';
 import { TAB_PATHS } from '@/components/tabs';
-import { ScreenContext, useScreenStack, useScrollMemory } from '@/lib/screenMemory';
+import { useScrollMemory } from '@/lib/screenMemory';
 import { startRoute } from '@/lib/startRoute';
 import { getStartParam } from '@/max/webapp';
 import { AdminPage } from '@/pages/admin/AdminPage';
@@ -30,50 +30,12 @@ import { ProfilePage } from '@/pages/profile/ProfilePage';
 import { TemplateEditorPage } from '@/pages/templates/TemplateEditorPage';
 import { TemplateSamplePage } from '@/pages/templates/TemplateSamplePage';
 
-// Экран стека: скрыт, пока поверх него открыт другой, и помнит, сколько раз
-// на него возвращались.
-function StackedScreen({
-  location,
-  active,
-  isAdmin,
-}: {
-  location: Location;
-  active: boolean;
-  isAdmin: boolean;
-}) {
-  const [returns, setReturns] = useState(0);
-  const [wasActive, setWasActive] = useState(active);
-  if (wasActive !== active) {
-    setWasActive(active);
-    if (active) setReturns((n) => n + 1);
-  }
-  const activity = useMemo(() => ({ active, returns }), [active, returns]);
-  return (
-    <ScreenContext.Provider value={activity}>
-      <div style={{ display: active ? 'contents' : 'none' }}>
-        <AppRoutes location={location} isAdmin={isAdmin} />
-      </div>
-    </ScreenContext.Provider>
-  );
-}
-
 export function App() {
   const { status, user } = useAuth();
-  const location = useLocation();
-  const stack = useScreenStack();
   useScrollMemory(TAB_PATHS);
   if (status !== 'ready' || !user) return <GatePage />;
   return (
-    <>
-      {stack.map((entry) => (
-        <StackedScreen
-          key={entry.key}
-          location={entry}
-          active={entry.key === location.key}
-          isAdmin={user.is_admin}
-        />
-      ))}
-    </>
+    <ScreenStack>{(entry) => <AppRoutes location={entry} isAdmin={user.is_admin} />}</ScreenStack>
   );
 }
 

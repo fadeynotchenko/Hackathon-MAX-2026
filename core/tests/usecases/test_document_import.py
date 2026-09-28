@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
+import pdfplumber
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.documents import FieldValue, ValueSource
 from core.domain.exceptions import AppError, ValidationError
 from core.files import FilesConfig, docx_lines
+from core.files.pdf_overlay import available as overlay_fonts
 from core.usecases.agent import document_from_file
 from core.usecases.documents import (
     DOCX,
+    PDF,
     TemplateField,
     TemplateInput,
     create_template,
@@ -87,10 +91,10 @@ async def test_invalid_value_from_file_is_shown_not_kept(session: AsyncSession) 
         max_bytes=LIMIT,
     )
     document = imported.document
-    assert imported.format == "pdf" and imported.notice and "DOCX" in imported.notice
+    assert imported.format == "pdf" and imported.notice is None
     assert "client_inn" not in document.values
     assert [error.code for error in document.errors] == ["field.inn_invalid"]
-    assert document.template.file is None and "{{client_inn}}" in document.template.body
+    assert document.template.file is not None and "{{client_inn}}" in document.template.body
 
 
 async def test_file_without_places_is_refused(session: AsyncSession) -> None:
@@ -167,3 +171,42 @@ async def test_own_template_from_the_standard_blank(session: AsyncSession) -> No
             ),
         )
     assert "{{client_name}}" in str(exc.value), "метку бланка нельзя оставить без поля"
+
+
+@pytest.mark.skipif(not overlay_fonts(), reason="нет TTF с кириллицей для наложения")
+async def test_pdf_document_keeps_its_sheet(session: AsyncSession, tmp_path: Path) -> None:
+    """Документ по PDF собирается на листе присланного PDF: страница та же,
+    новое значение стоит на месте старого, DOCX — текстовый."""
+    user_id = await make_user(session)
+    places = {
+        "title": "Счёт",
+        "kind": "invoice",
+        "places": [{"text": "ACME Corp", "before": "", "label": "Покупатель", "type": "text"}],
+    }
+    imported = await document_from_file(
+        session,
+        user_id=user_id,
+        data=text_pdf(["Invoice 17", "Buyer:", "ACME Corp", "Total: 100"]),
+        filename="bill.pdf",
+        llm=FakeLLM(json_reply=places),
+        max_bytes=LIMIT,
+    )
+    key = imported.document.template.fields[0].key
+    await set_fields(
+        session, user_id=user_id, document_id=imported.document.id, values={key: FieldValue("Бета")}
+    )
+    cfg = FilesConfig(documents_dir=tmp_path, soffice_bin="нет-такого", pdf_timeout_seconds=5)
+
+    await render_document(
+        session, user_id=user_id, document_id=imported.document.id, fmt=PDF, cfg=cfg
+    )
+    _, pdf = await load_document_file(
+        session, user_id=user_id, document_id=imported.document.id, fmt=PDF, cfg=cfg
+    )
+
+    with pdfplumber.open(BytesIO(pdf)) as sheet:
+        text = sheet.pages[0].extract_text()
+        width = sheet.pages[0].width
+    assert "Бета" in text and "Invoice 17" in text and "Total: 100" in text
+    assert "ACME" not in text, "прежнее значение не остаётся под плашкой"
+    assert width == 612, "лист исходного PDF, а не новый"

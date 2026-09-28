@@ -62,6 +62,9 @@ logger = logging.getLogger(__name__)
 MAX_PROMPT_CHARS = 15_000
 # Загруженный и брошенный образец живёт сутки: вдруг человек вернётся к экрану.
 UNUSED_FILE_TTL = timedelta(days=1)
+# Место в файле — один фрагмент строки: список позиций на его месте не
+# развернуть в строки таблицы, поэтому такого типа помощнику не предлагаем.
+PLACE_TYPES = tuple(t for t in FieldType if t is not FieldType.ITEMS)
 FOUND_BY_MARKERS = "markers"
 FOUND_BY_ASSISTANT = "assistant"
 FOUND_BY_RULES = "rules"
@@ -104,7 +107,7 @@ class ImportedField:
 
 @dataclass(frozen=True)
 class TemplateImport:
-    # Сохранённый образец DOCX; у PDF — None: шаблон из него будет текстовым.
+    # Сохранённый образец: DOCX или PDF — документы собираются в его оформлении.
     file_id: int | None
     filename: str
     format: str
@@ -153,7 +156,7 @@ _PLACES_SCHEMA: dict[str, Any] = {
                     "text": {"type": "string", "description": "Фрагмент текста символ в символ"},
                     "before": {"type": "string", "description": "Текст перед фрагментом"},
                     "label": {"type": "string"},
-                    "type": {"type": "string", "enum": [t.value for t in FieldType]},
+                    "type": {"type": "string", "enum": [t.value for t in PLACE_TYPES]},
                     "key": {"type": "string", "enum": [*sorted(CATALOG_KEYS), ""]},
                 },
                 "required": ["text", "before", "label", "type", "key"],
@@ -200,6 +203,8 @@ def suggested_fields(raw: dict[str, Any], lines: Sequence[str]) -> list[Imported
         try:
             field_type = FieldType(str(item.get("type") or FieldType.TEXT))
         except ValueError:
+            field_type = FieldType.TEXT
+        if field_type not in PLACE_TYPES:
             field_type = FieldType.TEXT
         field_type = requisite_type(key) or field_type
         group = key or _norm(label)
@@ -295,16 +300,14 @@ async def import_template_file(
             notice = f"{who} — отметьте места для данных сами"
 
     name = PurePath(filename).name[:255] or f"template.{media.extension}"
-    file_id = None
-    if media is DOCX:
-        repo = TemplateFileRepository(session)
-        await repo.delete_unused(user_id, before=datetime.now(UTC) - UNUSED_FILE_TTL)
-        layout = "\n".join(docx_layout(data))
-        file_id = (
-            await repo.create(
-                owner_user_id=user_id, filename=name, data=data, text=text, layout=layout
-            )
-        ).id
+    # PDF тоже хранится образцом: документ по нему собирается на его же листе
+    # (core.files.pdf_overlay), иначе оформление терялось бы и оставался текст.
+    repo = TemplateFileRepository(session)
+    await repo.delete_unused(user_id, before=datetime.now(UTC) - UNUSED_FILE_TTL)
+    layout = "\n".join(docx_layout(data)) if media is DOCX else None
+    file_id = (
+        await repo.create(owner_user_id=user_id, filename=name, data=data, text=text, layout=layout)
+    ).id
     title = (title or _title_from(name))[:TITLE_MAX]
     if kind not in KINDS:
         heading = [line for line in lines if line.strip()][:3]

@@ -141,3 +141,101 @@ def test_blank_cells_get_label_marks_and_stay_empty_without_value() -> None:
     )
     assert docx_lines(filled)[1] == "7707083893"
     assert "Итого: Сто рублей 00 копеек" in docx_lines(filled), "вариант записи из маркера"
+
+
+def _conditional_form() -> bytes:
+    """Бланк с условными кусками: в строке, целым абзацем, в строке таблицы
+    «подпись | значение» и в таблице позиций с общей ячейкой срока."""
+    document = Document()
+    supplier = document.add_paragraph("Поставщик: {{name}}[[, ")
+    supplier.add_run("КПП").bold = True
+    supplier.add_run(" {{kpp}}]][[, {{address}}]]")
+    document.add_paragraph("[[Порядок оплаты: {{terms}}.]]")
+    document.add_paragraph("[[Тел. {{phone}}]][[, почта {{email}}]]")
+    requisites = document.add_table(rows=2, cols=2)
+    requisites.cell(0, 0).text = "Наименование"
+    requisites.cell(0, 1).text = "{{name}}"
+    requisites.cell(1, 0).text = "Адрес"
+    requisites.cell(1, 1).text = "[[{{address}}]]"
+    items = document.add_table(rows=2, cols=4)
+    for cell, text in zip(items.rows[0].cells, ("№", "Наименование", "Сумма", "Срок"), strict=True):
+        cell.text = text
+    for cell, text in zip(
+        items.rows[1].cells,
+        ("{{items.n}}", "{{items.name}}", "{{items.amount}}", "{{term}}"),
+        strict=True,
+    ):
+        cell.text = text
+    document.add_paragraph("Всего наименований {{items|count}}, на сумму {{items|sum}}")
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def test_conditional_pieces_vanish_with_labels_and_rows() -> None:
+    empty = fill_docx(
+        _conditional_form(), places=[], context={"name": "ООО «Ромашка»"}, blank="____"
+    )
+    opened = Document(BytesIO(empty))
+    assert [p.text for p in opened.paragraphs][:2] == [
+        "Поставщик: ООО «Ромашка»",
+        "Всего наименований ____, на сумму ____",
+    ], "абзацы из одних подписей убраны, пустое вне кусков — линия"
+    requisites, items = opened.tables
+    assert [row.cells[0].text for row in requisites.rows] == ["Наименование"], (
+        "строка «Адрес» без адреса ушла целиком"
+    )
+    assert [cell.text for cell in items.rows[1].cells] == ["", "", "", ""], (
+        "пустой список — одна пустая строка для записи от руки"
+    )
+    assert "[[" not in "\n".join(docx_lines(empty))
+
+    full = fill_docx(
+        _conditional_form(),
+        places=[],
+        context={
+            "name": "ООО «Ромашка»",
+            "kpp": "772801001",
+            "email": "a@b.example",
+            "address": "Москва",
+        },
+        blank="____",
+    )
+    paragraphs = Document(BytesIO(full)).paragraphs
+    assert paragraphs[0].text == "Поставщик: ООО «Ромашка», КПП 772801001, Москва"
+    assert [(run.text, run.bold) for run in paragraphs[0].runs if run.text][1] == ("КПП", True), (
+        "скобки убраны, оформление кусков осталось"
+    )
+    assert paragraphs[1].text == "почта a@b.example", "запятая в начале не остаётся"
+
+
+def test_items_row_is_repeated_and_shared_cell_is_merged() -> None:
+    context = {
+        "items|count": "3",
+        "items|sum": "600,00",
+        "term": "10 дней",
+        **{f"items.{i}.n": str(i) for i in (1, 2, 3)},
+        **{f"items.{i}.name": f"Позиция {i}" for i in (1, 2, 3)},
+        **{f"items.{i}.amount": f"{i}00,00" for i in (1, 2, 3)},
+    }
+    filled = fill_docx(_conditional_form(), places=[], context=context, blank="____")
+    opened = Document(BytesIO(filled))
+    table = opened.tables[1]
+    assert [[cell.text for cell in row.cells[:3]] for row in table.rows[1:]] == [
+        ["1", "Позиция 1", "100,00"],
+        ["2", "Позиция 2", "200,00"],
+        ["3", "Позиция 3", "300,00"],
+    ]
+    merges = [
+        row._tr.tc_lst[3].tcPr.find(
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}vMerge"
+        )
+        for row in table.rows[1:]
+    ]
+    assert [
+        m.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") for m in merges
+    ] == ["restart", None, None], "срок — одна ячейка на все позиции"
+    assert table.rows[1].cells[3].text == "10 дней"
+    properties = [child.tag.rsplit("}", 1)[1] for child in table.rows[1]._tr.tc_lst[3].tcPr]
+    assert properties.index("vMerge") == properties.index("tcW") + 1, "порядок свойств — как у Word"
+    assert "Всего наименований 3, на сумму 600,00" in [p.text for p in opened.paragraphs]

@@ -3,14 +3,14 @@
 // в форму с плашкой. Новая карточка или организация из формы профиля
 // подставляется сразу и один раз (в том числе под StrictMode), а «назад» после
 // неё ведёт в форму документа, а не в форму профиля.
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient, Counterparty, DocumentView, Organization } from '@/api/client';
 import { CounterpartyPage } from '@/pages/profile/CounterpartyPage';
 import { OrganizationPage } from '@/pages/profile/OrganizationPage';
-import { makeDocument, makeTemplate, mockApi, renderScreen } from '@/test-utils';
+import { activeScreen, makeDocument, makeTemplate, mockApi, renderScreen } from '@/test-utils';
 
 import { ClientPickPage } from './ClientPickPage';
 import { dropNotice, peekNotice } from './fillMethods';
@@ -190,7 +190,7 @@ describe('parties in the form', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Выбрать из клиентов' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Новый клиент' }));
-    fireEvent.change(await screen.findByLabelText(/Название/), {
+    fireEvent.change(await within(activeScreen()).findByLabelText(/Название/), {
       target: { value: 'ООО «Гамма»' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить и продолжить' }));
@@ -275,7 +275,9 @@ describe('parties in the form', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Добавить свою организацию/ }));
     await waitFor(() => expect(location()).toHaveTextContent('/profile/organizations/new'));
-    fireEvent.change(screen.getByLabelText(/Название/), { target: { value: 'ООО «Новая»' } });
+    fireEvent.change(within(activeScreen()).getByLabelText(/Название/), {
+      target: { value: 'ООО «Новая»' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить и продолжить' }));
 
     expect(await screen.findByText('Реквизиты организации подставлены')).toBeInTheDocument();

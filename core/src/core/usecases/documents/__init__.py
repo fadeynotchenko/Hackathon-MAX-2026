@@ -49,6 +49,7 @@ from .organizations import (
     seller_for_document,
     update_organization,
 )
+from .previews import document_preview, template_preview
 from .requisites import REQUISITE_FIELDS
 from .templates import (
     KINDS,
@@ -99,6 +100,7 @@ __all__ = [
     "delete_template",
     "document_history",
     "document_name",
+    "document_preview",
     "ensure_builtin_templates",
     "get_document",
     "get_template",
@@ -117,6 +119,7 @@ __all__ = [
     "send_document_to_chat",
     "set_fields",
     "set_parties",
+    "template_preview",
     "update_counterparty",
     "update_organization",
     "update_template",

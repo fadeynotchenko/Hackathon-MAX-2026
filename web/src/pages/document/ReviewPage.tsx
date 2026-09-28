@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { Banner } from '@/components/Banner';
-import { DocPreview } from '@/components/DocPreview';
+import { SheetPreview } from '@/components/SheetPreview';
 import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { Steps } from '@/components/Steps';
@@ -122,7 +122,11 @@ export function ReviewPage() {
       ) : null}
 
       <div className="section">
-        <DocPreview text={doc.preview} />
+        <SheetPreview
+          source={{ kind: 'document', id: doc.id }}
+          version={doc.updated_at}
+          text={doc.preview}
+        />
       </div>
     </Page>
   );

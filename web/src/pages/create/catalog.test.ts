@@ -49,13 +49,13 @@ describe('catalog sections', () => {
     ]);
   });
 
-  it('offers «Мои» and the kinds present, in section order', () => {
+  it('offers «Свои шаблоны» and the kinds present, in section order', () => {
     expect(catalogTags([contract, offer, invoice, ownOffer]).map((tag) => tag.title)).toEqual([
-      'Мои',
+      'Свои шаблоны',
       'Счета',
       'КП',
       'Договоры',
     ]);
-    expect(catalogTags([contract]).map((tag) => tag.value)).toEqual(['contract']);
+    expect(catalogTags([contract]).map((tag) => tag.value)).toEqual(['own', 'contract']);
   });
 });

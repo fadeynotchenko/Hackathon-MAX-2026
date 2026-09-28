@@ -1,9 +1,9 @@
-// Свой шаблон из файла-образца: готовый документ или фирменный бланк компании.
+// Свой шаблон: единственный вход из каталога. Здесь выбирают — загрузить свой
+// файл (готовый документ или фирменный бланк) или написать шаблон текстом.
 // Файл разбирает сервер — места для данных находят метки {{…}} в файле или
 // помощник, — а здесь человек проверяет их: убирает лишнее, отмечает
 // пропущенное, выбирает тип и обязательность. Из DOCX документы потом
-// собираются прямо в файле, с логотипом и оформлением; из PDF берётся только
-// текст, и шаблон становится текстовым.
+// собираются прямо в файле, с логотипом и оформлением; из PDF — на его листе.
 import { Button, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -32,7 +32,6 @@ import {
   sampleProblems,
   sampleRequest,
   type SampleDraft,
-  toTextDraft,
   withoutField,
   withSampleField,
 } from './sample';
@@ -62,6 +61,7 @@ function useImport(onDone: (result: TemplateImport) => void) {
 
 export function TemplateSamplePage() {
   const back = useBack('/create');
+  const navigate = useNavigate();
   const [imported, setImported] = useState<{ result: TemplateImport; draft: SampleDraft } | null>(
     null,
   );
@@ -80,7 +80,7 @@ export function TemplateSamplePage() {
     );
   }
   return (
-    <Page title="Шаблон из файла" subtitle="Ваш документ или фирменный бланк" onBack={back}>
+    <Page title="Свой шаблон" subtitle="Заполняется так же, как стандартные" onBack={back}>
       {upload.error ? (
         <div className="section">
           <Banner tone="error" title={upload.error} />
@@ -89,22 +89,25 @@ export function TemplateSamplePage() {
       <CellList mode="island" filled>
         <FilePick
           icon={<IconUpload />}
-          title="Выбрать DOCX или PDF"
-          subtitle="Образец документа с текстом и данными"
+          title="Загрузить свой файл"
+          subtitle="DOCX или PDF — оформление сохранится"
           busy={upload.busy}
           busyTitle="Ищем места для данных…"
           accept={SAMPLE_TYPES}
           onPick={(file) => void upload.pick(file)}
         />
+        <CellSimple
+          title="Написать текстом"
+          subtitle="Если файла нет"
+          before={<IconEdit />}
+          showChevron
+          onClick={() => navigate('/templates/new')}
+        />
       </CellList>
-      <div className="section">
-        <Banner tone="info" title="Подойдёт готовый документ">
-          Например, КП, которое вы уже отправляли клиенту. Места, которые меняются от документа к
-          документу — клиент, сумма, даты, — найдёт помощник, а вы проверите. В DOCX сохранятся
-          логотип и оформление, из PDF перенесём только текст. Отметить места можно и самим:
-          напишите в файле {marker('Название клиента')} там, где должно стоять значение.
-        </Banner>
-      </div>
+      <Typography.Text variant="description" color="tertiary" className="field__note">
+        Подойдёт документ, который вы уже отправляли клиенту: клиента, суммы и даты найдём сами, а
+        вы проверите. Место можно отметить и в файле: {marker('Название клиента')}.
+      </Typography.Text>
     </Page>
   );
 }
@@ -179,7 +182,7 @@ export function SampleEditor({
   const preview = useMemo(() => labelText(draft), [draft]);
   const text = fragment.trim();
   const fragmentMissing = Boolean(text) && !placeFound(draft.text, { text, before: '' });
-  const isPdf = draft.fileId === null;
+  const isPdf = draft.filename.toLowerCase().endsWith('.pdf');
   const notice = found ? foundText(found, initial.fields.length) : null;
 
   const fail = (message: string) => {
@@ -242,9 +245,7 @@ export function SampleEditor({
         <CellSimple
           title={draft.filename || 'Файл-образец'}
           subtitle={
-            isPdf
-              ? 'PDF · перенесём только текст, без оформления'
-              : 'DOCX · логотип и оформление сохранятся'
+            isPdf ? 'PDF · лист сохранится как есть' : 'DOCX · логотип и оформление сохранятся'
           }
           innerClassNames={{ title: 'ellipsis' }}
           before={<IconTemplates />}
@@ -257,15 +258,6 @@ export function SampleEditor({
           accept={SAMPLE_TYPES}
           onPick={(file) => void replace.pick(file)}
         />
-        {isPdf ? (
-          <CellSimple
-            title="Редактировать текст"
-            subtitle="Шаблон из PDF — текстовый, его можно поправить"
-            before={<IconEdit />}
-            showChevron
-            onClick={() => navigate('/templates/new', { state: { draft: toTextDraft(draft) } })}
-          />
-        ) : null}
       </CellList>
 
       {notice ? (
@@ -319,29 +311,24 @@ export function SampleEditor({
                 key={field.key}
                 field={field}
                 onChange={(next) => setDraft(withSampleField(draft, next))}
-              >
-                {field.places.length === 0 && markedInFile(draft.text, field.key) ? (
-                  <Typography.Text variant="description" color="secondary">
-                    В бланке — своя метка поля
-                  </Typography.Text>
-                ) : (
-                  <div className="template-field__places">
-                    <Typography.Text variant="description" color="secondary" className="clamp-2">
-                      В файле: {field.places.map((place) => `«${place.text}»`).join(', ')}
-                    </Typography.Text>
-                    <Button
-                      size="small"
-                      variant="secondary"
-                      aria-label={`Убрать поле «${field.label}»`}
-                      onClick={() => {
+                {...(field.places.length === 0 && markedInFile(draft.text, field.key)
+                  ? {}
+                  : {
+                      onRemove: () => {
                         haptic('light');
                         setDraft(withoutField(draft, field.key));
-                      }}
-                    >
-                      Убрать
-                    </Button>
-                  </div>
-                )}
+                      },
+                    })}
+              >
+                <Typography.Text
+                  variant="description"
+                  color="secondary"
+                  className="template-field__place clamp-2"
+                >
+                  {field.places.length === 0 && markedInFile(draft.text, field.key)
+                    ? 'В бланке — своя метка поля'
+                    : `В файле: ${field.places.map((place) => `«${place.text}»`).join(', ')}`}
+                </Typography.Text>
               </FieldSettings>
             ))}
           </div>
@@ -371,12 +358,7 @@ export function SampleEditor({
         </div>
       </Section>
 
-      <Section title={isPdf ? 'Как будет выглядеть' : 'Текст с полями'}>
-        {isPdf ? null : (
-          <Typography.Text variant="description" color="tertiary" className="field__note">
-            Здесь только текст: документ соберётся в вашем файле, с его логотипом и оформлением.
-          </Typography.Text>
-        )}
+      <Section title="Текст с полями">
         <DocPreview text={preview} marks={false} />
       </Section>
     </Page>

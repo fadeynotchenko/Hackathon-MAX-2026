@@ -1106,7 +1106,8 @@
           "kpp",
           "ogrn",
           "bic",
-          "account"
+          "account",
+          "items"
         ],
         "title": "FieldType",
         "type": "string"
@@ -1149,6 +1150,7 @@
             "default": "manual"
           },
           "value": {
+            "description": "Значение строкой; у поля типа items — JSON-список позиций [{\"name\", \"quantity\", \"unit\", \"price\"}]",
             "title": "Value",
             "type": "string"
           }
@@ -4338,6 +4340,106 @@
         ]
       }
     },
+    "/api/v1/documents/{document_id}/preview": {
+      "get": {
+        "operationId": "document_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Document Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Номер страницы с единицы",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Номер страницы с единицы",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "thumb — карточка каталога, page — лист во весь экран",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "page",
+              "description": "thumb — карточка каталога, page — лист во весь экран",
+              "enum": [
+                "thumb",
+                "page"
+              ],
+              "title": "Size",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {}
+            },
+            "description": "Страница JPEG; число страниц — в X-Page-Count"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Документ картинкой страницы, как в PDF",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/api/v1/documents/{document_id}/render": {
       "post": {
         "operationId": "render_document",
@@ -5514,6 +5616,106 @@
           }
         },
         "summary": "Сохранить в каталог шаблон документа, сделанного по файлу",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/templates/{template_id}/preview": {
+      "get": {
+        "operationId": "template_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Template Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Номер страницы с единицы",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Номер страницы с единицы",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "thumb — карточка каталога, page — лист во весь экран",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "page",
+              "description": "thumb — карточка каталога, page — лист во весь экран",
+              "enum": [
+                "thumb",
+                "page"
+              ],
+              "title": "Size",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {}
+            },
+            "description": "Страница JPEG; число страниц — в X-Page-Count"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Пустой бланк шаблона картинкой страницы",
         "tags": [
           "documents"
         ]

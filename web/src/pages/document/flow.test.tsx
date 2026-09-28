@@ -310,12 +310,16 @@ describe('document flow', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Заполнить' }));
 
-    expect(await screen.findByText('Заполнено 2 поля — проверьте')).toBeInTheDocument();
+    // Значения форма подтягивает тихо и пересобирается из свежего документа;
+    // плашка переживает пересборку.
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Название клиента/)).toHaveValue('ООО «Альфа»'),
+    );
+    expect(screen.getByText('Заполнено 2 поля — проверьте')).toBeInTheDocument();
     expect(
       screen.getByText('Не записали: ИНН клиента — ИНН не проходит проверку.'),
     ).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent(/^\/documents\/7\/fill$/);
-    expect(screen.getByLabelText(/Название клиента/)).toHaveValue('ООО «Альфа»');
     expect(screen.getByLabelText(/Сумма к оплате/)).toHaveValue('180 000');
     expect(load).toHaveBeenCalledTimes(2);
   });

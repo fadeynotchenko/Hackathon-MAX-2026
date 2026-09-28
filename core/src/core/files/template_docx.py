@@ -11,6 +11,11 @@
 Иначе значение одного поля, похожее на место другого, заменилось бы повторно.
 Маркер может просить вариант записи значения — ``{{total|words}}``: сумму
 прописью, дату словами; варианты считает домен (``fill_context``).
+
+Условный кусок ``[[, КПП {{seller_kpp}}]]`` исчезает вместе с подписью, когда
+значение внутри пустое; абзац, от которого осталась одна подпись, убирается,
+а строка таблицы — когда опустели все её ячейки с данными. Строка таблицы с
+маркером столбца ``{{items.name}}`` повторяется на каждую позицию списка.
 """
 
 from __future__ import annotations
@@ -27,7 +32,16 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from lxml import etree
 
-from core.domain.documents import MARKER, marker_name
+from core.domain.documents import (
+    LEADING_SEPARATOR,
+    MARKER,
+    conditional_spans,
+    marker_value,
+    row_column,
+    row_count,
+    row_key,
+    row_marker,
+)
 from core.domain.places import Place, place_spans
 from core.files.errors import TemplateFileError
 
@@ -154,17 +168,126 @@ def _fill_paragraph(
     places: Sequence[tuple[str, Place]],
     context: Mapping[str, str],
     blank: str,
-) -> None:
+) -> bool:
+    """Заполнить абзац. ``True`` — абзац не печатать: выпал условный кусок,
+    и значений в абзаце не осталось, только подпись."""
     for begin, end, key in reversed(place_spans(_text(paragraph), places)):
         _replace(paragraph, begin, end, "{{" + key + "}}")
+    dropped = False
+    for start, end, keep in reversed(conditional_spans(_text(paragraph), context)):
+        if keep:
+            _replace(paragraph, end - 2, end, "")
+            _replace(paragraph, start, start + 2, "")
+        else:
+            _replace(paragraph, start, end, "")
+            dropped = True
     text = _text(paragraph)
     markers = list(MARKER.finditer(text))
+    if dropped and not markers:
+        return True
+    if dropped and (separator := LEADING_SEPARATOR.match(text)) is not None:
+        _replace(paragraph, separator.end(1), separator.end(), "")
+        text = _text(paragraph)
+        markers = list(MARKER.finditer(text))
     # Маркер — всё содержимое ячейки или линейки: пустое значение оставляет её
     # пустой, как в бланке. Прочерк поверх нарисованной линии задвоил бы её.
     if len(markers) == 1 and markers[0].group(0) == text.strip() and _own_line(paragraph):
         blank = ""
     for match in reversed(markers):
-        _replace(paragraph, match.start(), match.end(), context.get(marker_name(match)) or blank)
+        _replace(paragraph, match.start(), match.end(), marker_value(match, context, blank))
+    return False
+
+
+def _drop_paragraph(paragraph: etree._Element) -> None:
+    """Убрать абзац. Абзац со свойствами раздела, единственный в ячейке или
+    надписи и последний в ячейке после вложенной таблицы только очищается:
+    без него документ не откроется в Word."""
+    parent = paragraph.getparent()
+    siblings = parent.findall(_W_P)
+    previous = paragraph.getprevious()
+    keep = (
+        paragraph.find("./w:pPr/w:sectPr", paragraph.nsmap) is not None
+        or len(siblings) < 2
+        or (
+            parent.tag == _W_TC
+            and paragraph.getnext() is None
+            and previous is not None
+            and previous.tag == _W_TBL
+        )
+    )
+    if keep:
+        _replace(paragraph, 0, len(_text(paragraph)), "")
+    else:
+        parent.remove(paragraph)
+
+
+def _cells_text(cell: etree._Element) -> str:
+    return "".join(_text(paragraph) for paragraph in cell.iter(_W_P))
+
+
+_TC_PR_HEAD = frozenset({qn("w:cnfStyle"), qn("w:tcW"), qn("w:gridSpan"), qn("w:hMerge")})
+
+
+def _set_vmerge(cell: etree._Element, *, restart: bool) -> None:
+    """Объединить ячейку с соседней по вертикали. ``w:vMerge`` стоит в свойствах
+    ячейки строго после ширины и объединения по горизонтали: Word проверяет
+    порядок элементов и иначе считает файл повреждённым."""
+    props = cell.find(qn("w:tcPr"))
+    if props is None:
+        props = OxmlElement("w:tcPr")
+        cell.insert(0, props)
+    for old in props.findall(qn("w:vMerge")):
+        props.remove(old)
+    merge = OxmlElement("w:vMerge")
+    if restart:
+        merge.set(qn("w:val"), "restart")
+    position = 0
+    for index, child in enumerate(props):
+        if child.tag in _TC_PR_HEAD:
+            position = index + 1
+    props.insert(position, merge)
+
+
+def _repeat_rows(root: etree._Element, context: Mapping[str, str]) -> None:
+    """Строка позиций — копия на каждую позицию списка, маркеры столбцов в
+    копии получают номер: ``{{items.name}}`` → ``{{items.2.name}}``. Строка —
+    ближайшая строка таблицы, а вне таблицы — сам абзац. Ячейка со значением
+    документа (срок поставки на весь заказ) объединяется по вертикали на все
+    копии: иначе значение печаталось бы в каждой строке."""
+    units: list[etree._Element] = []
+    for paragraph in list(root.iter(_W_P)):
+        if row_key(_text(paragraph)) is None:
+            continue
+        row = next(paragraph.iterancestors(_W_TR), None)
+        unit = paragraph if row is None else row
+        if not any(unit is seen for seen in units):
+            units.append(unit)
+    for unit in units:
+        key = next(found for p in unit.iter(_W_P) if (found := row_key(_text(p))) is not None)
+        count = row_count(context, key)
+        shared = [
+            cell
+            for cell in (unit.findall(_W_TC) if unit.tag == _W_TR else [])
+            if MARKER.search(_cells_text(cell)) and row_key(_cells_text(cell)) is None
+        ]
+        for index in range(1, count + 1):
+            copy = deepcopy(unit)
+            for paragraph in list(copy.iter(_W_P)):
+                text = _text(paragraph)
+                for match in reversed(list(MARKER.finditer(text))):
+                    if row_column(match) is not None:
+                        _replace(paragraph, match.start(), match.end(), row_marker(match, index))
+                    elif index > 1 and row_key(text) is not None:
+                        _replace(paragraph, match.start(), match.end(), "")
+            if count > 1:
+                for position in (unit.index(cell) for cell in shared):
+                    cell = copy[position]
+                    if index > 1:
+                        for paragraph in cell.iter(_W_P):
+                            _replace(paragraph, 0, len(_text(paragraph)), "")
+                    _set_vmerge(cell, restart=index == 1)
+            unit.addprevious(copy)
+        unit.getparent().remove(unit)
 
 
 def docx_lines(data: bytes) -> list[str]:
@@ -339,11 +462,36 @@ def fill_docx(
     blank: str,
 ) -> bytes:
     """Документ в оформлении образца: места и маркеры ``{{key}}`` → значения.
-    Пустое значение печатается ``blank`` — как в текстовом шаблоне."""
+    Пустое значение печатается ``blank`` — как в текстовом шаблоне, — кроме
+    необязательного в условном куске ``[[…]]``: оно исчезает с подписью."""
     document = _open(data)
     for root in _roots(document, all_parts=True):
-        for paragraph in _paragraphs(root, with_fallback=True):
-            _fill_paragraph(paragraph, places, context, blank)
+        _repeat_rows(root, context)
+        # Ячейки с данными каждой строки, где есть условный кусок: строка
+        # уходит, когда опустели все они, а подписи вроде «Адрес» остались одни.
+        data_cells = {
+            row: [cell for cell in row.findall(_W_TC) if "{{" in _cells_text(cell)]
+            for row in root.iter(_W_TR)
+            if "[[" in _cells_text(row)
+        }
+        collapsed: list[etree._Element] = []
+        for paragraph in list(_paragraphs(root, with_fallback=True)):
+            if _fill_paragraph(paragraph, places, context, blank):
+                row = next(paragraph.iterancestors(_W_TR), None)
+                if row is not None and not any(row is seen for seen in collapsed):
+                    collapsed.append(row)
+                _drop_paragraph(paragraph)
+        for row in collapsed:
+            cells = data_cells.get(row, [])
+            merged = row.find(".//w:vMerge", row.nsmap) is not None
+            table = row.getparent()
+            if (
+                cells
+                and not merged
+                and len(table.findall(_W_TR)) > 1
+                and not any(_cells_text(cell).strip() for cell in cells)
+            ):
+                table.remove(row)
     buffer = BytesIO()
     document.save(buffer)
     return buffer.getvalue()

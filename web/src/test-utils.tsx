@@ -9,6 +9,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { vi } from 'vitest';
 
 import { ApiClient, type DocumentView, type Template, type UserProfile } from '@/api/client';
+import { ScreenStack } from '@/components/ScreenStack';
 import { AuthContext, type AuthState } from '@/auth/context';
 
 export function makeTemplate(overrides: Partial<Template> = {}): Template {
@@ -123,6 +124,14 @@ export interface ScreenOptions {
   routes?: Array<{ path: string; element: ReactElement }>;
 }
 
+// Экран сверху стека: скрытые под ним остаются в DOM, и запрос по подписи поля
+// нашёл бы одноимённое поле и там.
+export function activeScreen(): HTMLElement {
+  const found = document.querySelector<HTMLElement>('[data-screen="active"]');
+  if (!found) throw new Error('Нет активного экрана');
+  return found;
+}
+
 export function renderScreen(
   element: ReactElement,
   { api, path, route, user, routes = [] }: ScreenOptions,
@@ -152,13 +161,17 @@ export function renderScreen(
     <MaxUI colorScheme="light" platform="ios">
       <AuthContext.Provider value={auth}>
         <MemoryRouter initialEntries={[route]}>
-          <Routes>
-            <Route path={path} element={element} />
-            {routes.map((item) => (
-              <Route key={item.path} path={item.path} element={item.element} />
-            ))}
-            <Route path="*" element={<span>другой экран</span>} />
-          </Routes>
+          <ScreenStack>
+            {(entry) => (
+              <Routes location={entry}>
+                <Route path={path} element={element} />
+                {routes.map((item) => (
+                  <Route key={item.path} path={item.path} element={item.element} />
+                ))}
+                <Route path="*" element={<span>другой экран</span>} />
+              </Routes>
+            )}
+          </ScreenStack>
           <LocationProbe />
         </MemoryRouter>
       </AuthContext.Provider>

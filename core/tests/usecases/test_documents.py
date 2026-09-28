@@ -12,6 +12,8 @@ from core.db.models import Template, TemplateFile
 from core.db.repositories import UserRepository, UserUpsert
 from core.domain.documents import (
     BLANK,
+    CONDITIONAL,
+    MARKER,
     FieldType,
     FieldValue,
     ValueSource,
@@ -34,7 +36,7 @@ from core.usecases.documents import (
     list_templates,
     set_fields,
 )
-from core.usecases.documents.builtin import BUILTIN_TEMPLATES
+from core.usecases.documents.builtin import BUILTIN_TEMPLATES, BuiltinTemplate
 from core.usecases.documents.demo import DEMO_CLIENT, DEMO_SELLER
 
 
@@ -64,7 +66,7 @@ async def test_builtin_templates_are_seeded_idempotently(session: AsyncSession) 
     invoice = next(t for t in templates if t.slug == "invoice")
     assert invoice.is_builtin and invoice.body_format == "docx"
     assert invoice.file is not None and invoice.file.filename == "invoice.docx"
-    assert {spec.key for spec in invoice.fields} >= {"seller_inn", "client_name", "total"}
+    assert {spec.key for spec in invoice.fields} >= {"seller_inn", "client_name", "items"}
     files = (await session.execute(select(TemplateFile))).scalars().all()
     assert len(files) == len(BUILTIN_TEMPLATES), "бланк не записывается второй раз"
     assert all(file.owner_user_id is None for file in files)
@@ -122,7 +124,7 @@ async def test_draft_is_prefilled_from_profile_and_counterparty(session: AsyncSe
     assert document.values["seller_inn"].value == "7707083893"
     assert document.values["client_name"].source is ValueSource.COUNTERPARTY
     assert document.status == STATUS_DRAFT
-    assert set(document.missing) == {"number", "item", "total"}, "дату счёта ставит система"
+    assert set(document.missing) == {"number", "items"}, "дату счёта ставит система"
     assert BLANK in document.preview, "незаполненное поле видно прочерком"
     assert "ПАО Сбербанк" in document.preview
 
@@ -292,33 +294,104 @@ async def test_counterparty_card_can_be_edited(session: AsyncSession) -> None:
     assert twin.value.code == "counterparty.duplicate_inn"
 
 
+_ITEMS = '[{"name": "Разработка сайта", "quantity": "2", "unit": "усл.", "price": "60 000"}]'
+
+
+def _demo_values(template: BuiltinTemplate) -> dict[str, str]:
+    common = {"number": "17", "date": "28.09.2026", "city": "Москва", "total": "120 000"}
+    keys = {spec.key for spec in template.fields}
+    raw = {key: value for key, value in common.items() if key in keys}
+    for spec in template.fields:
+        for prefix, demo in (("seller_", DEMO_SELLER), ("client_", DEMO_CLIENT)):
+            if spec.key.startswith(prefix) and spec.key.removeprefix(prefix) in demo:
+                raw[spec.key] = demo[spec.key.removeprefix(prefix)]
+        if spec.key not in raw:
+            raw[spec.key] = spec.default or {
+                FieldType.DATE: "31.10.2026",
+                FieldType.INTEGER: "10",
+                FieldType.MONEY: "1 000",
+                FieldType.ITEMS: _ITEMS,
+            }.get(spec.type, "значение")
+    return raw
+
+
+def _filled_text(template: BuiltinTemplate, raw: dict[str, str]) -> str:
+    checked = validate_fields(
+        template.fields, {key: FieldValue(value) for key, value in raw.items()}
+    )
+    assert checked.errors == (), (template.slug, checked.errors)
+    filled = fill_docx(
+        template.blank_bytes(),
+        places=[],
+        context=fill_context(template.fields, checked.values),
+        blank="<пусто>",
+    )
+    return "\n".join(docx_lines(filled))
+
+
 def test_every_blank_fills_with_demo_requisites_without_errors() -> None:
     """Тестовые реквизиты сходятся в любом стандартном бланке, и готовый файл
     не содержит ни одного маркера: проверка БИК и счёта их не отвергает."""
     for template in BUILTIN_TEMPLATES:
-        common = {"number": "17", "date": "28.09.2026", "city": "Москва", "total": "120 000"}
-        keys = {spec.key for spec in template.fields}
-        raw = {key: value for key, value in common.items() if key in keys}
-        for spec in template.fields:
-            for prefix, demo in (("seller_", DEMO_SELLER), ("client_", DEMO_CLIENT)):
-                if spec.key.startswith(prefix) and spec.key.removeprefix(prefix) in demo:
-                    raw[spec.key] = demo[spec.key.removeprefix(prefix)]
-            if spec.key not in raw:
-                raw[spec.key] = spec.default or {
-                    FieldType.DATE: "31.10.2026",
-                    FieldType.INTEGER: "10",
-                    FieldType.MONEY: "1 000",
-                }.get(spec.type, "значение")
-        checked = validate_fields(
-            template.fields, {key: FieldValue(value) for key, value in raw.items()}
-        )
-        assert checked.errors == () and checked.ready, (template.slug, checked.errors)
-        filled = fill_docx(
-            template.blank_bytes(),
-            places=[],
-            context=fill_context(template.fields, checked.values),
-            blank="<пусто>",
-        )
+        text = _filled_text(template, _demo_values(template))
         # Линейки для подписей — часть бланка; пустых мест под данные не осталось.
-        text = "\n".join(docx_lines(filled))
         assert "{{" not in text and "<пусто>" not in text, template.slug
+        assert "[[" not in text and "]]" not in text, template.slug
+
+
+def test_blank_without_optional_values_keeps_no_labels_of_them() -> None:
+    """Только обязательные поля: условные куски с необязательными реквизитами
+    исчезают целиком, скобки разметки в файл не попадают, а пустое обязательное
+    осталось бы линией."""
+    for template in BUILTIN_TEMPLATES:
+        required = {spec.key for spec in template.fields if spec.required}
+        raw = {key: value for key, value in _demo_values(template).items() if key in required}
+        text = _filled_text(template, raw)
+        assert "[[" not in text and "]]" not in text and "{{" not in text, template.slug
+        for label in ("КПП", "ОГРН", "Адрес:", "Р/с", "БИК", "Эл. почта", "e-mail", "сайт:"):
+            assert f"{label} <пусто>" not in text, (template.slug, label)
+    invoice = next(template for template in BUILTIN_TEMPLATES if template.slug == "invoice")
+    required = {spec.key for spec in invoice.fields if spec.required}
+    minimal = _filled_text(
+        invoice, {k: v for k, v in _demo_values(invoice).items() if k in required}
+    )
+    assert "Поставщик:\nООО «Ромашка», ИНН 7728417603\n" in minimal + "\n"
+    assert "Покупатель:\nООО «Альфа»\n" in minimal + "\n"
+    without_number = _filled_text(
+        invoice,
+        {k: v for k, v in _demo_values(invoice).items() if k in required - {"number"}},
+    )
+    assert "Счет на оплату № <пусто>" in without_number, "пустое обязательное — линия"
+
+
+def test_optional_fields_only_inside_conditional_pieces_are_never_required() -> None:
+    """Условный кусок исчезает с пустым значением — обязательному полю там не
+    место: его пустота должна остаться линией для записи от руки."""
+    for template in BUILTIN_TEMPLATES:
+        required = {spec.key for spec in template.fields if spec.required}
+        for line in docx_lines(template.blank_bytes()):
+            assert line.count("[[") == line.count("]]"), (template.slug, line)
+            for piece in CONDITIONAL.finditer(line):
+                for marker in MARKER.finditer(piece.group(1)):
+                    # «НДС в том числе» по необязательной ставке: кусок держится
+                    # на ставке, итог по позициям тут ни при чём.
+                    argument = (marker.group(3) or "").partition(":")[2]
+                    if argument and argument not in required:
+                        continue
+                    assert marker.group(1) not in required, (template.slug, piece.group(0))
+
+
+def test_items_blanks_repeat_the_row_for_every_position() -> None:
+    items = next(t for t in BUILTIN_TEMPLATES if t.slug == "invoice")
+    raw = _demo_values(items) | {
+        "items": (
+            '[{"name": "Ноутбук", "quantity": "3", "unit": "шт.", "price": "78 500"},'
+            ' {"name": "Доставка", "price": "1500"}]'
+        )
+    }
+    # Разряды суммы разделены неразрывным пробелом, как в format_money.
+    text = _filled_text(items, raw).replace("\u00a0", " ")
+    assert "1\nНоутбук\n3\nшт.\n78 500,00\n235 500,00" in text
+    assert "2\nДоставка\n1\n\n1 500,00\n1 500,00" in text
+    assert "Всего наименований 2, на сумму 237 000,00 руб." in text
+    assert "Двести тридцать семь тысяч рублей 00 копеек" in text

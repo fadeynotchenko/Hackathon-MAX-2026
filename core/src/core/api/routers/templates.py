@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Query, Request, Response, status
 
 from core.api.dependencies import CurrentUserDep, SessionDep, StateDep
+from core.api.previews import (
+    PREVIEW_RESPONSES,
+    PageQuery,
+    PreviewSize,
+    SizeQuery,
+    preview_response,
+)
 from core.api.schemas.common import ErrorResponse, IdPath, OkResponse
 from core.api.schemas.documents import TemplateImportSchema, TemplateRequest, TemplateSchema
 from core.api.uploads import DOCUMENT_TYPES, binary_body, read_body
@@ -16,6 +23,7 @@ from core.usecases.documents import (
     get_template,
     keep_template,
     list_templates,
+    template_preview,
     update_template,
 )
 
@@ -129,6 +137,32 @@ async def get_one(
 ) -> TemplateSchema:
     template = await get_template(session, user_id=current.id, template_id=template_id)
     return TemplateSchema.model_validate(template)
+
+
+@router.get(
+    "/{template_id}/preview",
+    response_class=Response,
+    responses=PREVIEW_RESPONSES,
+    operation_id="template_preview",
+    summary="Пустой бланк шаблона картинкой страницы",
+)
+async def preview(
+    template_id: IdPath,
+    current: CurrentUserDep,
+    session: SessionDep,
+    state: StateDep,
+    page: int = PageQuery,
+    size: PreviewSize = SizeQuery,
+) -> Response:
+    found = await template_preview(
+        session,
+        user_id=current.id,
+        template_id=template_id,
+        page=page,
+        size=size,
+        cfg=state.files_config,
+    )
+    return preview_response(found)
 
 
 @router.put(

@@ -6,7 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import type { DocumentFact, DocumentView } from '@/api/client';
 import { Banner, type BannerTone } from '@/components/Banner';
-import { DocPreview } from '@/components/DocPreview';
+import { SheetPreview } from '@/components/SheetPreview';
 import { IconCopy, IconEdit, IconSend, IconTemplates, IconTrash } from '@/components/icons';
 import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
@@ -163,7 +163,11 @@ export function DocumentPage() {
       ) : null}
 
       <div className="section">
-        <DocPreview text={doc.preview} />
+        <SheetPreview
+          source={{ kind: 'document', id: doc.id }}
+          version={doc.updated_at}
+          text={doc.preview}
+        />
       </div>
 
       <CellList mode="island" filled header={<CellHeader>История</CellHeader>}>

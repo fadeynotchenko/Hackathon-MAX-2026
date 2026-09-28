@@ -40,26 +40,32 @@ async def test_agent_fill_then_confirm(
     headers = await _auth(client, make_init_data)
     document = await _invoice(client, headers)
     app.state.api = replace(
-        app.state.api, llm=FakeLLM(json_reply={"total": "120 000", "item": "Разработка бота"})
+        app.state.api,
+        llm=FakeLLM(
+            json_reply={
+                "items": [{"name": "Разработка бота", "quantity": "1", "price": "120 000"}],
+                "number": "17",
+            }
+        ),
     )
 
     filled = await client.post(
         f"/api/v1/documents/{document['id']}/agent/fill",
         headers=headers,
-        json={"message": "Счёт на 120 тысяч за разработку бота"},
+        json={"message": "Счёт № 17 на 120 тысяч за разработку бота"},
     )
     assert filled.status_code == 200, filled.text
     body = filled.json()
-    assert set(body["filled"]) == {"total", "item"}
-    assert body["document"]["values"]["total"]["source"] == "agent"
-    assert body["document"]["values"]["total"]["confirmed"] is False
-    assert set(body["document"]["unconfirmed"]) == {"total", "item"}
+    assert set(body["filled"]) == {"items", "number"}
+    assert body["document"]["values"]["items"]["source"] == "agent"
+    assert body["document"]["values"]["items"]["confirmed"] is False
+    assert set(body["document"]["unconfirmed"]) == {"items", "number"}
     assert body["reply"].startswith("Заполнил:")
 
     confirmed = await client.post(
-        f"/api/v1/documents/{document['id']}/confirm", headers=headers, json={"keys": ["total"]}
+        f"/api/v1/documents/{document['id']}/confirm", headers=headers, json={"keys": ["items"]}
     )
-    assert confirmed.json()["unconfirmed"] == ["item"]
+    assert confirmed.json()["unconfirmed"] == ["number"]
     everything = await client.post(
         f"/api/v1/documents/{document['id']}/confirm", headers=headers, json={}
     )
@@ -241,7 +247,12 @@ async def test_voice_fills_document(
     document = await _invoice(client, headers)
     app.state.api = replace(
         app.state.api,
-        llm=FakeLLM(json_replies=[{"text": "Сумма 50 000"}, {"total": "50 000"}]),
+        llm=FakeLLM(
+            json_replies=[
+                {"text": "Монтаж на 50 000"},
+                {"items": [{"name": "Монтаж", "quantity": "1", "unit": "", "price": "50 000"}]},
+            ]
+        ),
     )
 
     response = await client.post(
@@ -252,6 +263,6 @@ async def test_voice_fills_document(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["transcript"] == "Сумма 50 000"
-    assert body["filled"] == ["total"]
-    assert body["document"]["values"]["total"]["value"] == "50000.00"
+    assert body["transcript"] == "Монтаж на 50 000"
+    assert body["filled"] == ["items"]
+    assert '"price": "50000.00"' in body["document"]["values"]["items"]["value"]

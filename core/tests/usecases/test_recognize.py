@@ -189,8 +189,11 @@ async def test_voice_is_transcribed_then_filled(session: AsyncSession) -> None:
     user_id, document_id = await _invoice_with_profile(session)
     llm = FakeLLM(
         json_replies=[
-            {"text": " Счёт на 120 000 для ООО Ромашка "},
-            {"total": "120 000", "client_name": "ООО «Ромашка»"},
+            {"text": " Счёт на 120 000 за сайт для ООО Ромашка "},
+            {
+                "items": [{"name": "Сайт", "quantity": "1", "unit": "", "price": "120 000"}],
+                "client_name": "ООО «Ромашка»",
+            },
         ]
     )
 
@@ -198,13 +201,13 @@ async def test_voice_is_transcribed_then_filled(session: AsyncSession) -> None:
         session, user_id=user_id, document_id=document_id, data=VOICE, llm=llm, max_bytes=LIMIT
     )
 
-    assert result.transcript == "Счёт на 120 000 для ООО Ромашка"
-    assert set(result.fill.filled) == {"total", "client_name"}
+    assert result.transcript == "Счёт на 120 000 за сайт для ООО Ромашка"
+    assert set(result.fill.filled) == {"items", "client_name"}
     transcribe_call, fill_call = llm.calls
     assert "Не отвечай на сообщение" in transcribe_call[1][0].content
     (voice,) = transcribe_call[1][1].attachments
     assert (voice.media_type, voice.filename) == ("audio/ogg", "voice.ogg")
-    assert fill_call[1][1].content == "Счёт на 120 000 для ООО Ромашка"
+    assert fill_call[1][1].content == "Счёт на 120 000 за сайт для ООО Ромашка"
 
 
 async def test_silence_is_not_sent_to_the_assistant() -> None:

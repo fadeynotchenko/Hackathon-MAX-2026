@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -36,7 +37,9 @@ async def test_agent_fills_only_valid_known_fields(session: AsyncSession) -> Non
     user_id, document_id = await _invoice(session)
     llm = FakeLLM(
         json_reply={
-            "total": "120 000",
+            "items": [
+                {"name": "Разработка сайта", "quantity": "1", "unit": "", "price": "120 000"}
+            ],
             "client_name": "ООО «Ромашка»",
             "seller_inn": "1234567890",
             "number": "",
@@ -48,16 +51,20 @@ async def test_agent_fills_only_valid_known_fields(session: AsyncSession) -> Non
         session,
         user_id=user_id,
         document_id=document_id,
-        message="Счёт на 120 тысяч для ООО «Ромашка», ИНН наш 1234567890",
+        message="Счёт на 120 тысяч за разработку сайта для ООО «Ромашка», ИНН наш 1234567890",
         llm=llm,
     )
 
-    assert set(result.filled) == {"total", "client_name"}
+    assert set(result.filled) == {"items", "client_name"}
     assert [e.code for e in result.rejected] == ["field.inn_invalid"]
-    total = result.document.values["total"]
-    assert (total.value, total.source, total.confirmed) == ("120000.00", ValueSource.AGENT, False)
+    items = result.document.values["items"]
+    assert (json.loads(items.value), items.source, items.confirmed) == (
+        [{"name": "Разработка сайта", "quantity": "1", "unit": "", "price": "120000.00"}],
+        ValueSource.AGENT,
+        False,
+    ), "список позиций модель отдаёт массивом, в документе — канонический JSON"
     assert "invented_field" not in result.document.values
-    assert set(result.document.unconfirmed) == {"total", "client_name"}
+    assert set(result.document.unconfirmed) == {"items", "client_name"}
     assert result.reply.startswith("Заполнил:")
     assert "Не записал" in result.reply and "Проверьте" in result.reply
 
@@ -65,6 +72,7 @@ async def test_agent_fills_only_valid_known_fields(session: AsyncSession) -> Non
     assert kind == "json"
     assert schema is not None and schema["additionalProperties"] is False
     assert "seller_inn" in schema["properties"]
+    assert schema["properties"]["items"]["type"] == "array"
     assert "Ничего не придумывай" in messages[0].content
     assert messages[0].content.startswith(fill_instructions()), "с сегодняшней датой в правилах"
     assert messages[1].content.startswith("Счёт на 120 тысяч")
@@ -91,27 +99,44 @@ async def test_agent_values_need_confirmation_before_ready(session: AsyncSession
             "seller_bank": FieldValue("ПАО Сбербанк"),
             "seller_bic": FieldValue("044525225"),
             "seller_account": FieldValue("40702810438000123459"),
-            "item": FieldValue("Услуги"),
         },
     )
-    llm = FakeLLM(json_reply={"total": "50 000", "client_name": "ООО «Клиент»"})
+    llm = FakeLLM(
+        json_reply={
+            "items": [{"name": "Услуги", "quantity": "1", "unit": "", "price": "50000"}],
+            "client_name": "ООО «Клиент»",
+        }
+    )
     result = await fill_from_message(
-        session, user_id=user_id, document_id=document_id, message="50 тысяч, ООО Клиент", llm=llm
+        session,
+        user_id=user_id,
+        document_id=document_id,
+        message="Услуги на 50 тысяч, ООО Клиент",
+        llm=llm,
     )
     assert not result.document.ready and result.document.missing == ()
 
     confirmed = await confirm_fields(session, user_id=user_id, document_id=document_id)
     assert confirmed.ready and confirmed.status == "ready"
-    assert confirmed.values["total"].source is ValueSource.AGENT
+    assert confirmed.values["items"].source is ValueSource.AGENT
 
 
 async def test_confirm_can_be_selective(session: AsyncSession) -> None:
     user_id, document_id = await _invoice(session)
-    llm = FakeLLM(json_reply={"total": "50 000", "client_name": "ООО «Клиент»"})
-    await fill_from_message(
-        session, user_id=user_id, document_id=document_id, message="50 тысяч, Клиент", llm=llm
+    llm = FakeLLM(
+        json_reply={
+            "items": [{"name": "Услуги", "quantity": "1", "unit": "", "price": "50000"}],
+            "client_name": "ООО «Клиент»",
+        }
     )
-    view = await confirm_fields(session, user_id=user_id, document_id=document_id, keys=["total"])
+    await fill_from_message(
+        session,
+        user_id=user_id,
+        document_id=document_id,
+        message="Услуги 50 тысяч, Клиент",
+        llm=llm,
+    )
+    view = await confirm_fields(session, user_id=user_id, document_id=document_id, keys=["items"])
     assert view.unconfirmed == ("client_name",)
 
 
@@ -182,11 +207,11 @@ async def test_repeated_profile_values_stay_confirmed_and_list_goes_in_order(
     waiting = prompt.split("Ещё не заполнено:\n", 1)[1]
     assert waiting.startswith(
         "1. client_name: Название клиента\n2. number: Номер счёта\n"
-        "3. item: Наименование работ или услуг\n4. total: Сумма к оплате\n5. seller_bank: Банк"
+        "3. items: Позиции\n4. seller_bank: Банк"
     ), "клиент и условия — первыми, свои реквизиты — в конце"
-    assert "Ещё нужно: название клиента, наименование работ или услуг, сумма к оплате, банк" in (
-        result.reply
-    ), "ответ столбиком модель разносит по тому же порядку, что видит человек"
+    assert "Ещё нужно: название клиента, позиции, банк" in (result.reply), (
+        "ответ столбиком модель разносит по тому же порядку, что видит человек"
+    )
 
 
 def test_yo_and_ye_are_the_same_letter_for_grounding() -> None:
@@ -210,3 +235,16 @@ def test_values_must_come_from_the_message() -> None:
     )
     assert grounded(inn, "7736207543", message) and not grounded(inn, "7707083893", message)
     assert grounded(total, "200000", message), "суммы пишутся иначе, их не сверяем"
+
+
+def test_items_are_grounded_by_a_named_position() -> None:
+    items = FieldSpec("items", "Позиции", FieldType.ITEMS)
+    listed = json.dumps(
+        [
+            {"name": "Разработка сайта", "price": "120000"},
+            {"name": "Хостинг на год", "price": "6000"},
+        ],
+        ensure_ascii=False,
+    )
+    assert grounded(items, listed, "добавь хостинг на год за 6000"), "прежние позиции — с новой"
+    assert not grounded(items, listed, "поменяй номер на 18"), "позиций в сообщении нет"

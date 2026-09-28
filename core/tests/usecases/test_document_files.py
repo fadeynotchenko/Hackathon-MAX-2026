@@ -84,8 +84,7 @@ READY_INVOICE = {
     "seller_bic": FieldValue("044525225"),
     "seller_account": FieldValue("40702810438000123459"),
     "client_name": FieldValue("ООО «Клиент»"),
-    "item": FieldValue("Разработка сайта"),
-    "total": FieldValue("120 000"),
+    "items": FieldValue('[{"name": "Разработка сайта", "price": "120 000"}]'),
 }
 
 

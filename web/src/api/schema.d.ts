@@ -456,6 +456,23 @@ export interface paths {
         patch: operations["set_document_parties"];
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Документ картинкой страницы, как в PDF */
+        get: operations["document_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}/render": {
         parameters: {
             query?: never;
@@ -654,6 +671,23 @@ export interface paths {
          * @description Следующий такой же документ начнётся с этого шаблона.
          */
         post: operations["keep_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/templates/{template_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Пустой бланк шаблона картинкой страницы */
+        get: operations["template_preview"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1170,7 +1204,7 @@ export interface components {
          * FieldType
          * @enum {string}
          */
-        FieldType: "text" | "multiline" | "name" | "address" | "email" | "phone" | "money" | "date" | "integer" | "inn" | "kpp" | "ogrn" | "bic" | "account";
+        FieldType: "text" | "multiline" | "name" | "address" | "email" | "phone" | "money" | "date" | "integer" | "inn" | "kpp" | "ogrn" | "bic" | "account" | "items";
         /** FieldValueSchema */
         FieldValueSchema: {
             /** Confidence */
@@ -1187,7 +1221,10 @@ export interface components {
             fragment?: string | null;
             /** @default manual */
             source: components["schemas"]["ValueSource"];
-            /** Value */
+            /**
+             * Value
+             * @description Значение строкой; у поля типа items — JSON-список позиций [{"name", "quantity", "unit", "price"}]
+             */
             value: string;
         };
         /** FunnelSchema */
@@ -3248,6 +3285,69 @@ export interface operations {
             };
         };
     };
+    document_preview: {
+        parameters: {
+            query?: {
+                /** @description Номер страницы с единицы */
+                page?: number;
+                /** @description thumb — карточка каталога, page — лист во весь экран */
+                size?: "thumb" | "page";
+            };
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница JPEG; число страниц — в X-Page-Count */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     render_document: {
         parameters: {
             query?: never;
@@ -4122,6 +4222,69 @@ export interface operations {
             };
             /** @description Unprocessable Content */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    template_preview: {
+        parameters: {
+            query?: {
+                /** @description Номер страницы с единицы */
+                page?: number;
+                /** @description thumb — карточка каталога, page — лист во весь экран */
+                size?: "thumb" | "page";
+            };
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница JPEG; число страниц — в X-Page-Count */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

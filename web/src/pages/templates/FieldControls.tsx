@@ -5,6 +5,7 @@ import { Button, Switch, Typography } from '@maxhub/max-ui';
 import { useState, type ReactNode } from 'react';
 
 import { FieldInput } from '@/components/FieldInput';
+import { IconPlus } from '@/components/icons';
 import { KIND_ORDER, KIND_STYLE, type TemplateKind } from '@/lib/format';
 
 import {
@@ -13,10 +14,15 @@ import {
   FIELD_CATALOG,
   hasFixedType,
   LABEL_MAX,
+  marker,
   sourceText,
   TYPE_LABEL,
 } from './editor';
 
+// Поля для вставки в текст. Раньше это был список кнопок без объяснения: не
+// было ясно, что нажатие вставляет поле и куда. Теперь сверху одна фраза, на
+// кнопках «+», после нажатия — подтверждение, а своё поле — в конце, когда
+// среди готовых нужного не нашлось.
 export function FieldPicker({
   onInsert,
   customAction = 'Вставить своё поле',
@@ -25,44 +31,40 @@ export function FieldPicker({
   customAction?: string;
 }) {
   const [custom, setCustom] = useState('');
+  const [inserted, setInserted] = useState<string | null>(null);
   // Фигурные скобки и перевод строки сломали бы маркер в тексте.
   const label = custom.replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
+  const insert = (value: string) => {
+    onInsert(value);
+    setInserted(value);
+  };
   return (
     <div className="picker">
-      <div className="picker__group">
-        <FieldInput
-          label="Своё поле"
-          type="text"
-          value={custom}
-          maxLength={LABEL_MAX}
-          hint="Например: Срок поставки, Адрес доставки"
-          onChange={setCustom}
-        />
-        <Button
-          size="medium"
-          variant="secondary"
-          disabled={!label}
-          onClick={() => {
-            onInsert(label);
-            setCustom('');
-          }}
-        >
-          {customAction}
-        </Button>
-      </div>
+      <Typography.Text variant="description" color="secondary">
+        Нажмите поле — оно встанет в текст там, где курсор. В документе на его месте будет значение.
+      </Typography.Text>
+      {inserted ? (
+        <Typography.Text variant="description" className="picker__done" aria-live="polite">
+          Вставили {marker(inserted)}
+        </Typography.Text>
+      ) : null}
       {FIELD_CATALOG.map((group) => (
         <div key={group.title} className="picker__group" role="group" aria-label={group.title}>
-          <Typography.Text variant="description-strong" color="secondary">
-            {group.title}
-          </Typography.Text>
+          <div className="picker__title">
+            <Typography.Text variant="body-strong">{group.title}</Typography.Text>
+            <Typography.Text variant="description" color="tertiary">
+              {group.note}
+            </Typography.Text>
+          </div>
           <div className="chips chips--wrap">
             {group.items.map((item) => (
               <Button
                 key={item.field.key}
                 size="small"
                 variant="secondary"
+                iconBefore={<IconPlus size={16} />}
                 aria-label={`Вставить «${item.field.label}»`}
-                onClick={() => onInsert(item.field.label)}
+                onClick={() => insert(item.field.label)}
               >
                 {item.short}
               </Button>
@@ -70,17 +72,49 @@ export function FieldPicker({
           </div>
         </div>
       ))}
+      <div className="picker__group">
+        <div className="picker__title">
+          <Typography.Text variant="body-strong">Своё поле</Typography.Text>
+          <Typography.Text variant="description" color="tertiary">
+            Если нужного нет выше: срок поставки, адрес доставки
+          </Typography.Text>
+        </div>
+        <FieldInput
+          label="Название поля"
+          type="text"
+          value={custom}
+          maxLength={LABEL_MAX}
+          onChange={setCustom}
+        />
+        <Button
+          size="medium"
+          variant="secondary"
+          disabled={!label}
+          onClick={() => {
+            insert(label);
+            setCustom('');
+          }}
+        >
+          {customAction}
+        </Button>
+      </div>
     </div>
   );
 }
 
+// Карточка поля шаблона. Сверху — что за поле, под ним — где оно в файле,
+// внизу одна строка действий: «Обязательное» и «Убрать». Прежде переключатель
+// стоял рядом с названием, а «Убрать» — рядом с текстом из файла, и на узком
+// экране строки слипались.
 export function FieldSettings<T extends EditorField>({
   field,
   onChange,
+  onRemove,
   children,
 }: {
   field: T;
   onChange: (field: T) => void;
+  onRemove?: () => void;
   children?: ReactNode;
 }) {
   const source = sourceText(field.key);
@@ -91,24 +125,13 @@ export function FieldSettings<T extends EditorField>({
   ].filter(Boolean);
   return (
     <div className="template-field">
-      <div className="template-field__head">
-        <div className="template-field__titles">
-          <Typography.Text variant="body-strong">{field.label}</Typography.Text>
-          <Typography.Text variant="description" color="tertiary">
-            {details.join(' · ')}
-          </Typography.Text>
-        </div>
-        <label className="template-field__required">
-          <Typography.Text variant="description" color="secondary">
-            Обязательное
-          </Typography.Text>
-          <Switch
-            checked={field.required}
-            aria-label={`«${field.label}» обязательное`}
-            onChange={(event) => onChange({ ...field, required: event.target.checked })}
-          />
-        </label>
+      <div className="template-field__titles">
+        <Typography.Text variant="body-strong">{field.label}</Typography.Text>
+        <Typography.Text variant="description" color="tertiary">
+          {details.join(' · ')}
+        </Typography.Text>
       </div>
+      {children}
       {hasFixedType(field.key) ? null : (
         <div className="chips chips--inset" role="group" aria-label={`Тип поля «${field.label}»`}>
           {CUSTOM_TYPES.map((type) => (
@@ -130,7 +153,28 @@ export function FieldSettings<T extends EditorField>({
           ))}
         </div>
       )}
-      {children}
+      <div className="template-field__actions">
+        <label className="template-field__required">
+          <Switch
+            checked={field.required}
+            aria-label={`«${field.label}» обязательное`}
+            onChange={(event) => onChange({ ...field, required: event.target.checked })}
+          />
+          <Typography.Text variant="body" color="secondary">
+            Обязательное
+          </Typography.Text>
+        </label>
+        {onRemove ? (
+          <Button
+            size="small"
+            variant="ghost"
+            aria-label={`Убрать поле «${field.label}»`}
+            onClick={onRemove}
+          >
+            Убрать
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
