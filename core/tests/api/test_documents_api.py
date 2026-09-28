@@ -475,3 +475,101 @@ async def test_huge_ids_and_control_characters_are_422_not_500(
     )
     assert patched.status_code == 200
     assert [e["code"] for e in patched.json()["errors"]] == ["field.control_chars"]
+
+
+async def test_parties_are_chosen_in_the_form(
+    client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    await _seed(session)
+    headers = await _auth(client, make_init_data)
+    romashka = await client.post(
+        "/api/v1/organizations",
+        headers=headers,
+        json={"name": "ООО «Ромашка»", "values": {"inn": "7707083893", "kpp": "773601001"}},
+    )
+    ip = await client.post(
+        "/api/v1/organizations",
+        headers=headers,
+        json={"name": "ИП Нотченко", "values": {"inn": "500100732259"}},
+    )
+    card = await client.post(
+        "/api/v1/counterparties",
+        headers=headers,
+        json={"name": "ООО «Клиент»", "values": {"inn": "500100732259"}},
+    )
+    invoice = (await client.get("/api/v1/templates?slug=invoice", headers=headers)).json()[0]
+    document = (
+        await client.post("/api/v1/documents", headers=headers, json={"template_id": invoice["id"]})
+    ).json()
+    assert document["organization_id"] == romashka.json()["id"], "без выбора — основная"
+    url = f"/api/v1/documents/{document['id']}/parties"
+    typed_address = {"values": {"client_address": {"value": "г. Тверь, ул. Советская, д. 5"}}}
+    await client.patch(
+        f"/api/v1/documents/{document['id']}/fields", headers=headers, json=typed_address
+    )
+
+    picked = await client.patch(url, headers=headers, json={"counterparty_id": card.json()["id"]})
+    assert picked.status_code == 200, picked.text
+    body = picked.json()
+    assert body["counterparty_id"] == card.json()["id"]
+    assert body["values"]["client_name"]["source"] == "counterparty"
+    assert "client_address" not in body["values"], "карточка заменяет всё набранное о клиенте"
+    assert body["organization_id"] == romashka.json()["id"], "организацию не передали — не трогаем"
+    assert body["values"]["seller_kpp"]["value"] == "773601001"
+
+    switched = (
+        await client.patch(url, headers=headers, json={"organization_id": ip.json()["id"]})
+    ).json()
+    assert switched["organization_id"] == ip.json()["id"]
+    assert switched["values"]["seller_name"]["value"] == "ИП Нотченко"
+    assert "seller_kpp" not in switched["values"]
+    assert switched["counterparty_id"] == card.json()["id"], "клиента не передали — не трогаем"
+
+    await client.patch(
+        f"/api/v1/documents/{document['id']}/fields", headers=headers, json=typed_address
+    )
+    detached = (await client.patch(url, headers=headers, json={"counterparty_id": None})).json()
+    assert detached["counterparty_id"] is None
+    assert "client_name" not in detached["values"]
+    assert detached["values"]["client_address"]["value"] == "г. Тверь, ул. Советская, д. 5"
+    assert detached["organization_id"] == ip.json()["id"]
+
+    same = await client.patch(url, headers=headers, json={})
+    assert same.status_code == 200 and same.json()["values"] == detached["values"]
+
+
+async def test_parties_route_refuses_foreign_ids_and_anonymous(
+    client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    await _seed(session)
+    owner = await _auth(client, make_init_data, user_id=1)
+    offer = (await client.get("/api/v1/templates?slug=offer", headers=owner)).json()[0]
+    document = (
+        await client.post("/api/v1/documents", headers=owner, json={"template_id": offer["id"]})
+    ).json()
+    url = f"/api/v1/documents/{document['id']}/parties"
+
+    anonymous = await client.patch(url, json={"counterparty_id": None})
+    assert anonymous.status_code == 401
+
+    stranger = await _auth(client, make_init_data, user_id=2)
+    theirs = await client.post(
+        "/api/v1/counterparties",
+        headers=stranger,
+        json={"name": "Чужой", "values": {"inn": "500100732259"}},
+    )
+    their_org = await client.post(
+        "/api/v1/organizations", headers=stranger, json={"name": "Чужая", "values": {}}
+    )
+    for headers, body, code in (
+        (owner, {"counterparty_id": theirs.json()["id"]}, "counterparty.not_found"),
+        (owner, {"organization_id": their_org.json()["id"]}, "organization.not_found"),
+        (stranger, {"counterparty_id": None}, "document.not_found"),
+    ):
+        response = await client.patch(url, headers=headers, json=body)
+        assert response.status_code == 404, body
+        assert response.json()["code"] == code
+
+    for body in ({"counterparty_id": 0}, {"organization_id": 2**63}, {"counterparty_id": "x"}):
+        response = await client.patch(url, headers=owner, json=body)
+        assert response.status_code == 422, body

@@ -13,6 +13,7 @@ from core.api.schemas.documents import (
     CreateDocumentRequest,
     DocumentFactSchema,
     DocumentFileSchema,
+    DocumentPartiesRequest,
     DocumentSchema,
     DocumentSummarySchema,
     RenderRequest,
@@ -23,6 +24,7 @@ from core.api.schemas.documents import (
 from core.db.repositories import DownloadTokenRepository
 from core.domain.documents import FieldValue
 from core.usecases.documents import (
+    UNSET,
     confirm_fields,
     copy_document,
     create_draft,
@@ -36,6 +38,7 @@ from core.usecases.documents import (
     render_document,
     send_document_to_chat,
     set_fields,
+    set_parties,
 )
 from core.usecases.documents.files import MEDIA_TYPES
 
@@ -157,6 +160,31 @@ async def patch_fields(
         document_id=document_id,
         values=values,
         title=payload.title,
+    )
+    return DocumentSchema.model_validate(document)
+
+
+@router.patch(
+    "/{document_id}/parties",
+    response_model=DocumentSchema,
+    responses=_ERRORS,
+    operation_id="set_document_parties",
+    summary="Выбрать, от кого и кому документ",
+)
+async def patch_parties(
+    document_id: IdPath,
+    payload: DocumentPartiesRequest,
+    current: CurrentUserDep,
+    session: SessionDep,
+) -> DocumentSchema:
+    # Нет поля в теле — сторону не трогаем; null — отвязать карточку.
+    given = payload.model_fields_set
+    document = await set_parties(
+        session,
+        user_id=current.id,
+        document_id=document_id,
+        organization_id=payload.organization_id if "organization_id" in given else UNSET,
+        counterparty_id=payload.counterparty_id if "counterparty_id" in given else UNSET,
     )
     return DocumentSchema.model_validate(document)
 

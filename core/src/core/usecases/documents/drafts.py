@@ -1,4 +1,5 @@
-"""Черновик документа: создать, заполнить, посмотреть предпросмотр, взять за основу.
+"""Черновик документа: создать, выбрать стороны, заполнить, посмотреть предпросмотр,
+взять за основу.
 
 Сценарии каналонейтральны: их одинаково зовут роутер мини-аппа и обработчик
 сообщения бота. Значения всегда проходят через ``core.domain.documents``, поэтому
@@ -11,10 +12,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from enum import Enum, auto
+from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.models import Document
+from core.db.models import Counterparty, Document
 from core.db.repositories import CounterpartyRepository, DocumentRepository
 from core.domain.calendar import local_day
 from core.domain.documents import (
@@ -42,6 +45,15 @@ STATUS_READY = "ready"
 # Архив мини-аппа ищет и группирует на клиенте: при пятидесяти старые документы
 # пропадали из поиска совсем. Пагинация понадобится, когда их станут тысячи.
 ARCHIVE_LIMIT = 500
+
+
+class Unset(Enum):
+    """«Сторону не трогать» — отдельно от ``None``, который значит «отвязать»."""
+
+    UNSET = auto()
+
+
+UNSET: Final = Unset.UNSET
 
 
 @dataclass(frozen=True)
@@ -141,6 +153,32 @@ def _view(
     )
 
 
+def _side_values(
+    specs: tuple[FieldSpec, ...],
+    prefix: str,
+    requisites: Mapping[str, str],
+    source: ValueSource,
+) -> dict[str, FieldValue]:
+    """Поля одной стороны из её карточки: ``seller_inn`` ← ``inn`` организации."""
+    values: dict[str, FieldValue] = {}
+    for spec in specs:
+        if not spec.key.startswith(prefix):
+            continue
+        filled = requisites.get(spec.key.removeprefix(prefix))
+        if filled:
+            values[spec.key] = FieldValue(filled, source=source)
+    return values
+
+
+async def _counterparty(
+    session: AsyncSession, *, user_id: int, counterparty_id: int
+) -> Counterparty:
+    counterparty = await CounterpartyRepository(session).get(user_id, counterparty_id)
+    if counterparty is None:
+        raise NotFoundError("Контрагент не найден", code="counterparty.not_found")
+    return counterparty
+
+
 async def _prefill(
     session: AsyncSession,
     *,
@@ -157,22 +195,13 @@ async def _prefill(
     seller = await seller_for_document(
         session, user_id=user_id, organization_id=organization_id, strict=strict
     )
-    sources: list[tuple[str, Mapping[str, str], ValueSource]] = []
     if seller is not None:
-        sources.append((SELLER_PREFIX, seller.values, ValueSource.PROFILE))
+        values |= _side_values(specs, SELLER_PREFIX, seller.values, ValueSource.PROFILE)
     if counterparty_id is not None:
-        counterparty = await CounterpartyRepository(session).get(user_id, counterparty_id)
-        if counterparty is None:
-            raise NotFoundError("Контрагент не найден", code="counterparty.not_found")
-        sources.append((CLIENT_PREFIX, counterparty.values, ValueSource.COUNTERPARTY))
-
-    for spec in specs:
-        for prefix, requisites, source in sources:
-            if not spec.key.startswith(prefix):
-                continue
-            filled = requisites.get(spec.key.removeprefix(prefix))
-            if filled:
-                values[spec.key] = FieldValue(filled, source=source)
+        counterparty = await _counterparty(
+            session, user_id=user_id, counterparty_id=counterparty_id
+        )
+        values |= _side_values(specs, CLIENT_PREFIX, counterparty.values, ValueSource.COUNTERPARTY)
     today = local_day(datetime.now(UTC)).isoformat()
     for spec in specs:
         if spec.today_by_default and spec.key not in values:
@@ -366,6 +395,85 @@ async def set_fields(
         document.title = title.strip()
     saved, errors = await _save(session, document, template, merged, incoming=values)
     return _view(saved, template, rejected=errors)
+
+
+def _switch_side(
+    values: Mapping[str, FieldValue],
+    specs: tuple[FieldSpec, ...],
+    prefix: str,
+    source: ValueSource,
+    requisites: Mapping[str, str] | None,
+) -> dict[str, FieldValue]:
+    """Поля одной стороны после выбора в форме.
+
+    Выбрали организацию или карточку — уходят все поля стороны, даже набранные
+    руками, и встают её реквизиты: иначе КПП и счёт прежней стороны остались бы
+    рядом с новым названием (то же, что в ``_without_stale_requisites``).
+    Отвязали (``None``) — уходит только подставленное из справочника, набранное
+    человеком остаётся."""
+    kept = {
+        key: value
+        for key, value in values.items()
+        if not key.startswith(prefix) or (requisites is None and value.source is not source)
+    }
+    if requisites is not None:
+        kept |= _side_values(specs, prefix, requisites, source)
+    return kept
+
+
+async def set_parties(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    document_id: int,
+    organization_id: int | Unset | None = UNSET,
+    counterparty_id: int | Unset | None = UNSET,
+) -> DocumentView:
+    """Выбрать в форме, от кого и кому документ, — уже после создания черновика.
+
+    Id — своя организация или карточка контрагента: её реквизиты встают целиком.
+    ``None`` — отвязать, ``UNSET`` — сторону не трогать. Остальные поля не
+    меняются, дату по умолчанию заново не ставим: её могли исправить руками."""
+    document = await _load(session, user_id=user_id, document_id=document_id)
+    template = to_view(document.template)
+    if organization_id is UNSET and counterparty_id is UNSET:
+        return _view(document, template)
+    # Обе стороны ищем до правок: чужой id отвечает 404, не тронув документ.
+    seller = None
+    if isinstance(organization_id, int):
+        seller = await seller_for_document(
+            session, user_id=user_id, organization_id=organization_id
+        )
+    counterparty = None
+    if isinstance(counterparty_id, int):
+        counterparty = await _counterparty(
+            session, user_id=user_id, counterparty_id=counterparty_id
+        )
+
+    values = load_values(document.values)
+    if organization_id is not UNSET:
+        values = _switch_side(
+            values,
+            template.fields,
+            SELLER_PREFIX,
+            ValueSource.PROFILE,
+            seller.values if seller is not None else None,
+        )
+        document.organization_id = seller.id if seller is not None else None
+    if counterparty_id is not UNSET:
+        values = _switch_side(
+            values,
+            template.fields,
+            CLIENT_PREFIX,
+            ValueSource.COUNTERPARTY,
+            counterparty.values if counterparty is not None else None,
+        )
+        # Связь загружена вместе с документом и за counterparty_id сама не следует:
+        # без присваивания объект в этой сессии помнил бы прежнюю карточку.
+        document.counterparty = counterparty
+        document.counterparty_id = counterparty.id if counterparty is not None else None
+    saved, _rejected = await _save(session, document, template, values)
+    return _view(saved, template)
 
 
 async def confirm_fields(

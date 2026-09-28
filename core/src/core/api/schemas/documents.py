@@ -287,6 +287,22 @@ class SetFieldsRequest(BaseModel):
     title: PrintableStr | None = Field(default=None, max_length=255)
 
 
+class DocumentPartiesRequest(BaseModel):
+    """От кого и кому уже созданный документ. Поле не передано — эта сторона
+    остаётся как была; null — отвязать."""
+
+    organization_id: DbId | None = Field(
+        default=None,
+        description="От какой своей организации: её реквизиты заменят все поля продавца; "
+        "null — отвязать, подставленное из профиля уйдёт, введённое вручную останется",
+    )
+    counterparty_id: DbId | None = Field(
+        default=None,
+        description="Карточка клиента: её реквизиты заменят все поля покупателя; "
+        "null — отвязать, подставленное из карточки уйдёт, введённое вручную останется",
+    )
+
+
 class AgentFillRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 

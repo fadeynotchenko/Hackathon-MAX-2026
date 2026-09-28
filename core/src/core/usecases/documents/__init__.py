@@ -8,8 +8,10 @@ from .counterparties import (
 from .drafts import (
     STATUS_DRAFT,
     STATUS_READY,
+    UNSET,
     DocumentSummary,
     DocumentView,
+    Unset,
     confirm_fields,
     copy_document,
     create_draft,
@@ -18,6 +20,7 @@ from .drafts import (
     get_document,
     list_documents,
     set_fields,
+    set_parties,
 )
 from .files import (
     DOCX,
@@ -66,6 +69,7 @@ __all__ = [
     "REQUISITE_FIELDS",
     "STATUS_DRAFT",
     "STATUS_READY",
+    "UNSET",
     "CounterpartyView",
     "DocumentFact",
     "DocumentFileView",
@@ -77,6 +81,7 @@ __all__ = [
     "TemplateField",
     "TemplateInput",
     "TemplateView",
+    "Unset",
     "confirm_fields",
     "copy_document",
     "create_counterparty",
@@ -105,6 +110,7 @@ __all__ = [
     "seller_for_document",
     "send_document_to_chat",
     "set_fields",
+    "set_parties",
     "update_counterparty",
     "update_organization",
     "update_template",

@@ -640,6 +640,41 @@
         "title": "DocumentFileSchema",
         "type": "object"
       },
+      "DocumentPartiesRequest": {
+        "description": "От кого и кому уже созданный документ. Поле не передано — эта сторона\nостаётся как была; null — отвязать.",
+        "properties": {
+          "counterparty_id": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Карточка клиента: её реквизиты заменят все поля покупателя; null — отвязать, подставленное из карточки уйдёт, введённое вручную останется",
+            "title": "Counterparty Id"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "От какой своей организации: её реквизиты заменят все поля продавца; null — отвязать, подставленное из профиля уйдёт, введённое вручную останется",
+            "title": "Organization Id"
+          }
+        },
+        "title": "DocumentPartiesRequest",
+        "type": "object"
+      },
       "DocumentSchema": {
         "properties": {
           "counterparty_id": {
@@ -3991,6 +4026,80 @@
           }
         },
         "summary": "Путь документа: создан, готов, собран, отправлен, доставлен",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/parties": {
+      "patch": {
+        "operationId": "set_document_parties",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentPartiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Выбрать, от кого и кому документ",
         "tags": [
           "documents"
         ]

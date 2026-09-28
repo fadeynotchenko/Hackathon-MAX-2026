@@ -399,6 +399,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Выбрать, от кого и кому документ */
+        patch: operations["set_document_parties"];
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}/render": {
         parameters: {
             query?: never;
@@ -877,6 +894,23 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * DocumentPartiesRequest
+         * @description От кого и кому уже созданный документ. Поле не передано — эта сторона
+         *     остаётся как была; null — отвязать.
+         */
+        DocumentPartiesRequest: {
+            /**
+             * Counterparty Id
+             * @description Карточка клиента: её реквизиты заменят все поля покупателя; null — отвязать, подставленное из карточки уйдёт, введённое вручную останется
+             */
+            counterparty_id?: number | null;
+            /**
+             * Organization Id
+             * @description От какой своей организации: её реквизиты заменят все поля продавца; null — отвязать, подставленное из профиля уйдёт, введённое вручную останется
+             */
+            organization_id?: number | null;
         };
         /** DocumentSchema */
         DocumentSchema: {
@@ -2912,6 +2946,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentFactSchema"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_document_parties: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentPartiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSchema"];
                 };
             };
             /** @description Unauthorized */
