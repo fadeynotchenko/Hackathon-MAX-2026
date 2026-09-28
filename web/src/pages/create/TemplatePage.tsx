@@ -92,8 +92,15 @@ export function TemplatePage() {
       </div>
       {template.file ? (
         <div className="section">
-          <Banner tone="info" title={`Соберётся в файле «${template.file.filename}»`}>
-            С оформлением образца; выше — только текст.
+          <Banner
+            tone="info"
+            title={
+              template.is_builtin
+                ? 'Соберётся в бланке DOCX'
+                : `Соберётся в файле «${template.file.filename}»`
+            }
+          >
+            Таблицы, линейки и шрифты — как в образце; выше — только текст.
           </Banner>
         </div>
       ) : null}
@@ -114,7 +121,7 @@ function TemplateActions({ template }: { template: Template }) {
       <CellList mode="island" filled>
         <CellSimple
           title="Создать свой шаблон на основе этого"
-          subtitle="Стандартный шаблон останется как есть"
+          subtitle="Свои названия полей и значения — стандартный останется как есть"
           before={<IconCopy />}
           showChevron
           onClick={() => navigate(`/templates/new?from=${template.id}`)}

@@ -30,6 +30,23 @@ def offer_docx(*, marked: bool = False) -> bytes:
     return buffer.getvalue()
 
 
+# Ответ помощника на offer_docx(): клиент и сумма — места для данных.
+OFFER_PLACES = {
+    "title": "Коммерческое предложение",
+    "kind": "offer",
+    "places": [
+        {
+            "text": "ООО «Альфа»",
+            "before": "Для: ",
+            "label": "Название клиента",
+            "type": "text",
+            "key": "client_name",
+        },
+        {"text": "180 000", "before": "", "label": "Стоимость", "type": "money", "key": "total"},
+    ],
+}
+
+
 def text_pdf(lines: list[str]) -> bytes:
     """Одностраничный PDF с текстовым слоем (Helvetica, латиница)."""
     stream = "BT /F1 12 Tf 72 720 Td " + " ".join(f"({line}) Tj 0 -16 Td" for line in lines)

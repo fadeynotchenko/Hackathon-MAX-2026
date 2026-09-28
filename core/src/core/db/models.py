@@ -124,17 +124,19 @@ class Counterparty(Base):
 
 
 class TemplateFile(Base):
-    """Файл-образец DOCX своего шаблона: документы собираются в его оформлении.
+    """Файл-образец DOCX шаблона: документы собираются в его оформлении.
 
     Байты лежат в базе, а не на диске: собранный документ можно пересобрать,
     а образец компании — нет, и терять его вместе с томом нельзя. Текст образца
     (строка на абзац) сохраняется рядом, чтобы не разбирать DOCX на каждый
-    показ шаблона. Файл без шаблона — загруженный, но не сохранённый образец."""
+    показ шаблона; ``layout`` — тот же текст для предпросмотра, где строка
+    таблицы — одна строка. Файл без шаблона — загруженный, но не сохранённый
+    образец. Без владельца — бланк встроенного шаблона: его берут за основу своего."""
 
     __tablename__ = "template_files"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    owner_user_id: Mapped[int] = mapped_column(
+    owner_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     filename: Mapped[str] = mapped_column(String(255))
@@ -142,6 +144,7 @@ class TemplateFile(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
     text: Mapped[str] = mapped_column(Text, deferred=True)
+    layout: Mapped[str | None] = mapped_column(Text, deferred=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
 
 
@@ -149,7 +152,7 @@ class Template(Base):
     """Шаблон документа: спецификация полей плюс тело для подстановки.
 
     ``owner_user_id`` пуст у встроенных шаблонов. ``body_format`` — ``text``, или
-    ``docx`` у шаблона из файла-образца: тогда ``body`` — текст образца с
+    ``docx`` у шаблона из файла-образца или бланка: тогда ``body`` — текст образца с
     маркерами для предпросмотра и помощника, а места полей лежат в ``fields``. Слуг уникален глобально:
     свой шаблон пользователя получает случайный слуг ``my-…``, поэтому частичный
     индекс «уникально среди системных» не нужен.

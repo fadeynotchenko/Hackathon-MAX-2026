@@ -101,6 +101,7 @@ class TemplateRepository:
         fields: list[dict[str, object]],
         body: str,
         body_format: str,
+        file_id: int | None = None,
     ) -> Template:
         template = await self.get_by_slug(slug)
         if template is None:
@@ -112,7 +113,9 @@ class TemplateRepository:
         template.fields = fields
         template.body = body
         template.body_format = body_format
+        template.file_id = file_id
         await self._session.flush()
+        await self._session.refresh(template, ["file"])
         return template
 
 
@@ -121,7 +124,13 @@ class TemplateFileRepository:
         self._session = session
 
     async def create(
-        self, *, owner_user_id: int, filename: str, data: bytes, text: str
+        self,
+        *,
+        owner_user_id: int | None,
+        filename: str,
+        data: bytes,
+        text: str,
+        layout: str | None = None,
     ) -> TemplateFile:
         file = TemplateFile(
             owner_user_id=owner_user_id,
@@ -130,14 +139,37 @@ class TemplateFileRepository:
             sha256=hashlib.sha256(data).hexdigest(),
             data=data,
             text=text,
+            layout=layout,
         )
         self._session.add(file)
         await self._session.flush()
         return file
 
-    async def get(self, owner_user_id: int, file_id: int) -> TemplateFile | None:
+    async def ensure_builtin(
+        self, *, filename: str, data: bytes, text: str, layout: str
+    ) -> TemplateFile:
+        """Бланк встроенного шаблона: тот же файл не записывается второй раз при
+        каждом старте, изменённый — записывается новым, прежний остаётся у
+        архивной редакции шаблона."""
+        sha = hashlib.sha256(data).hexdigest()
         stmt = select(TemplateFile).where(
-            TemplateFile.id == file_id, TemplateFile.owner_user_id == owner_user_id
+            TemplateFile.owner_user_id.is_(None),
+            TemplateFile.filename == filename,
+            TemplateFile.sha256 == sha,
+        )
+        file = (await self._session.execute(stmt)).scalars().first()
+        if file is not None:
+            return file
+        return await self.create(
+            owner_user_id=None, filename=filename, data=data, text=text, layout=layout
+        )
+
+    async def get(self, owner_user_id: int, file_id: int) -> TemplateFile | None:
+        """Свой образец пользователя или бланк встроенного шаблона — его берут
+        за основу своего шаблона. Чужие образцы не видны."""
+        stmt = select(TemplateFile).where(
+            TemplateFile.id == file_id,
+            or_(TemplateFile.owner_user_id == owner_user_id, TemplateFile.owner_user_id.is_(None)),
         )
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
@@ -149,6 +181,10 @@ class TemplateFileRepository:
         stmt = select(TemplateFile.text).where(TemplateFile.id == file_id)
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
+    async def layout(self, file_id: int) -> str | None:
+        stmt = select(TemplateFile.layout).where(TemplateFile.id == file_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
     async def delete_unused(self, owner_user_id: int, *, before: datetime) -> None:
         """Загруженные, но так и не сохранённые шаблоном образцы: пользователь
         выбрал другой файл или ушёл с экрана."""
@@ -158,5 +194,14 @@ class TemplateFileRepository:
                 TemplateFile.owner_user_id == owner_user_id,
                 TemplateFile.created_at < before,
                 TemplateFile.id.not_in(used),
+            )
+        )
+
+    async def delete_unused_builtin(self) -> None:
+        """Прежние бланки встроенных шаблонов, на которых не осталось ни одной редакции."""
+        used = select(Template.file_id).where(Template.file_id.is_not(None))
+        await self._session.execute(
+            delete(TemplateFile).where(
+                TemplateFile.owner_user_id.is_(None), TemplateFile.id.not_in(used)
             )
         )

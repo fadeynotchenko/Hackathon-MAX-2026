@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { TemplateImport } from '@/api/client';
 
+import { catalogByKey } from './editor';
 import {
   addPlace,
   draftFromImport,
   labelText,
+  markedInFile,
   placeFound,
   placeSpans,
   sampleRequest,
@@ -118,3 +120,30 @@ describe('template from a sample file', () => {
     expect(toTextDraft(pdf).text.split('\n')[1]).toBe('Для: {{Название клиента}}');
   });
 });
+
+describe('own template from a standard blank', () => {
+  const blank = {
+    text: 'Итого: {{total|rub}} руб.\n{{total|words}}\nПокупатель: {{client_name}}',
+    fields: [
+      { ...catalogField('total'), label: 'Стоимость', places: [] },
+      { ...catalogField('client_name'), places: [] },
+    ],
+  };
+
+  it('shows blank markers by field label and variant', () => {
+    expect(labelText(blank)).toBe(
+      'Итого: {{Стоимость, рубли}} руб.\n{{Стоимость, прописью}}\nПокупатель: {{Название клиента}}',
+    );
+  });
+
+  it('knows which fields are marked in the blank itself', () => {
+    expect(markedInFile(blank.text, 'total')).toBe(true);
+    expect(markedInFile(blank.text, 'seller_name')).toBe(false);
+  });
+});
+
+function catalogField(key: string) {
+  const field = catalogByKey(key);
+  if (!field) throw new Error(key);
+  return field;
+}

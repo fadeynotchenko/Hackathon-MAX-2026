@@ -14,6 +14,7 @@ from core.usecases.documents import (
     create_template,
     delete_template,
     get_template,
+    keep_template,
     list_templates,
     update_template,
 )
@@ -41,6 +42,7 @@ def _input(payload: TemplateRequest) -> TemplateInput:
                 hint=field.hint,
                 carry_over=field.carry_over,
                 today_by_default=field.today_by_default,
+                default=field.default,
                 places=tuple(Place(place.text, place.before) for place in field.places),
             )
             for field in payload.fields
@@ -144,6 +146,19 @@ async def update(
         session, user_id=current.id, template_id=template_id, data=_input(payload)
     )
     return TemplateSchema.model_validate(updated)
+
+
+@router.post(
+    "/{template_id}/keep",
+    response_model=TemplateSchema,
+    responses=_ERRORS,
+    operation_id="keep_template",
+    summary="Сохранить в каталог шаблон документа, сделанного по файлу",
+    description="Следующий такой же документ начнётся с этого шаблона.",
+)
+async def keep(template_id: IdPath, current: CurrentUserDep, session: SessionDep) -> TemplateSchema:
+    kept = await keep_template(session, user_id=current.id, template_id=template_id)
+    return TemplateSchema.model_validate(kept)
 
 
 @router.delete(

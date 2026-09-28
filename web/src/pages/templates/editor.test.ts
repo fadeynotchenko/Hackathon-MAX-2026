@@ -73,6 +73,7 @@ describe('template editor', () => {
           max_length: null,
           carry_over: true,
           today_by_default: false,
+          default: '',
         },
       ],
     });

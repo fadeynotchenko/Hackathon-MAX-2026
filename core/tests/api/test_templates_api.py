@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.usecases.documents import ensure_builtin_templates
 from tests.api.test_documents_api import _auth
-from tests.samples import offer_docx
+from tests.samples import offer_docx, text_pdf
 
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -141,3 +141,44 @@ async def test_template_from_sample_file(
         "/api/v1/templates/import", headers=headers, content=b"just text"
     )
     assert unsupported.status_code == 415
+
+
+async def test_document_from_own_file_and_keep_its_template(
+    client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    """Файл с метками: документ сразу со значениями полей, шаблон — по желанию в каталог."""
+    headers = await _auth(client, make_init_data)
+
+    imported = await client.post(
+        "/api/v1/documents/import?filename=КП.docx",
+        headers=headers | {"Content-Type": DOCX_TYPE},
+        content=offer_docx(),
+    )
+    assert imported.status_code == 201, imported.text
+    body = imported.json()
+    assert (body["format"], body["found_by"]) == ("docx", "rules"), "без помощника — правила"
+    document = body["document"]
+    template = document["template"]
+    assert template["in_library"] is False and template["file"]["filename"] == "КП.docx"
+    field = next(f for f in template["fields"] if f["label"] == "Для")
+    assert document["values"][field["key"]] == {
+        "value": "ООО «Альфа»",
+        "source": "file",
+        "confidence": None,
+        "confirmed": True,
+        "fragment": None,
+    }
+    library = (await client.get("/api/v1/templates", headers=headers)).json()
+    assert all(item["id"] != template["id"] for item in library)
+
+    kept = await client.post(f"/api/v1/templates/{template['id']}/keep", headers=headers)
+    assert kept.status_code == 200 and kept.json()["in_library"] is True
+    library = (await client.get("/api/v1/templates", headers=headers)).json()
+    assert any(item["id"] == template["id"] for item in library)
+
+    empty = await client.post(
+        "/api/v1/documents/import?filename=x.pdf",
+        headers=headers | {"Content-Type": "application/pdf"},
+        content=text_pdf(["Just words"]),
+    )
+    assert empty.status_code == 422 and empty.json()["code"] == "document.import_empty"

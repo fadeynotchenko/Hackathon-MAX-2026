@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.db.models import Template, TemplateFile
 from core.db.repositories import UserRepository, UserUpsert
-from core.domain.documents import BLANK, FieldValue, ValueSource
+from core.domain.documents import BLANK, FieldValue, ValueSource, template_markers
 from core.domain.exceptions import NotFoundError, ValidationError
+from core.files import docx_layout
 from core.usecases.documents import (
     STATUS_DRAFT,
     STATUS_READY,
@@ -26,8 +28,6 @@ from core.usecases.documents import (
 )
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 
-MARKER = re.compile(r"{{\s*(\w+)\s*}}")
-
 
 async def make_user(session: AsyncSession, max_user_id: int = 1) -> int:
     user = await UserRepository(session).upsert_from_max(
@@ -38,11 +38,12 @@ async def make_user(session: AsyncSession, max_user_id: int = 1) -> int:
     return user.id
 
 
-def test_builtin_bodies_only_use_declared_fields() -> None:
+def test_builtin_blanks_match_declared_fields() -> None:
+    """Каждый маркер бланка описан полем, и каждое поле где-то стоит в бланке."""
     for template in BUILTIN_TEMPLATES:
         keys = {spec.key for spec in template.fields}
-        used = set(MARKER.findall(template.body))
-        assert used <= keys, f"{template.slug}: в теле есть поля без описания: {used - keys}"
+        used = set(template_markers("\n".join(docx_layout(template.blank_bytes()))))
+        assert used == keys, f"{template.slug}: без описания {used - keys}, без места {keys - used}"
 
 
 async def test_builtin_templates_are_seeded_idempotently(session: AsyncSession) -> None:
@@ -52,8 +53,37 @@ async def test_builtin_templates_are_seeded_idempotently(session: AsyncSession) 
     templates = await list_templates(session, user_id=user_id)
     assert len(templates) == len(BUILTIN_TEMPLATES)
     invoice = next(t for t in templates if t.slug == "invoice")
-    assert invoice.is_builtin and invoice.body_format == "text"
+    assert invoice.is_builtin and invoice.body_format == "docx"
+    assert invoice.file is not None and invoice.file.filename == "invoice.docx"
     assert {spec.key for spec in invoice.fields} >= {"seller_inn", "client_name", "total"}
+    files = (await session.execute(select(TemplateFile))).scalars().all()
+    assert len(files) == len(BUILTIN_TEMPLATES), "бланк не записывается второй раз"
+    assert all(file.owner_user_id is None for file in files)
+
+
+async def test_changed_builtin_keeps_old_edition_for_its_documents(
+    session: AsyncSession,
+) -> None:
+    """Счёт, созданный на прошлой редакции стандартного шаблона, не меняет вида
+    после обновления бланка: он переезжает на архивную копию."""
+    user_id = await make_user(session)
+    await ensure_builtin_templates(session)
+    (invoice,) = await list_templates(session, user_id=user_id, slug="invoice")
+    document = await create_draft(session, user_id=user_id, template_id=invoice.id)
+    row = await session.get(Template, invoice.id)
+    assert row is not None
+    row.body = "Счёт прошлой редакции {{number}}"
+    await session.flush()
+
+    await ensure_builtin_templates(session)
+
+    kept = await get_document(session, user_id=user_id, document_id=document.id)
+    assert kept.template.id != invoice.id and kept.template.body.startswith("Счёт прошлой")
+    (live,) = await list_templates(session, user_id=user_id, slug="invoice")
+    assert live.id == invoice.id and "Счёт на оплату №" in live.body
+    await ensure_builtin_templates(session)
+    archived = await session.execute(select(Template).where(Template.origin_id == invoice.id))
+    assert len(archived.scalars().all()) == 1, "неизменный бланк новую редакцию не плодит"
 
 
 async def test_draft_is_prefilled_from_profile_and_counterparty(session: AsyncSession) -> None:
@@ -113,7 +143,8 @@ async def test_filling_fields_makes_document_ready(session: AsyncSession) -> Non
     assert filled.ready and filled.status == STATUS_READY
     assert filled.title == "КП для «Клиента»"
     assert "450 000,00" in filled.preview
-    assert "23.09.2026" in filled.preview
+    assert "«23»  сентября  2026" in filled.preview, "дата бланка — по клеткам «__» ____ 20__"
+    assert "Четыреста пятьдесят тысяч рублей 00 копеек" in filled.preview, "сумма прописью"
     assert BLANK in filled.preview, "необязательные поля остаются прочерками"
 
 

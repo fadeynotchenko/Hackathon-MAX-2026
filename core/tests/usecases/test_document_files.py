@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.documents import FieldValue, ValueSource
 from core.domain.exceptions import AppError, ConflictError, NotFoundError
-from core.files import DocumentStorage, FilesConfig
+from core.files import DocumentStorage, FilesConfig, docx_lines
 from core.usecases.documents import (
     DOCX,
     PDF,
@@ -48,7 +48,8 @@ async def _ready_document(session: AsyncSession, user_id: int) -> int:
 
 
 def _docx_text(data: bytes) -> str:
-    return "\n".join(p.text for p in DocxDocument(BytesIO(data)).paragraphs)
+    """Весь текст файла: абзацы и ячейки таблиц, где у бланка КП стоят данные."""
+    return "\n".join(docx_lines(data))
 
 
 async def test_render_docx_contains_filled_values(
@@ -68,7 +69,9 @@ async def test_render_docx_contains_filled_values(
         session, user_id=user_id, document_id=document_id, fmt=DOCX, cfg=files_config
     )
     text = _docx_text(data)
-    assert "КП для «Клиента»" in text
+    assert "КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ" in text, "документ собран в бланке, а не текстом"
+    assert "Четыреста пятьдесят тысяч рублей 00 копеек" in text, "сумма прописью"
+    assert "{{" not in text, "маркеров в готовом файле не остаётся"
     assert "450 000,00" in text
     assert "ООО «Клиент»" in text
 

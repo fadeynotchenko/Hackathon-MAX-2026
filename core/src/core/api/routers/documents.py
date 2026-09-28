@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Query, Request, Response, status
 
 from core.api.dependencies import CurrentUserDep, RedisDep, SessionDep, StateDep
 from core.api.schemas.common import ErrorResponse, IdPath, OkResponse
@@ -13,6 +13,7 @@ from core.api.schemas.documents import (
     CreateDocumentRequest,
     DocumentFactSchema,
     DocumentFileSchema,
+    DocumentImportSchema,
     DocumentPartiesRequest,
     DocumentSchema,
     DocumentSummarySchema,
@@ -21,8 +22,10 @@ from core.api.schemas.documents import (
     SendDocumentResponse,
     SetFieldsRequest,
 )
+from core.api.uploads import DOCUMENT_TYPES, binary_body, read_body
 from core.db.repositories import DownloadTokenRepository
 from core.domain.documents import FieldValue
+from core.usecases.agent import document_from_file
 from core.usecases.documents import (
     UNSET,
     confirm_fields,
@@ -66,6 +69,41 @@ async def create(
         title=payload.title,
     )
     return DocumentSchema.model_validate(document)
+
+
+@router.post(
+    "/import",
+    response_model=DocumentImportSchema,
+    status_code=status.HTTP_201_CREATED,
+    responses=_ERRORS
+    | {413: {"model": ErrorResponse}, 415: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+    operation_id="import_document",
+    summary="Документ по своему файлу: поменять данные, оставив оформление",
+    description=(
+        "Находит в файле места для данных (метки {{Название поля}}, помощник или "
+        "линейки и реквизиты) и создаёт документ, где значения полей — как в файле. "
+        "Дальше документ правится и собирается как любой другой: DOCX — в копии "
+        "присланного файла, из PDF переносится только текст."
+    ),
+    openapi_extra=binary_body(*DOCUMENT_TYPES, description="Документ: DOCX или PDF"),
+)
+async def import_file(
+    request: Request,
+    current: CurrentUserDep,
+    session: SessionDep,
+    state: StateDep,
+    filename: str = Query(default="", max_length=255, description="Имя файла у пользователя"),
+) -> DocumentImportSchema:
+    limit = state.files_config.media_max_bytes
+    result = await document_from_file(
+        session,
+        user_id=current.id,
+        data=await read_body(request, max_bytes=limit),
+        filename=filename,
+        llm=state.llm,
+        max_bytes=limit,
+    )
+    return DocumentImportSchema.model_validate(result)
 
 
 @router.get(

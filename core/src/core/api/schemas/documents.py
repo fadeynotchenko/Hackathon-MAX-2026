@@ -36,6 +36,9 @@ class FieldSpecSchema(BaseModel):
     today_by_default: bool = Field(
         default=False, description="Пустая дата при создании документа — сегодняшняя"
     )
+    default: str = Field(
+        default="", description="Значение нового документа, пока не введено своё («Без НДС»)"
+    )
     places: list[PlaceSchema] = Field(
         default_factory=list, description="Места значения в файле-образце; у текстовых — пусто"
     )
@@ -66,7 +69,16 @@ class TemplateSchema(BaseModel):
     body: str = Field(description="Текст шаблона с маркерами {{key}} на месте полей")
     preview: str = Field(description="Текст пустого бланка — предпросмотр до заполнения")
     file: TemplateFileSchema | None = Field(
-        default=None, description="Файл-образец DOCX: документ собирается в его оформлении"
+        default=None,
+        description="Файл-образец или бланк DOCX: документ собирается в его оформлении",
+    )
+    in_library: bool = Field(
+        default=True,
+        description="Шаблон в каталоге; нет — шаблон документа по файлу или прошлая редакция",
+    )
+    can_keep: bool = Field(
+        default=False,
+        description="Шаблон документа по файлу: его можно сохранить в каталог (POST …/keep)",
     )
 
 
@@ -88,6 +100,9 @@ class TemplateFieldRequest(BaseModel):
     hint: PrintableStr = Field(default="", max_length=200)
     carry_over: bool = True
     today_by_default: bool = False
+    default: PrintableStr = Field(
+        default="", max_length=1000, description="Значение нового документа по умолчанию"
+    )
     places: list[PlaceRequest] = Field(
         default_factory=list,
         max_length=20,
@@ -137,8 +152,9 @@ class TemplateImportSchema(BaseModel):
     title: str = Field(description="Предложенное название шаблона")
     text: str = Field(description="Текст файла, строка на абзац")
     fields: list[ImportedFieldSchema] = Field(description="Найденные места для данных")
-    found_by: Literal["markers", "assistant", "none"] = Field(
-        description="Кто нашёл места: метки {{…}} в файле, помощник или никто"
+    found_by: Literal["markers", "assistant", "rules", "none"] = Field(
+        description="Кто нашёл места: метки {{…}} в файле, помощник, правила по линейкам "
+        "и реквизитам или никто"
     )
     notice: str | None = Field(description="Почему места не искались помощником")
     kind: TemplateKind = Field(description="Вид документа по мнению помощника или по заголовку")
@@ -187,6 +203,20 @@ class DocumentSchema(BaseModel):
     preview: str
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentImportSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    document: DocumentSchema = Field(description="Документ по файлу: значения — как в файле")
+    format: Literal["docx", "pdf"] = Field(
+        description="docx — документ соберётся в копии файла; pdf — перенесён только текст"
+    )
+    found_by: Literal["markers", "assistant", "rules"] = Field(
+        description="Кто нашёл места: метки {{…}} в файле, помощник или правила по "
+        "линейкам и реквизитам"
+    )
+    notice: str | None = Field(description="Почему места искал не помощник")
 
 
 class SendStateSchema(BaseModel):

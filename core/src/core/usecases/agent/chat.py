@@ -9,6 +9,8 @@
 через ``ChatActionDeps.download``. Голосовое расшифровывается и дальше живёт
 как обычное сообщение. Фото без текущего документа откладывается: помощник
 спрашивает, для какого документа его распознать, и берёт файл по нажатию.
+Документ DOCX или PDF можно и «изменить»: по нему делается документ с теми же
+данными и оформлением, и значения правятся сообщениями, как у любого другого.
 
 Кнопки несут действие строкой ``doc:<действие>[:<id>[:<формат>]]``: нажатие
 приходит обратно в ядро, и права проверяются заново — строка из кнопки не
@@ -41,6 +43,7 @@ from core.events import EventBus
 from core.files import FilesConfig, InboundFileError, InboundFileTooLargeError, fetch_media
 from core.llm import ChatMessage, LLMClient, LLMError
 from core.logs import biz_warn
+from core.usecases.agent.document_import import DocumentFromFile, document_from_file
 from core.usecases.agent.recognize import fill_from_file, transcribe
 from core.usecases.agent.service import (
     AgentFillResult,
@@ -90,6 +93,24 @@ MEDIA_EXPIRED_TEXT = "⌛ Вложение, присланное раньше, �
 MEDIA_OFFER_TEXT = "📎 Взять данные и из присланного раньше вложения? Нажмите «Взять из вложения»."
 DOWNLOAD_FAILED_TEXT = "😔 Не получилось скачать вложение из MAX — пришлите его ещё раз."
 UNSUPPORTED_FILE_TEXT = "🤔 Такой файл я не прочитаю.\nПодойдёт фото, PDF, DOCX или голосовое."
+ASK_FILE_TEXT = (
+    "📎 <b>Что сделать с файлом?</b>\n"
+    "✏️ «Изменить этот файл» — найду в нём данные, поменяем их, оформление останется.\n"
+    "Или выберите документ 👇 — перенесу в него реквизиты из файла."
+)
+EDIT_FILE_OFFER_TEXT = "✏️ Поменять данные в самом файле? Нажмите «Изменить этот файл»."
+EDIT_FILE_HOW_TEXT = (
+    "👉 Напишите, что поменять, например:\n"
+    "<i>«Покупатель — ООО Ромашка, сумма 150 000»</i>\n"
+    "Оформление файла останется как было."
+)
+# Сколько найденных значений показать в ответе: остальное видно в мини-приложении.
+FILE_FIELDS_SHOWN = 15
+_FOUND_BY_TEXT = {
+    "markers": "по меткам в файле",
+    "assistant": "",
+    "rules": "по линейкам и реквизитам",
+}
 READY_TEXT = "🏁 <b>Документ готов!</b> В каком формате прислать файл?"
 HOW_TO_FILL_TEXT = (
     "Как удобнее:\n"
@@ -104,6 +125,7 @@ SEND_PDF_BUTTON = "📕 Прислать PDF"
 NEW_BUTTON = "➕ Новый документ"
 COPY_BUTTON = "📑 На основе этого"
 MEDIA_BUTTON = "📎 Взять из вложения"
+EDIT_FILE_BUTTON = "✏️ Изменить этот файл"
 # Значок вида документа в заголовке ответа и на кнопке шаблона; свой вид — 📄.
 _KIND_ICONS = {"invoice": "🧾", "offer": "💼", "contract": "🤝"}
 # Предел текста кнопки в контракте notify.user.
@@ -117,6 +139,8 @@ _READABLE_SUFFIXES = frozenset(
     {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".pdf", ".docx"}
 )
 _AUDIBLE_SUFFIXES = frozenset({".ogg", ".oga", ".opus", ".mp3", ".m4a", ".mp4", ".wav", ".weba"})
+# Документы, по которым можно сделать новый с тем же видом: DOCX — с оформлением.
+_EDITABLE_SUFFIXES = frozenset({".docx", ".pdf"})
 
 ROUTE_INSTRUCTIONS = """Определи, чего хочет пользователь в чате с помощником по документам.
 intent:
@@ -212,12 +236,15 @@ def _icon(kind: str) -> str:
 KEYBOARD_ROWS = 30
 
 
-def _template_buttons(templates: list[TemplateView]) -> tuple[tuple[ChatButton, ...], ...]:
+def _template_buttons(
+    templates: list[TemplateView], *, reserve: int = 0
+) -> tuple[tuple[ChatButton, ...], ...]:
+    """Кнопки шаблонов; ``reserve`` рядов оставлены под кнопки над ними."""
     buttons = [
         ChatButton(f"{_icon(t.kind)} {t.title}"[:_BUTTON_LIMIT], f"doc:new:{t.slug}")
         for t in templates
     ]
-    per_row = max(1, math.ceil(len(buttons) / KEYBOARD_ROWS))
+    per_row = max(1, math.ceil(len(buttons) / (KEYBOARD_ROWS - reserve)))
     return tuple(tuple(buttons[i : i + per_row]) for i in range(0, len(buttons), per_row))
 
 
@@ -326,6 +353,12 @@ def _download_error_text(exc: InboundFileError, files: FilesConfig) -> str:
     if isinstance(exc, InboundFileTooLargeError):
         return f"😔 Файл больше {files.media_max_bytes // (1024 * 1024)} МБ — пришлите поменьше."
     return DOWNLOAD_FAILED_TEXT
+
+
+def _editable(attachment: ChatAttachment) -> bool:
+    return attachment.kind == "file" and (
+        PurePosixPath((attachment.filename or "").lower()).suffix in _EDITABLE_SUFFIXES
+    )
 
 
 def _readable_kind(attachment: ChatAttachment) -> MediaKind | None:
@@ -595,26 +628,42 @@ async def handle_chat_attachment(
             active = None
         if caption:
             active = await _document_for_caption(session, user_id, caption, active, llm)
+        pending: dict[str, object] = {
+            "kind": attachment.kind,
+            "url": attachment.url,
+            "filename": attachment.filename,
+            "caption": caption,
+            "at": datetime.now(UTC).isoformat(),
+        }
+        chat = ChatStateRepository(session)
         if active is None:
-            await ChatStateRepository(session).set_pending_media(
-                user_id,
-                {
-                    "kind": attachment.kind,
-                    "url": attachment.url,
-                    "filename": attachment.filename,
-                    "caption": caption,
-                    "at": datetime.now(UTC).isoformat(),
-                },
-            )
+            await chat.set_pending_media(user_id, pending)
             templates = await list_templates(session, user_id=user_id)
+            if _editable(attachment):
+                return ChatReply(
+                    ASK_FILE_TEXT,
+                    (
+                        (ChatButton(EDIT_FILE_BUTTON, "doc:file"),),
+                        *_template_buttons(templates, reserve=1),
+                    ),
+                )
             return ChatReply(ASK_MEDIA_TEMPLATE_TEXT, _template_buttons(templates))
-        return await _recognize_into(
+        reply = await _recognize_into(
             session,
             user_id=user_id,
             document_id=active.id,
             url=attachment.url,
             caption=caption,
             deps=deps,
+        )
+        if not _editable(attachment):
+            return reply
+        # Файл уже разобран в текущий документ; сам файл ждёт только кнопки
+        # «Изменить», а новому документу его не предлагаем второй раз.
+        await chat.set_pending_media(user_id, pending | {"used": True})
+        return ChatReply(
+            f"{reply.text}\n\n{EDIT_FILE_OFFER_TEXT}",
+            ((ChatButton(EDIT_FILE_BUTTON, "doc:file"),), *reply.buttons),
         )
     except InboundFileError as exc:
         return ChatReply(_download_error_text(exc, deps.files))
@@ -635,20 +684,92 @@ def _is_fresh(pending: dict[str, object]) -> bool:
 
 async def _has_fresh_pending(chat: ChatStateRepository, user_id: int) -> bool:
     pending = await chat.pending_media(user_id)
-    return pending is not None and _is_fresh(pending)
+    return pending is not None and not pending.get("used") and _is_fresh(pending)
 
 
 async def _take_pending(
-    chat: ChatStateRepository, user_id: int
+    chat: ChatStateRepository, user_id: int, *, used: bool = False
 ) -> tuple[dict[str, object] | None, bool]:
     """Отложенное вложение и признак «было, но устарело»: о протухшем фото
-    человеку надо сказать, а не делать вид, что его не присылали."""
+    человеку надо сказать, а не делать вид, что его не присылали. Уже
+    разобранный в документ файл (``used``) годится только для «Изменить»."""
     pending = await chat.take_pending_media(user_id)
-    if pending is None:
+    if pending is None or (pending.get("used") and not used):
         return None, False
     if not _is_fresh(pending):
         return None, True
     return pending, False
+
+
+def _file_text(imported: DocumentFromFile, fill: AgentFillResult | None = None) -> str:
+    """Ответ на «Изменить этот файл»: что нашлось в файле и как это поменять.
+    Значения показываются как есть — человек сверяет их со своим файлом."""
+    document = imported.document
+    context = render_context(document.template.fields, document.values)
+    found = len(document.template.fields)
+    how = _FOUND_BY_TEXT.get(imported.found_by, "")
+    head = [
+        f"{_title_line(document)} — по вашему файлу",
+        f"🔎 Нашёл {found} {_places_word(found)} для данных{f' {how}' if how else ''}:",
+    ]
+    rows = [
+        f"• {_esc(spec.label)}: <b>{_esc(context[spec.key])}</b>"
+        if context.get(spec.key)
+        else f"• {_esc(spec.label)}: —"
+        for spec in document.template.fields[:FILE_FIELDS_SHOWN]
+    ]
+    if found > FILE_FIELDS_SHOWN:
+        rows.append(f"…и ещё {found - FILE_FIELDS_SHOWN} — все в мини-приложении")
+    blocks = ["\n".join(head) + "\n" + "\n".join(rows)]
+    if imported.notice:
+        blocks.append(f"ℹ️ {_esc(imported.notice)}")
+    if fill is not None:
+        blocks.append(_fill_text(fill))
+        return "\n\n".join(blocks)
+    if document.errors:
+        blocks.append(
+            "❗ <b>Проверьте:</b>\n" + _bullets(_esc(error.message) for error in document.errors)
+        )
+    if document.missing:
+        blocks.append(_missing_block(document))
+    blocks.append(EDIT_FILE_HOW_TEXT)
+    if document.ready:
+        blocks.append(READY_TEXT)
+    return "\n\n".join(blocks)
+
+
+def _places_word(count: int) -> str:
+    tail = count % 100
+    if 11 <= tail <= 14 or count % 10 in (0, 5, 6, 7, 8, 9):
+        return "мест"
+    return "место" if count % 10 == 1 else "места"
+
+
+async def _edit_file(
+    session: AsyncSession, *, user_id: int, pending: dict[str, object], deps: ChatActionDeps
+) -> ChatReply:
+    """Документ по присланному файлу; подпись к файлу — первая правка в нём."""
+    data = await deps.download(str(pending["url"]))
+    imported = await document_from_file(
+        session,
+        user_id=user_id,
+        data=data,
+        filename=str(pending.get("filename") or ""),
+        llm=deps.llm,
+        max_bytes=deps.files.media_max_bytes,
+    )
+    await ChatStateRepository(session).set_active_document(user_id, imported.document.id)
+    caption = str(pending.get("caption") or "").strip()
+    if caption and deps.llm is not None:
+        fill = await fill_from_message(
+            session,
+            user_id=user_id,
+            document_id=imported.document.id,
+            message=caption,
+            llm=deps.llm,
+        )
+        return ChatReply(_file_text(imported, fill), _document_buttons(fill.document))
+    return ChatReply(_file_text(imported), _document_buttons(imported.document))
 
 
 async def _new_from_button(
@@ -772,6 +893,12 @@ async def handle_chat_action(
                 f"Стороны и условия те же, реквизиты — свежие из карточек.\n\n{rest}",
                 _document_buttons(document),
             )
+
+        if action == "file" and not args:
+            pending, _expired = await _take_pending(chat, user_id, used=True)
+            if pending is None:
+                return ChatReply(MEDIA_EXPIRED_TEXT, ((ChatButton(NEW_BUTTON, "doc:new"),),))
+            return await _edit_file(session, user_id=user_id, pending=pending, deps=deps)
 
         if action == "media" and len(args) == 1 and document_id is not None:
             document = await get_document(session, user_id=user_id, document_id=document_id)

@@ -27,6 +27,7 @@ import {
   addPlace,
   draftFromImport,
   labelText,
+  markedInFile,
   placeFound,
   sampleProblems,
   sampleRequest,
@@ -120,21 +121,31 @@ function foundText(
     };
   }
   const places = `${count} ${pluralize(count, 'место', 'места', 'мест')} для данных`;
-  return found.found_by === 'markers'
-    ? {
-        tone: 'success',
-        title: `Нашли ${places}`,
-        text: 'По меткам в файле. Проверьте типы полей.',
-      }
-    : {
-        tone: 'success',
-        title: `Помощник отметил ${places}`,
-        text: 'Проверьте: лишнее уберите, пропущенное отметьте ниже.',
-      };
+  if (found.found_by === 'markers') {
+    return {
+      tone: 'success',
+      title: `Нашли ${places}`,
+      text: 'По меткам в файле. Проверьте типы полей.',
+    };
+  }
+  if (found.found_by === 'rules') {
+    return {
+      tone: 'info',
+      title: `Нашли ${places} по линейкам и реквизитам`,
+      text: `${found.notice ? `${found.notice}. ` : ''}Лишнее уберите, пропущенное отметьте ниже.`,
+    };
+  }
+  return {
+    tone: 'success',
+    title: `Помощник отметил ${places}`,
+    text: 'Проверьте: лишнее уберите, пропущенное отметьте ниже.',
+  };
 }
 
 interface SampleEditorProps {
   initial: SampleDraft;
+  // Заголовок экрана нового шаблона: «Свой на основе стандартного».
+  heading?: string | undefined;
   // null — новый шаблон.
   templateId: number | null;
   onBack: () => void;
@@ -143,7 +154,14 @@ interface SampleEditorProps {
   onReplace?: (result: TemplateImport) => void;
 }
 
-export function SampleEditor({ initial, templateId, onBack, found, onReplace }: SampleEditorProps) {
+export function SampleEditor({
+  initial,
+  heading,
+  templateId,
+  onBack,
+  found,
+  onReplace,
+}: SampleEditorProps) {
   const { api } = useAuth();
   const navigate = useNavigate();
   const [draft, setDraft] = useState(initial);
@@ -198,7 +216,7 @@ export function SampleEditor({ initial, templateId, onBack, found, onReplace }: 
 
   return (
     <Page
-      title={templateId !== null ? 'Изменить шаблон' : 'Проверьте шаблон'}
+      title={templateId !== null ? 'Изменить шаблон' : (heading ?? 'Проверьте шаблон')}
       subtitle={draft.filename}
       onBack={onBack}
       footer={
@@ -302,22 +320,28 @@ export function SampleEditor({ initial, templateId, onBack, found, onReplace }: 
                 field={field}
                 onChange={(next) => setDraft(withSampleField(draft, next))}
               >
-                <div className="template-field__places">
-                  <Typography.Text variant="description" color="secondary" className="clamp-2">
-                    В файле: {field.places.map((place) => `«${place.text}»`).join(', ')}
+                {field.places.length === 0 && markedInFile(draft.text, field.key) ? (
+                  <Typography.Text variant="description" color="secondary">
+                    В бланке — своя метка поля
                   </Typography.Text>
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    aria-label={`Убрать поле «${field.label}»`}
-                    onClick={() => {
-                      haptic('light');
-                      setDraft(withoutField(draft, field.key));
-                    }}
-                  >
-                    Убрать
-                  </Button>
-                </div>
+                ) : (
+                  <div className="template-field__places">
+                    <Typography.Text variant="description" color="secondary" className="clamp-2">
+                      В файле: {field.places.map((place) => `«${place.text}»`).join(', ')}
+                    </Typography.Text>
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      aria-label={`Убрать поле «${field.label}»`}
+                      onClick={() => {
+                        haptic('light');
+                        setDraft(withoutField(draft, field.key));
+                      }}
+                    >
+                      Убрать
+                    </Button>
+                  </div>
+                )}
               </FieldSettings>
             ))}
           </div>

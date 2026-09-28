@@ -24,6 +24,7 @@ from core.events import (
 )
 from core.files import FilesConfig, InboundFileError, InboundFileTooLargeError
 from core.usecases.agent.chat import (
+    ASK_FILE_TEXT,
     ASK_MEDIA_TEMPLATE_TEXT,
     DISABLED_TEXT,
     DOWNLOAD_FAILED_TEXT,
@@ -411,7 +412,9 @@ async def test_attachment_problems_are_explained(db: None, session: AsyncSession
     download, unsupported, pending, large = await _replies(redis)
     assert download.text == DOWNLOAD_FAILED_TEXT
     assert unsupported.text == UNSUPPORTED_FILE_TEXT
-    assert pending.text == ASK_MEDIA_TEMPLATE_TEXT
+    # PDF без текущего документа: изменить сам файл или перенести данные в другой.
+    assert pending.text == ASK_FILE_TEXT
+    assert pending.buttons is not None and pending.buttons[0][0].payload == "doc:file"
     assert large.text.startswith("😔 Файл больше 10 МБ")
     assert broken.urls == ["https://i.max.test/p/1"], "xlsx даже не скачивали"
 

@@ -35,6 +35,8 @@ class Fact(StrEnum):
 
 # Источник у факта «создан»: документ взят за основу другого.
 COPY_SOURCE = "copy"
+# Документ сделан по присланному файлу: значения взяты из него.
+FILE_SOURCE = "file"
 DELIVERY_PENDING = "pending"
 DELIVERY_DELIVERED = "delivered"
 DELIVERY_FAILED = "failed"

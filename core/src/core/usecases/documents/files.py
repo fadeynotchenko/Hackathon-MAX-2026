@@ -23,7 +23,7 @@ from core.db.repositories import (
     DownloadTokenRepository,
     TemplateFileRepository,
 )
-from core.domain.documents import BLANK, render_context
+from core.domain.documents import BLANK, fill_context
 from core.domain.exceptions import AppError, ConflictError, NotFoundError
 from core.events import DocumentReady, EventBus
 from core.files import (
@@ -111,7 +111,7 @@ async def _build_docx(session: AsyncSession, document: DocumentView) -> bytes:
         return fill_docx(
             source,
             places=template.places,
-            context=render_context(template.fields, document.values),
+            context=fill_context(template.fields, document.values),
             blank=BLANK,
         )
     except TemplateFileError as exc:

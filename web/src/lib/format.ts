@@ -113,6 +113,7 @@ export const SOURCE_LABEL: Record<ValueSource, string> = {
   ocr: 'С фото',
   agent: 'От помощника',
   default: 'По умолчанию',
+  file: 'Из файла',
 };
 
 // Группы полей шаблона → разделы формы. Порядок — как в сценарии: кому,

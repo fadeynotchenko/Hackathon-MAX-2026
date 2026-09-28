@@ -5,8 +5,8 @@
 //
 // Экран открывается пустым (/templates/new), копией стандартного шаблона
 // (/templates/new?from=1), текстом PDF-образца (/templates/new с черновиком в
-// state) или правкой своего (/templates/5/edit); свой шаблон из файла DOCX
-// правится на экране образца.
+// state) или правкой своего (/templates/5/edit); шаблон на файле DOCX — свой из
+// образца или стандартный бланк — правится на экране образца.
 import { Button, Textarea, Typography } from '@maxhub/max-ui';
 import { useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -80,9 +80,16 @@ export function TemplateEditorPage() {
   // Стандартный шаблон не правится: его «правка» — сохранение своей копии.
   const source = state.data;
   const copy = !source || editId === null || source.is_builtin;
-  if (source?.file && !copy) {
+  if (source?.file) {
+    // Шаблон на файле правится на экране образца; стандартный бланк — тоже,
+    // копией: файл тот же, метки полей уже стоят в нём.
     return (
-      <SampleEditor initial={sampleFromTemplate(source)} templateId={source.id} onBack={back} />
+      <SampleEditor
+        initial={sampleFromTemplate(source)}
+        heading={copy ? 'Свой на основе стандартного' : undefined}
+        templateId={copy ? null : source.id}
+        onBack={back}
+      />
     );
   }
   return (

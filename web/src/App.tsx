@@ -12,6 +12,7 @@ import { ClientPickPage } from '@/pages/document/ClientPickPage';
 import { DocumentPage } from '@/pages/document/DocumentPage';
 import { ExportPage } from '@/pages/document/ExportPage';
 import { FillPage } from '@/pages/document/FillPage';
+import { ImportPage } from '@/pages/document/ImportPage';
 import { PhotoFillPage } from '@/pages/document/PhotoFillPage';
 import { ReviewPage } from '@/pages/document/ReviewPage';
 import { SellerPickPage } from '@/pages/document/SellerPickPage';
@@ -57,6 +58,7 @@ export function App() {
         <Route path="/templates/new" element={<TemplateEditorPage />} />
         <Route path="/templates/upload" element={<TemplateSamplePage />} />
         <Route path="/templates/:templateId/edit" element={<TemplateEditorPage />} />
+        <Route path="/documents/import" element={<ImportPage />} />
         <Route path="/documents/:documentId" element={<DocumentPage />} />
         <Route path="/documents/:documentId/fill" element={<FillPage />} />
         <Route path="/documents/:documentId/fill/photo" element={<PhotoFillPage />} />

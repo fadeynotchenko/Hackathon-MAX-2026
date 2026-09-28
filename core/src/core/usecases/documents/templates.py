@@ -25,6 +25,7 @@ from core.db.repositories import TemplateFileRepository, TemplateRepository
 from core.domain.documents import FieldSpec, FieldType, fill_text_template, template_markers
 from core.domain.exceptions import ForbiddenError, NotFoundError, ValidationError
 from core.domain.places import Place, apply_places, found
+from core.files import docx_layout, docx_lines
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES, CLIENT, SELLER, SUBJECT
 from core.usecases.documents.requisites import CLIENT_PREFIX, REQUISITE_FIELDS, SELLER_PREFIX
 
@@ -39,11 +40,17 @@ KINDS = (INVOICE_KIND, OFFER_KIND, CONTRACT_KIND, OTHER_KIND)
 # только в начале или как «счёт на оплату», «счёт №»: «расчётный счёт» есть в
 # реквизитах почти любого бланка.
 _KIND_WORDS = (
-    (CONTRACT_KIND, re.compile(r"договор")),
-    (OFFER_KIND, re.compile(r"коммерческ|предложени|(?<![а-я])кп(?![а-я])")),
+    (CONTRACT_KIND, re.compile(r"договор|dogovor")),
+    (
+        OFFER_KIND,
+        re.compile(r"коммерческ|предложени|(?<![а-я])кп(?![а-я])|kommerch|predlozh"),
+    ),
     (
         INVOICE_KIND,
-        re.compile(r"^\s*сч[её]т(?![а-я])|(?<![а-я])сч[её]т[\s-]+(?:на\s+оплату|оферт|№)"),
+        re.compile(
+            r"^\s*сч[её]т(?![а-я])|(?<![а-я])сч[её]т[\s-]+(?:на\s+оплату|оферт|№)"
+            r"|schet[\s_-]+na[\s_-]+oplatu"
+        ),
     ),
 )
 TEXT_FORMAT = "text"
@@ -54,6 +61,7 @@ DESCRIPTION_MAX = 300
 BODY_MAX = 20_000
 LABEL_MAX = 100
 HINT_MAX = 200
+DEFAULT_MAX = 1000
 FIELDS_MAX = 50
 PLACE_MAX = 300
 PLACE_BEFORE_MAX = 100
@@ -101,6 +109,10 @@ class TemplateView:
     fields: tuple[TemplateField, ...]
     body: str
     file: TemplateFileInfo | None = None
+    # Виден в каталоге. Нет — шаблон документа по файлу, прошлая редакция или удалённый.
+    in_library: bool = True
+    # Свой шаблон вне каталога, которого там можно сохранить (документ по файлу).
+    can_keep: bool = False
 
     @property
     def preview(self) -> str:
@@ -164,6 +176,7 @@ def _specs_from_json(raw: list[dict[str, object]]) -> tuple[TemplateField, ...]:
             max_length=int(item["max_length"]) if item.get("max_length") is not None else None,
             carry_over=bool(item.get("carry_over", True)),
             today_by_default=bool(item.get("today_by_default", False)),
+            default=str(item.get("default") or ""),
             places=places(item),
         )
         for item in raw
@@ -187,24 +200,67 @@ def to_view(template: Template, *, file_text: str | None = None) -> TemplateView
         fields=_specs_from_json(template.fields),
         body=template.body,
         file=TemplateFileInfo(file.id, file.filename, file_text) if file is not None else None,
+        in_library=template.archived_at is None,
+        can_keep=template.owner_user_id is not None
+        and template.archived_at is not None
+        and template.origin_id is None,
     )
 
 
 async def ensure_builtin_templates(session: AsyncSession) -> int:
     """Идемпотентно записать встроенные шаблоны. Зовётся в lifespan после миграций:
-    отдельный контейнер-сеятель для трёх шаблонов был бы дороже пользы."""
+    отдельный контейнер-сеятель для трёх шаблонов был бы дороже пользы.
+
+    Бланк или поля поменялись с прошлого старта, а документы на шаблоне уже
+    есть — прошлая редакция уходит в архивную копию, как у своих шаблонов:
+    отправленный счёт не должен молча поменять вид."""
     repo = TemplateRepository(session)
-    for template in BUILTIN_TEMPLATES:
-        await repo.upsert_builtin(
-            slug=template.slug,
-            title=template.title,
-            kind=template.kind,
-            description=template.description,
-            fields=_specs_to_json(template.fields),
-            body=template.body,
-            body_format=TEXT_FORMAT,
+    files = TemplateFileRepository(session)
+    for builtin in BUILTIN_TEMPLATES:
+        data = builtin.blank_bytes()
+        layout = "\n".join(docx_layout(data))
+        file = await files.ensure_builtin(
+            filename=builtin.blank, data=data, text="\n".join(docx_lines(data)), layout=layout
         )
+        fields = _specs_to_json(builtin.fields)
+        body = layout.strip()
+        current = await repo.get_by_slug(builtin.slug)
+        if (
+            current is not None
+            and (current.fields != fields or current.body != body or current.file_id != file.id)
+            and await repo.is_used(current.id)
+        ):
+            await _keep_edition(repo, current)
+        await repo.upsert_builtin(
+            slug=builtin.slug,
+            title=builtin.title,
+            kind=builtin.kind,
+            description=builtin.description,
+            fields=fields,
+            body=body,
+            body_format=DOCX_FORMAT,
+            file_id=file.id,
+        )
+    await files.delete_unused_builtin()
     return len(BUILTIN_TEMPLATES)
+
+
+async def _keep_edition(repo: TemplateRepository, template: Template) -> None:
+    """Прошлая редакция шаблона — в архивную копию, документы — на неё."""
+    previous = await repo.create(
+        owner_user_id=template.owner_user_id,
+        slug=_new_slug(template.slug if template.owner_user_id is None else "my"),
+        title=template.title,
+        kind=template.kind,
+        description=template.description,
+        fields=list(template.fields),
+        body=template.body,
+        body_format=template.body_format,
+        archived_at=datetime.now(UTC),
+        origin_id=template.id,
+        file_id=template.file_id,
+    )
+    await repo.move_documents(template.id, previous.id)
 
 
 async def list_templates(
@@ -292,12 +348,22 @@ def _clean_places(field: TemplateField, lines: Sequence[str], errors: list[str])
             errors.append(f"«{field.label}»: в файле нет текста {_quote(place.text)}")
 
 
-def _clean(data: TemplateInput, file_lines: Sequence[str] | None = None) -> TemplateInput:
+@dataclass(frozen=True)
+class SampleText:
+    """Текст файла-образца: строки-абзацы (по ним ищутся места) и раскладка для
+    предпросмотра, где строка таблицы — одна строка."""
+
+    lines: tuple[str, ...]
+    layout: tuple[str, ...] | None = None
+
+
+def _clean(data: TemplateInput, sample: SampleText | None = None) -> TemplateInput:
     """Проверить шаблон целиком и собрать все замечания в одно сообщение:
     человек правит шаблон на телефоне, и ошибки по одной стоили бы ему кругов.
 
-    ``file_lines`` — текст образца: тогда текст шаблона собирается из него и
-    мест полей, а присланный ``body`` не нужен."""
+    ``sample`` — текст образца: тогда текст шаблона собирается из него и
+    мест полей, а присланный ``body`` не нужен. Поле, чей маркер ``{{key}}``
+    уже стоит в самом файле (бланк встроенного шаблона), мест не требует."""
     errors: list[str] = []
     title = data.title.strip()
     if not title:
@@ -339,21 +405,25 @@ def _clean(data: TemplateInput, file_lines: Sequence[str] | None = None) -> Temp
                     hint=spec.hint.strip()[:HINT_MAX],
                     carry_over=spec.carry_over,
                     today_by_default=spec.today_by_default and field_type is FieldType.DATE,
-                    places=tuple(dict.fromkeys(spec.places)) if file_lines is not None else (),
+                    places=tuple(dict.fromkeys(spec.places)) if sample is not None else (),
+                    default=spec.default.strip()[:DEFAULT_MAX],
                 )
             )
 
-    if file_lines is None:
+    if sample is None:
         body = data.body.replace("\r\n", "\n").replace("\r", "\n").strip()
         if not body:
             errors.append("Напишите текст шаблона")
         elif len(body) > BODY_MAX:
             errors.append(f"Текст шаблона — не длиннее {BODY_MAX} символов")
     else:
+        in_file = set(template_markers("\n".join(sample.lines)))
         for field in fields:
-            _clean_places(field, file_lines, errors)
+            if field.places or field.key not in in_file:
+                _clean_places(field, sample.lines, errors)
         places = [(field.key, place) for field in fields for place in field.places]
-        body = "\n".join(apply_places(line, places) for line in file_lines).strip()
+        source = sample.layout or sample.lines
+        body = "\n".join(apply_places(line, places) for line in source).strip()
 
     used = template_markers(body)
     declared = {spec.key for spec in data.fields}
@@ -365,7 +435,7 @@ def _clean(data: TemplateInput, file_lines: Sequence[str] | None = None) -> Temp
     errors.extend(
         f"Поле «{field.label}» не встречается в тексте"
         for field in fields
-        if field.key not in used and (file_lines is None or field.places)
+        if field.key not in used and (sample is None or field.places)
     )
     if body and not used and not fields:
         errors.append("Добавьте в текст хотя бы одно поле — иначе заполнять нечего")
@@ -374,7 +444,7 @@ def _clean(data: TemplateInput, file_lines: Sequence[str] | None = None) -> Temp
     return TemplateInput(title, description, body, tuple(fields), data.file_id, data.kind)
 
 
-async def _file_lines(session: AsyncSession, user_id: int, file_id: int | None) -> list[str] | None:
+async def _sample(session: AsyncSession, user_id: int, file_id: int | None) -> SampleText | None:
     if file_id is None:
         return None
     repo = TemplateFileRepository(session)
@@ -383,11 +453,15 @@ async def _file_lines(session: AsyncSession, user_id: int, file_id: int | None) 
         raise NotFoundError(
             "Файл-образец не найден, загрузите его снова", code="template.file_not_found"
         )
-    return (await repo.text(file.id) or "").split("\n")
+    layout = await repo.layout(file.id)
+    return SampleText(
+        tuple((await repo.text(file.id) or "").split("\n")),
+        tuple(layout.split("\n")) if layout is not None else None,
+    )
 
 
-def _new_slug() -> str:
-    return f"my-{secrets.token_hex(5)}"
+def _new_slug(prefix: str = "my") -> str:
+    return f"{prefix}-{secrets.token_hex(5)}"
 
 
 async def _own(repo: TemplateRepository, user_id: int, template_id: int) -> Template:
@@ -403,14 +477,52 @@ async def _own(repo: TemplateRepository, user_id: int, template_id: int) -> Temp
 async def create_template(
     session: AsyncSession, *, user_id: int, data: TemplateInput
 ) -> TemplateView:
-    clean = _clean(data, await _file_lines(session, user_id, data.file_id))
+    clean = _clean(data, await _sample(session, user_id, data.file_id))
+    await _check_limit(TemplateRepository(session), user_id)
+    return await _insert(session, user_id, clean)
+
+
+async def create_hidden_template(
+    session: AsyncSession, *, user_id: int, data: TemplateInput
+) -> TemplateView:
+    """Шаблон под один документ по присланному файлу: в каталоге его нет, пока
+    человек не сохранит его (``keep_template``), и в предел своих он не входит."""
+    clean = _clean(data, await _sample(session, user_id, data.file_id))
+    return await _insert(session, user_id, clean, hidden=True)
+
+
+async def keep_template(session: AsyncSession, *, user_id: int, template_id: int) -> TemplateView:
+    """Сохранить в каталог шаблон документа, сделанного по файлу: следующий
+    такой же документ начнётся с него."""
     repo = TemplateRepository(session)
+    template = await repo.get(template_id)
+    if template is None or template.owner_user_id != user_id:
+        raise NotFoundError("Шаблон не найден", code="template.not_found")
+    if template.archived_at is None:
+        return to_view(template)
+    if template.origin_id is not None:
+        raise ValidationError(
+            "Это прошлая редакция шаблона — в каталоге уже есть новая",
+            code="template.old_edition",
+        )
+    await _check_limit(repo, user_id)
+    template.archived_at = None
+    await session.flush()
+    return to_view(template)
+
+
+async def _check_limit(repo: TemplateRepository, user_id: int) -> None:
     if await repo.count_owned(user_id) >= OWN_TEMPLATES_MAX:
         raise ValidationError(
             f"Своих шаблонов уже {OWN_TEMPLATES_MAX} — удалите ненужные",
             code="template.limit",
         )
-    template = await repo.create(
+
+
+async def _insert(
+    session: AsyncSession, user_id: int, clean: TemplateInput, *, hidden: bool = False
+) -> TemplateView:
+    template = await TemplateRepository(session).create(
         owner_user_id=user_id,
         slug=_new_slug(),
         title=clean.title,
@@ -420,6 +532,7 @@ async def create_template(
         body=clean.body,
         body_format=DOCX_FORMAT if clean.file_id is not None else TEXT_FORMAT,
         file_id=clean.file_id,
+        archived_at=datetime.now(UTC) if hidden else None,
     )
     return to_view(template)
 
@@ -433,22 +546,9 @@ async def update_template(
     стали бы в нём ошибками."""
     repo = TemplateRepository(session)
     template = await _own(repo, user_id, template_id)
-    clean = _clean(data, await _file_lines(session, user_id, data.file_id))
+    clean = _clean(data, await _sample(session, user_id, data.file_id))
     if await repo.is_used(template.id):
-        previous = await repo.create(
-            owner_user_id=user_id,
-            slug=_new_slug(),
-            title=template.title,
-            kind=template.kind,
-            description=template.description,
-            fields=list(template.fields),
-            body=template.body,
-            body_format=template.body_format,
-            archived_at=datetime.now(UTC),
-            origin_id=template.id,
-            file_id=template.file_id,
-        )
-        await repo.move_documents(template.id, previous.id)
+        await _keep_edition(repo, template)
     template.title = clean.title
     template.kind = clean.kind
     template.description = clean.description

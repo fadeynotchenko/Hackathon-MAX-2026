@@ -64,7 +64,33 @@ function placesOf(fields: SampleField[]): Array<[string, Place]> {
   );
 }
 
-// Текст образца с полями по названию: {{Название клиента}} на месте «ООО «Альфа»».
+// Метка бланка по ключу: {{total}} или {{total|words}} — так размечены
+// стандартные бланки (core.usecases.documents.builtin).
+const KEY_MARKER = /\{\{\s*(\w+)(?:\s*\|\s*([\w:]+))?\s*\}\}/g;
+const VARIANT_LABEL: Record<string, string> = {
+  words: 'прописью',
+  rub: 'рубли',
+  rub_words: 'рубли прописью',
+  kop: 'копейки',
+  long: 'словами',
+  day: 'день',
+  month: 'месяц',
+  year: 'год',
+  yy: 'год',
+};
+
+function variantLabel(variant: string): string {
+  return variant.startsWith('per:') ? 'за единицу' : (VARIANT_LABEL[variant] ?? variant);
+}
+
+// Поле стоит в бланке меткой {{key}}: места ему не нужны, а убрать его нельзя —
+// метка осталась бы в файле без значения.
+export function markedInFile(text: string, key: string): boolean {
+  return [...text.matchAll(KEY_MARKER)].some((match) => match[1] === key);
+}
+
+// Текст образца с полями по названию: {{Название клиента}} на месте «ООО «Альфа»»,
+// {{Сумма, прописью}} на месте метки бланка {{total|words}}.
 export function labelText(draft: Pick<SampleDraft, 'text' | 'fields'>): string {
   const places = placesOf(draft.fields);
   const labels = new Map(draft.fields.map((field) => [field.key, field.label]));
@@ -75,7 +101,11 @@ export function labelText(draft: Pick<SampleDraft, 'text' | 'fields'>): string {
       for (const [begin, end, key] of placeSpans(line, places).reverse()) {
         out = out.slice(0, begin) + marker(labels.get(key) ?? key) + out.slice(end);
       }
-      return out;
+      return out.replace(KEY_MARKER, (whole, key: string, variant?: string) => {
+        const label = labels.get(key);
+        if (!label) return whole;
+        return marker(variant ? `${label}, ${variantLabel(variant)}` : label);
+      });
     })
     .join('\n');
 }
@@ -144,6 +174,7 @@ export function draftFromImport(result: TemplateImport): SampleDraft {
   };
 }
 
+// Свой шаблон из файла — на правку; стандартный бланк — копией (свой на его основе).
 export function draftFromTemplate(template: Template): SampleDraft {
   return {
     title: template.title,
@@ -161,6 +192,7 @@ export function draftFromTemplate(template: Template): SampleDraft {
       hint: field.hint,
       carry_over: field.carry_over,
       today_by_default: field.today_by_default,
+      default: field.default ?? '',
       places: field.places ?? [],
     })),
   };
@@ -218,6 +250,7 @@ export function sampleRequest(draft: SampleDraft): TemplateRequest {
       hint: field.hint,
       carry_over: field.carry_over,
       today_by_default: field.today_by_default,
+      default: field.default ?? '',
       places: field.places,
     })),
   };

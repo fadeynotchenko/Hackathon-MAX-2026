@@ -24,6 +24,7 @@ REQUISITE_FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec("bank", "Банк", FieldType.TEXT, required=False),
     FieldSpec("bic", "БИК", FieldType.BIC, required=False),
     FieldSpec("account", "Расчётный счёт", FieldType.ACCOUNT, required=False),
+    FieldSpec("corr_account", "Корр. счёт", FieldType.ACCOUNT, required=False),
     FieldSpec("phone", "Телефон", FieldType.PHONE, required=False),
     FieldSpec("email", "Почта", FieldType.EMAIL, required=False),
 )

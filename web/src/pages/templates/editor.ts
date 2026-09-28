@@ -13,6 +13,9 @@ export interface EditorField {
   hint: string;
   carry_over: boolean;
   today_by_default: boolean;
+  // Значение нового документа по умолчанию («Без НДС»): у полей стандартного
+  // бланка оно есть, своё поле его не задаёт.
+  default?: string;
 }
 
 export interface EditorDraft {
@@ -63,6 +66,7 @@ const REQUISITES: Array<[key: string, label: string, type: FieldType]> = [
   ['bank', 'Банк', 'text'],
   ['bic', 'БИК', 'bic'],
   ['account', 'Расчётный счёт', 'account'],
+  ['corr_account', 'Корр. счёт', 'account'],
   ['phone', 'Телефон', 'phone'],
   ['email', 'Почта', 'email'],
 ];
@@ -336,6 +340,7 @@ export function toRequest(draft: EditorDraft): TemplateRequest {
       hint: field.hint,
       carry_over: field.carry_over,
       today_by_default: field.today_by_default,
+      default: field.default ?? '',
     })),
   };
 }
@@ -361,6 +366,7 @@ export function draftFromTemplate(template: Template, { copy }: { copy: boolean 
       hint: field.hint,
       carry_over: field.carry_over,
       today_by_default: field.today_by_default,
+      default: field.default ?? '',
     })),
   };
 }

@@ -1,6 +1,7 @@
 // Вкладка «Создать»: каталог шаблонов — единственная точка выбора бланка
 // (в макете каталог жил и здесь, и в профиле). Первым — «Свой шаблон»: новый
-// бланк из файла или текста, чтобы это действие не терялось под сеткой. Ниже —
+// бланк из файла или текста, чтобы это действие не терялось под сеткой; рядом —
+// «Свой документ»: файл, которого нет в каталоге, меняется без шаблона. Ниже —
 // две подписанные сетки: «Мои шаблоны» (если есть) над «Стандартными». Поиск
 // стоит над сетками и ищет по обеим. Второй вход — чат с ботом, в самом низу.
 import { CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
@@ -9,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
 import { Banner } from '@/components/Banner';
-import { IconChat, IconPlus, IconUpload } from '@/components/icons';
+import { IconChat, IconEdit, IconPlus, IconUpload } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
@@ -73,6 +74,20 @@ export function CreatePage() {
           }
           showChevron
           onClick={() => navigate('/templates/new')}
+        />
+      </CellList>
+
+      <CellList mode="island" filled header={<CellHeader>Свой документ</CellHeader>}>
+        <CellSimple
+          title="Изменить свой файл"
+          subtitle="Поменяем данные, оформление останется"
+          before={
+            <span className="themed-icon">
+              <IconEdit />
+            </span>
+          }
+          showChevron
+          onClick={() => navigate('/documents/import')}
         />
       </CellList>
 

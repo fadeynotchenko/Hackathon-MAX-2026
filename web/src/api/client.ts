@@ -18,6 +18,7 @@ export type DevInitDataResponse = components['schemas']['DevInitDataResponse'];
 export type Template = components['schemas']['TemplateSchema'];
 export type TemplateRequest = components['schemas']['TemplateRequest'];
 export type TemplateImport = components['schemas']['TemplateImportSchema'];
+export type DocumentImport = components['schemas']['DocumentImportSchema'];
 export type ImportedField = components['schemas']['ImportedFieldSchema'];
 export type Place = components['schemas']['PlaceSchema'];
 export type FieldSpec = components['schemas']['FieldSpecSchema'];
@@ -232,6 +233,20 @@ export class ApiClient {
 
   deleteTemplate(templateId: number): Promise<void> {
     return this.request<void>(`/api/v1/templates/${templateId}`, { method: 'DELETE' });
+  }
+
+  // Шаблон документа, сделанного по файлу, — в каталог, для следующих таких же.
+  keepTemplate(templateId: number): Promise<Template> {
+    return this.request<Template>(`/api/v1/templates/${templateId}/keep`, { method: 'POST' });
+  }
+
+  // Свой файл (DOCX или PDF) → документ с его данными; собирается в оформлении файла.
+  importDocument(file: File): Promise<DocumentImport> {
+    const query = file.name ? `?filename=${encodeURIComponent(file.name)}` : '';
+    return this.request<DocumentImport>(`/api/v1/documents/import${query}`, {
+      method: 'POST',
+      file,
+    });
   }
 
   documents(): Promise<DocumentSummary[]> {

@@ -30,6 +30,7 @@ export const REQUISITE_GROUPS: Array<{ title: string; fields: RequisiteSpec[] }>
       { key: 'bank', label: 'Банк', type: 'text', example: 'ПАО Сбербанк' },
       { key: 'bic', label: 'БИК', type: 'bic' },
       { key: 'account', label: 'Расчётный счёт', type: 'account' },
+      { key: 'corr_account', label: 'Корр. счёт', type: 'account' },
       { key: 'director', label: 'Подписант', type: 'name', example: 'Иванов Иван Иванович' },
     ],
   },
@@ -60,6 +61,7 @@ export function splitRequisiteErrors(message: string): {
     ['Банк', 'bank'],
     ['БИК', 'bic'],
     ['Расчётный счёт', 'account'],
+    ['Корр. счёт', 'corr_account'],
     ['Телефон', 'phone'],
     ['Почта', 'email'],
   ]);

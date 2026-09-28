@@ -640,6 +640,53 @@
         "title": "DocumentFileSchema",
         "type": "object"
       },
+      "DocumentImportSchema": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentSchema",
+            "description": "Документ по файлу: значения — как в файле"
+          },
+          "format": {
+            "description": "docx — документ соберётся в копии файла; pdf — перенесён только текст",
+            "enum": [
+              "docx",
+              "pdf"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "found_by": {
+            "description": "Кто нашёл места: метки {{…}} в файле, помощник или правила по линейкам и реквизитам",
+            "enum": [
+              "markers",
+              "assistant",
+              "rules"
+            ],
+            "title": "Found By",
+            "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Почему места искал не помощник",
+            "title": "Notice"
+          }
+        },
+        "required": [
+          "document",
+          "format",
+          "found_by",
+          "notice"
+        ],
+        "title": "DocumentImportSchema",
+        "type": "object"
+      },
       "DocumentPartiesRequest": {
         "description": "От кого и кому уже созданный документ. Поле не передано — эта сторона\nостаётся как была; null — отвязать.",
         "properties": {
@@ -950,6 +997,12 @@
             "description": "Значение переносится в копию документа (номер и даты — нет)",
             "title": "Carry Over",
             "type": "boolean"
+          },
+          "default": {
+            "default": "",
+            "description": "Значение нового документа, пока не введено своё («Без НДС»)",
+            "title": "Default",
+            "type": "string"
           },
           "group": {
             "title": "Group",
@@ -1592,6 +1645,13 @@
             "title": "Carry Over",
             "type": "boolean"
           },
+          "default": {
+            "default": "",
+            "description": "Значение нового документа по умолчанию",
+            "maxLength": 1000,
+            "title": "Default",
+            "type": "string"
+          },
           "hint": {
             "default": "",
             "maxLength": 200,
@@ -1707,10 +1767,11 @@
             "type": "string"
           },
           "found_by": {
-            "description": "Кто нашёл места: метки {{…}} в файле, помощник или никто",
+            "description": "Кто нашёл места: метки {{…}} в файле, помощник, правила по линейкам и реквизитам или никто",
             "enum": [
               "markers",
               "assistant",
+              "rules",
               "none"
             ],
             "title": "Found By",
@@ -1837,6 +1898,12 @@
             "title": "Body Format",
             "type": "string"
           },
+          "can_keep": {
+            "default": false,
+            "description": "Шаблон документа по файлу: его можно сохранить в каталог (POST …/keep)",
+            "title": "Can Keep",
+            "type": "boolean"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -1857,11 +1924,17 @@
                 "type": "null"
               }
             ],
-            "description": "Файл-образец DOCX: документ собирается в его оформлении"
+            "description": "Файл-образец или бланк DOCX: документ собирается в его оформлении"
           },
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "in_library": {
+            "default": true,
+            "description": "Шаблон в каталоге; нет — шаблон документа по файлу или прошлая редакция",
+            "title": "In Library",
+            "type": "boolean"
           },
           "is_builtin": {
             "title": "Is Builtin",
@@ -2050,7 +2123,8 @@
           "counterparty",
           "ocr",
           "agent",
-          "default"
+          "default",
+          "file"
         ],
         "title": "ValueSource",
         "type": "string"
@@ -2872,6 +2946,117 @@
           }
         },
         "summary": "Скачать файл по одноразовому токену (забирает бот)",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/import": {
+      "post": {
+        "description": "Находит в файле места для данных (метки {{Название поля}}, помощник или линейки и реквизиты) и создаёт документ, где значения полей — как в файле. Дальше документ правится и собирается как любой другой: DOCX — в копии присланного файла, из PDF переносится только текст.",
+        "operationId": "import_document",
+        "parameters": [
+          {
+            "description": "Имя файла у пользователя",
+            "in": "query",
+            "name": "filename",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Имя файла у пользователя",
+              "maxLength": 255,
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/pdf": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "Документ: DOCX или PDF",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Документ по своему файлу: поменять данные, оставив оформление",
         "tags": [
           "documents"
         ]
@@ -5206,6 +5391,81 @@
           }
         },
         "summary": "Изменить свой шаблон",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/templates/{template_id}/keep": {
+      "post": {
+        "description": "Следующий такой же документ начнётся с этого шаблона.",
+        "operationId": "keep_template",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Template Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Сохранить в каталог шаблон документа, сделанного по файлу",
         "tags": [
           "documents"
         ]

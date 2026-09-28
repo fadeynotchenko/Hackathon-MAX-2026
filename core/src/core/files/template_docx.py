@@ -9,6 +9,8 @@
 
 Сборка идёт в два прохода: места → маркеры ``{{key}}``, маркеры → значения.
 Иначе значение одного поля, похожее на место другого, заменилось бы повторно.
+Маркер может просить вариант записи значения — ``{{total|words}}``: сумму
+прописью, дату словами; варианты считает домен (``fill_context``).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from __future__ import annotations
 import re
 import zipfile
 from collections.abc import Iterator, Mapping, Sequence
+from copy import deepcopy
 from io import BytesIO
 
 from docx import Document as open_docx
@@ -24,6 +27,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from lxml import etree
 
+from core.domain.documents import MARKER, marker_name
 from core.domain.places import Place, place_spans
 from core.files.errors import TemplateFileError
 
@@ -34,8 +38,11 @@ _RUNS = (
     " | ./w:sdt/w:sdtContent/w:r | ./w:customXml/w:r"
 )
 _W_T, _W_TAB, _W_BR, _W_CR = qn("w:t"), qn("w:tab"), qn("w:br"), qn("w:cr")
+_W_P, _W_TBL, _W_TR, _W_TC, _W_SDT = qn("w:p"), qn("w:tbl"), qn("w:tr"), qn("w:tc"), qn("w:sdt")
 _XML_SPACE = qn("xml:space")
-_KEY_MARKER = re.compile(r"{{\s*(\w+)\s*}}")
+_NO_BORDER = frozenset({"nil", "none"})
+# Ячейки строки таблицы в тексте для предпросмотра: «ИНН  7707083893  КПП  770701001».
+CELL_GAP = "  "
 
 
 def _open(data: bytes) -> DocxDocument:
@@ -132,6 +139,16 @@ def _replace(paragraph: etree._Element, begin: int, end: int, value: str) -> Non
             placed = True
 
 
+def _own_line(paragraph: etree._Element) -> bool:
+    """У абзаца своё место для значения: ячейка таблицы или линейка (нижняя
+    граница абзаца). Так в бланках рисуют место для ручного заполнения вместо «______»."""
+    cell = paragraph.getparent()
+    if cell is not None and cell.tag == _W_TC:
+        return True
+    border = paragraph.find("./w:pPr/w:pBdr/w:bottom", paragraph.nsmap)
+    return border is not None and border.get(qn("w:val")) not in _NO_BORDER
+
+
 def _fill_paragraph(
     paragraph: etree._Element,
     places: Sequence[tuple[str, Place]],
@@ -140,9 +157,14 @@ def _fill_paragraph(
 ) -> None:
     for begin, end, key in reversed(place_spans(_text(paragraph), places)):
         _replace(paragraph, begin, end, "{{" + key + "}}")
-    markers = list(_KEY_MARKER.finditer(_text(paragraph)))
+    text = _text(paragraph)
+    markers = list(MARKER.finditer(text))
+    # Маркер — всё содержимое ячейки или линейки: пустое значение оставляет её
+    # пустой, как в бланке. Прочерк поверх нарисованной линии задвоил бы её.
+    if len(markers) == 1 and markers[0].group(0) == text.strip() and _own_line(paragraph):
+        blank = ""
     for match in reversed(markers):
-        _replace(paragraph, match.start(), match.end(), context.get(match.group(1)) or blank)
+        _replace(paragraph, match.start(), match.end(), context.get(marker_name(match)) or blank)
 
 
 def docx_lines(data: bytes) -> list[str]:
@@ -153,6 +175,160 @@ def docx_lines(data: bytes) -> list[str]:
         for root in _roots(document, all_parts=False)
         for paragraph in _paragraphs(root, with_fallback=False)
     ]
+
+
+def _join_cells(parts: Sequence[str]) -> str:
+    """Ячейки строки таблицы через ``CELL_GAP``; кавычки и «20» + «26» в дате
+    бланка («___» ______ 20__ г.) — без зазора, как они стоят на листе."""
+    out, last = "", ""
+    for part in (part.strip() for part in parts):
+        if not part:
+            continue
+        tight = (
+            out.endswith(("«", "(")) or part.startswith(("»", ")", "!", ",", ".")) or last == "20"
+        )
+        out += part if not out or tight else CELL_GAP + part
+        last = part
+    return out
+
+
+def _table_lines(table: etree._Element) -> list[str]:
+    """Строка таблицы — строки текста: абзацы ячеек идут рядом, как на листе,
+    — первый абзац каждой ячейки в одной строке, второй — в следующей."""
+    lines: list[str] = []
+    for row in table.iter(_W_TR):
+        if next(row.iterancestors(_W_TBL)) is not table:
+            continue
+        cells = [
+            [line for line in _block_lines(cell) if line.strip()] for cell in row.findall(_W_TC)
+        ]
+        depth = max((len(cell) for cell in cells), default=0)
+        if depth == 0:
+            lines.append("")
+        lines.extend(
+            _join_cells([cell[index] if index < len(cell) else "" for cell in cells])
+            for index in range(depth)
+        )
+    return lines
+
+
+def _block_lines(container: etree._Element) -> list[str]:
+    """Строки для предпросмотра по порядку блоков: абзац — строка, строка
+    таблицы — её ячейки рядом. Надписи внутри абзаца — после него."""
+    lines: list[str] = []
+    for child in container:
+        if child.tag == _W_P:
+            lines.append(_text(child))
+            lines.extend(
+                _text(inner)
+                for inner in child.iter(_W_P)
+                if inner is not child and next(inner.iterancestors(_MC_FALLBACK), None) is None
+            )
+        elif child.tag == _W_TBL:
+            lines.extend(_table_lines(child))
+        elif child.tag == _W_SDT:
+            content = child.find("./w:sdtContent", child.nsmap)
+            if content is not None:
+                lines.extend(_block_lines(content))
+    return lines
+
+
+def docx_layout(data: bytes) -> list[str]:
+    """Текст образца для предпросмотра: как ``docx_lines``, но строка таблицы —
+    одна строка текста, а не столбик ячеек. Места полей в нём ищутся так же:
+    каждая строка ``docx_lines`` целиком входит в какую-то строку раскладки."""
+    document = _open(data)
+    return [line for root in _roots(document, all_parts=False) for line in _block_lines(root)]
+
+
+_CELL_LABEL_MAX = 60
+_LABEL_LETTERS = re.compile(r"[А-Яа-яЁёA-Za-z]{2,}")
+
+
+def _grid(row: etree._Element) -> list[tuple[int, etree._Element]]:
+    """Ячейки строки с номером первой колонки сетки: подпись под ячейкой ищется
+    в следующей строке по той же колонке, а ячейки бывают объединены."""
+    cells: list[tuple[int, etree._Element]] = []
+    column = 0
+    for cell in row.findall(_W_TC):
+        cells.append((column, cell))
+        span = cell.find("./w:tcPr/w:gridSpan", cell.nsmap)
+        column += int(span.get(qn("w:val"), "1")) if span is not None else 1
+    return cells
+
+
+def _plain(cell: etree._Element) -> str:
+    return " ".join(_text(p).strip() for p in cell.iter(_W_P) if _text(p).strip())
+
+
+def _cell_label(left: str, caption: str) -> str:
+    """Название места по подписи слева («ИНН») и подстрочнику под ним («цифрами»)."""
+    parts = [
+        re.sub(r"\s+", " ", text).strip(" :—–-").replace("{", "").replace("}", "")
+        for text in (left, caption)
+    ]
+    left, caption = (part if _LABEL_LETTERS.search(part) else "" for part in parts)
+    label = f"{left} ({caption})" if left and caption else left or caption
+    if len(label) > _CELL_LABEL_MAX:
+        label = label[:_CELL_LABEL_MAX].rsplit(" ", 1)[0]
+    return label[:1].upper() + label[1:]
+
+
+def mark_blank_cells(data: bytes) -> bytes | None:
+    """Бланк, где место для данных — пустая ячейка с линейкой снизу («ИНН
+    ______» таблицей): вписать в такие ячейки метки ``{{Подпись}}`` по подписи
+    слева и подстрочнику снизу. Текст пустой ячейки не на что сослаться как на
+    место, а метку видно и человеку, и разбору; пустое значение потом снова
+    даёт пустую ячейку. ``None`` — размечать нечего, файл остаётся как был."""
+    document = _open(data)
+    marked = 0
+    for root in _roots(document, all_parts=False):
+        for table in root.iter(_W_TBL):
+            rows = [_grid(row) for row in table.findall(_W_TR)]
+            for index, cells in enumerate(rows):
+                below = dict(rows[index + 1]) if index + 1 < len(rows) else {}
+                for position, (column, cell) in enumerate(cells):
+                    paragraphs = cell.findall(_W_P)
+                    if (
+                        len(paragraphs) != 1
+                        or _plain(cell)
+                        or cell.find(_W_TBL) is not None
+                        or not _own_line(paragraphs[0])
+                        or not _bottom_border(cell)
+                    ):
+                        continue
+                    left = _plain(cells[position - 1][1]) if position > 0 else ""
+                    caption_cell = below.get(column)
+                    caption = _plain(caption_cell) if caption_cell is not None else ""
+                    label = _cell_label(left, caption)
+                    if not label:
+                        continue
+                    source = cells[position - 1][1] if position > 0 else None
+                    _put_marker(paragraphs[0], "{{" + label + "}}", source)
+                    marked += 1
+    if not marked:
+        return None
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _bottom_border(cell: etree._Element) -> bool:
+    border = cell.find("./w:tcPr/w:tcBorders/w:bottom", cell.nsmap)
+    return border is not None and border.get(qn("w:val")) not in _NO_BORDER
+
+
+def _put_marker(paragraph: etree._Element, text: str, source: etree._Element | None) -> None:
+    """Кусок текста с оформлением подписи рядом: значение встанет тем же шрифтом."""
+    run = OxmlElement("w:r")
+    style = source.find(".//w:r/w:rPr", source.nsmap) if source is not None else None
+    if style is not None:
+        run.append(deepcopy(style))
+    node = OxmlElement("w:t")
+    node.text = text
+    node.set(_XML_SPACE, "preserve")
+    run.append(node)
+    paragraph.append(run)
 
 
 def fill_docx(

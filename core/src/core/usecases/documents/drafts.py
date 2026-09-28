@@ -25,12 +25,19 @@ from core.domain.documents import (
     FieldSpec,
     FieldValue,
     ValueSource,
+    fill_context,
     fill_text_template,
-    render_context,
     validate_fields,
 )
 from core.domain.exceptions import NotFoundError
-from core.usecases.documents.journal import COPY_SOURCE, Fact, SendState, last_sends, record
+from core.usecases.documents.journal import (
+    COPY_SOURCE,
+    FILE_SOURCE,
+    Fact,
+    SendState,
+    last_sends,
+    record,
+)
 from core.usecases.documents.organizations import seller_for_document
 from core.usecases.documents.requisites import CLIENT_PREFIX, SELLER_PREFIX
 from core.usecases.documents.templates import (
@@ -145,9 +152,7 @@ def _view(
         missing=validated.missing,
         unconfirmed=validated.unconfirmed,
         ready=validated.ready,
-        preview=fill_text_template(
-            template.body, render_context(template.fields, validated.values)
-        ),
+        preview=fill_text_template(template.body, fill_context(template.fields, validated.values)),
         created_at=document.created_at,
         updated_at=document.updated_at,
     )
@@ -204,8 +209,12 @@ async def _prefill(
         values |= _side_values(specs, CLIENT_PREFIX, counterparty.values, ValueSource.COUNTERPARTY)
     today = local_day(datetime.now(UTC)).isoformat()
     for spec in specs:
-        if spec.today_by_default and spec.key not in values:
+        if spec.key in values:
+            continue
+        if spec.today_by_default:
             values[spec.key] = FieldValue(today, source=ValueSource.DEFAULT)
+        elif spec.default:
+            values[spec.key] = FieldValue(spec.default, source=ValueSource.DEFAULT)
     return values, seller.id if seller is not None else None
 
 
@@ -219,6 +228,44 @@ async def create_draft(
     title: str = "",
 ) -> DocumentView:
     template = await get_template(session, user_id=user_id, template_id=template_id)
+    return await _create(
+        session,
+        user_id=user_id,
+        template=template,
+        counterparty_id=counterparty_id,
+        organization_id=organization_id,
+        title=title,
+    )
+
+
+async def create_from_values(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    template: TemplateView,
+    values: Mapping[str, FieldValue],
+    title: str = "",
+) -> DocumentView:
+    """Документ по присланному файлу: значения — то, что стоит в файле. Пустые
+    места дополняются как у нового документа — реквизиты своей организации,
+    значения по умолчанию. Значение из файла, не прошедшее проверку (ИНН с
+    неверной контрольной суммой), в документ не попадает, а ошибка видна."""
+    return await _create(
+        session, user_id=user_id, template=template, initial=values, title=title, source=FILE_SOURCE
+    )
+
+
+async def _create(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    template: TemplateView,
+    counterparty_id: int | None = None,
+    organization_id: int | None = None,
+    title: str = "",
+    initial: Mapping[str, FieldValue] | None = None,
+    source: str | None = None,
+) -> DocumentView:
     values, seller_id = await _prefill(
         session,
         user_id=user_id,
@@ -226,6 +273,7 @@ async def create_draft(
         organization_id=organization_id,
         counterparty_id=counterparty_id,
     )
+    values |= dict(initial or {})
     validated = validate_fields(template.fields, values)
     document = await DocumentRepository(session).create(
         user_id,
@@ -241,8 +289,10 @@ async def create_draft(
         kind=Fact.CREATED,
         document_id=document.id,
         template_kind=template.kind,
+        source=source,
     )
-    return _view(document, template)
+    rejected = tuple(error for error in validated.errors if error.key in (initial or {}))
+    return _view(document, template, rejected=rejected)
 
 
 async def copy_document(

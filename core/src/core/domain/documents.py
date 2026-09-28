@@ -12,9 +12,18 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import StrEnum
 from itertools import cycle
+
+from core.domain.words import (
+    MONTH_NUMBERS,
+    date_long,
+    money_words,
+    month_genitive,
+    number_words,
+    rubles_kopecks,
+)
 
 
 class FieldType(StrEnum):
@@ -44,9 +53,12 @@ class ValueSource(StrEnum):
     COUNTERPARTY = "counterparty"
     OCR = "ocr"
     AGENT = "agent"
-    # Поставлено системой при создании (дата счёта — сегодня): не угадано моделью,
-    # видно в форме и правится как обычное значение.
+    # Поставлено системой при создании (дата счёта — сегодня, «Без НДС» в счёте):
+    # не угадано моделью, видно в форме и правится как обычное значение.
     DEFAULT = "default"
+    # Стояло в файле, по которому сделан документ: человек прислал свой документ
+    # и меняет в нём данные. Текст взят из файла буквально, подтверждать нечего.
+    FILE = "file"
 
 
 UNCONFIRMED_SOURCES = frozenset({ValueSource.OCR, ValueSource.AGENT})
@@ -66,6 +78,8 @@ class FieldSpec:
     carry_over: bool = True
     # Пустое поле при создании документа получает сегодняшнюю дату по Москве.
     today_by_default: bool = False
+    # Значение нового документа, пока человек не ввёл своё: «Без НДС», «Устава».
+    default: str = ""
 
 
 @dataclass(frozen=True)
@@ -139,14 +153,15 @@ def _ogrn_valid(value: str) -> bool:
     return False
 
 
-def account_key_valid(account: str, bic: str) -> bool:
+def account_key_valid(account: str, bic: str, *, correspondent: bool = False) -> bool:
     """Ключ расчётного счёта считается вместе с БИК банка: без него 20 цифр
     проверить нечем, поэтому одиночный счёт домен принимает как есть."""
     account, bic = _digits(account), _digits(bic)
     if len(account) != 20 or len(bic) != 9:
         return False
-    # Балансовые счета банка (начинаются на 0) ключуются по «0» и цифрам 5-6 БИК.
-    prefix = "0" + bic[4:6] if account.startswith("0") else bic[6:9]
+    # Корреспондентский счёт и балансовые счета банка (начинаются на 0) ключуются
+    # по «0» и цифрам 5-6 БИК, расчётный — по последним трём цифрам БИК.
+    prefix = "0" + bic[4:6] if correspondent or account.startswith("0") else bic[6:9]
     weights = cycle((7, 1, 3))
     total = sum(int(d) * w for d, w in zip(prefix + account, weights, strict=False))
     return total % 10 == 0
@@ -193,7 +208,20 @@ _YEAR_SUFFIX = re.compile(r"\s*(г\.?|года)$", re.IGNORECASE)
 MIN_YEAR, MAX_YEAR = 1900, 2100
 
 
+# «28» сентября 2026 г., 28 сентября 2026 — так дату пишут в шапке договора.
+_WORDY_DATE = re.compile(r'^[«"]?(\d{1,2})[»"]?\s+([а-яё]+)\s+(\d{4})$', re.IGNORECASE)
+
+
 def parse_date(raw: str) -> date | None:
+    wordy = _WORDY_DATE.match(_YEAR_SUFFIX.sub("", raw.strip()))
+    if wordy is not None:
+        month = MONTH_NUMBERS.get(wordy.group(2).lower())
+        if month is None or not MIN_YEAR <= int(wordy.group(3)) <= MAX_YEAR:
+            return None
+        try:
+            return date(int(wordy.group(3)), month, int(wordy.group(1)))
+        except ValueError:
+            return None
     cleaned = _YEAR_SUFFIX.sub("", raw.strip()).replace("/", ".").replace("-", ".")
     parts = cleaned.split(".")
     if len(parts) != 3 or not all(p.isdigit() for p in parts):
@@ -332,6 +360,11 @@ def validate_fields(
     return ValidatedFields(values, tuple(errors), missing, unconfirmed)
 
 
+# Корреспондентский счёт банка: ``seller_corr_account``. Ключуется иначе, чем расчётный.
+CORR_ACCOUNT_SUFFIX = "corr_account"
+_BANK_SUFFIX = re.compile(r"_?(?:corr_account|account|bic)$")
+
+
 def _cross_field_errors(
     known: Mapping[str, FieldSpec], values: Mapping[str, FieldValue]
 ) -> list[FieldError]:
@@ -344,7 +377,10 @@ def _cross_field_errors(
         bic_key = _bic_for(key, bic_keys)
         if bic_key is None or bic_key not in values:
             continue
-        if not account_key_valid(values[key].value, values[bic_key].value):
+        correspondent = key.endswith(CORR_ACCOUNT_SUFFIX)
+        if not account_key_valid(
+            values[key].value, values[bic_key].value, correspondent=correspondent
+        ):
             errors.append(
                 FieldError(
                     key,
@@ -355,11 +391,17 @@ def _cross_field_errors(
     return errors
 
 
+def _side(key: str) -> str:
+    """Сторона реквизита: ``seller`` у ``seller_account``, ``seller_corr_account`` и ``seller_bic``."""
+    side, found = _BANK_SUFFIX.subn("", key)
+    return side if found else key.rpartition("_")[0]
+
+
 def _bic_for(account_key: str, bic_keys: list[str]) -> str | None:
     """БИК той же стороны: ``seller_account`` сверяется с ``seller_bic``, а не с
     первым попавшимся БИК шаблона — иначе счёт клиента проверялся бы банком продавца."""
-    side = account_key.rpartition("_")[0]
-    same_side = [key for key in bic_keys if key.rpartition("_")[0] == side]
+    side = _side(account_key)
+    same_side = [key for key in bic_keys if _side(key) == side]
     if same_side:
         return same_side[0]
     return bic_keys[0] if len(bic_keys) == 1 else None
@@ -398,20 +440,78 @@ def render_context(
 
 
 BLANK = "__________"
-_MARKER = re.compile(r"{{\s*(\w+)\s*}}")
+# Маркер поля: {{total}} — значение как есть, {{total|words}} — вариант записи
+# того же значения (сумма прописью, дата словами). Варианты считает fill_context.
+MARKER = re.compile(r"{{\s*(\w+)(?:\s*\|\s*([\w:]+))?\s*}}")
+
+
+def marker_name(match: re.Match[str]) -> str:
+    """Ключ значения в контексте подстановки: ``total`` или ``total|words``."""
+    key, variant = match.group(1), match.group(2)
+    return f"{key}|{variant}" if variant else key
 
 
 def template_markers(body: str) -> list[str]:
     """Ключи полей в теле шаблона по порядку появления, без повторов."""
-    return list(dict.fromkeys(_MARKER.findall(body)))
+    return list(dict.fromkeys(match.group(1) for match in MARKER.finditer(body)))
+
+
+def _money_variants(key: str, amount: Decimal) -> dict[str, str]:
+    rubles, kopecks = rubles_kopecks(amount)
+    return {
+        f"{key}|words": money_words(amount),
+        f"{key}|rub": format_money(Decimal(rubles)).partition(",")[0],
+        f"{key}|rub_words": number_words(rubles),
+        f"{key}|kop": f"{kopecks:02d}",
+    }
+
+
+def _date_variants(key: str, day: date) -> dict[str, str]:
+    return {
+        f"{key}|long": date_long(day),
+        f"{key}|day": f"{day.day:02d}",
+        f"{key}|month": month_genitive(day),
+        f"{key}|year": str(day.year),
+        f"{key}|yy": f"{day.year % 100:02d}",
+    }
+
+
+def fill_context(specs: tuple[FieldSpec, ...], values: Mapping[str, FieldValue]) -> dict[str, str]:
+    """Всё, что подставляется в шаблон: значения полей и варианты их записи.
+
+    Сумма — ещё и прописью, рублями и копейками отдельно («120 000 (сто двадцать
+    тысяч) рублей 00 копеек»), и ценой за единицу, если в шаблоне есть целое
+    число (``{{total|per:quantity}}``); дата — словами и по частям для бланков
+    вида «____» ________ 20__ г.»."""
+    out = render_context(specs, values)
+    counts = {
+        spec.key: int(values[spec.key].value)
+        for spec in specs
+        if spec.type is FieldType.INTEGER
+        and spec.key in values
+        and values[spec.key].value.isdigit()
+        and int(values[spec.key].value) > 0
+    }
+    for spec in specs:
+        value = values.get(spec.key)
+        if value is None:
+            continue
+        if spec.type is FieldType.MONEY and (amount := parse_money(value.value)) is not None:
+            out |= _money_variants(spec.key, amount)
+            for count_key, count in counts.items():
+                share = (amount / count).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                out[f"{spec.key}|per:{count_key}"] = format_money(share)
+        elif spec.type is FieldType.DATE and (day := parse_date(value.value)) is not None:
+            out |= _date_variants(spec.key, day)
+    return out
 
 
 def fill_text_template(body: str, context: Mapping[str, str], *, blank: str = BLANK) -> str:
-    """Подстановка ``{{key}}`` в тело шаблона.
+    """Подстановка ``{{key}}`` и ``{{key|вариант}}`` в тело шаблона.
 
     Пустое поле остаётся видимой прочерк-строкой, а не исчезает: документ с
     молча пропавшим реквизитом выглядит готовым и уходит контрагенту таким.
     Синтаксис маркера совпадает с DOCX-шаблонами, чтобы тело одного шаблона
     можно было перенести в файл без правки текста.
     """
-    return _MARKER.sub(lambda m: context.get(m.group(1)) or blank, body)
+    return MARKER.sub(lambda m: context.get(marker_name(m)) or blank, body)

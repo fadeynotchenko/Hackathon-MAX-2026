@@ -46,7 +46,15 @@ export function makeMetrics(overrides: Partial<AdminMetrics> = {}): AdminMetrics
     ],
     funnel: { created: 5, ready: 4, rendered: 3, sent: 2, delivered: 2 },
     autofill: {
-      by_source: { manual: 6, profile: 10, counterparty: 4, ocr: 0, agent: 0, default: 0 },
+      by_source: {
+        manual: 6,
+        profile: 10,
+        counterparty: 4,
+        ocr: 0,
+        agent: 0,
+        default: 0,
+        file: 0,
+      },
       total: 20,
       automatic_share: 0.7,
     },

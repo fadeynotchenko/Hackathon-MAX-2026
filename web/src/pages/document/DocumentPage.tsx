@@ -7,7 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { DocumentFact, DocumentView } from '@/api/client';
 import { Banner, type BannerTone } from '@/components/Banner';
 import { DocPreview } from '@/components/DocPreview';
-import { IconCopy, IconEdit, IconSend, IconTrash } from '@/components/icons';
+import { IconCopy, IconEdit, IconSend, IconTemplates, IconTrash } from '@/components/icons';
 import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
@@ -41,7 +41,8 @@ export function DocumentPage() {
     () => Promise.all([api.document(documentId), api.documentHistory(documentId)]),
     [api, documentId],
   );
-  const [busy, setBusy] = useState<'copy' | 'delete' | null>(null);
+  const [busy, setBusy] = useState<'copy' | 'delete' | 'keep' | null>(null);
+  const [kept, setKept] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +72,20 @@ export function DocumentPage() {
       void navigate(`/documents/${copied.id}/fill`);
     } catch (err) {
       setError(errorText(err, 'Не удалось создать копию'));
+      setBusy(null);
+    }
+  };
+
+  // Документ по своему файлу: его шаблон можно оставить в каталоге для следующих.
+  const keep = async () => {
+    setBusy('keep');
+    setError(null);
+    try {
+      await api.keepTemplate(doc.template.id);
+      setKept(true);
+    } catch (err) {
+      setError(errorText(err, 'Не удалось сохранить шаблон'));
+    } finally {
       setBusy(null);
     }
   };
@@ -127,7 +142,23 @@ export function DocumentPage() {
         <CellAction before={<IconCopy />} disabled={busy !== null} onClick={() => void copy()}>
           На основе этого
         </CellAction>
+        {doc.template.can_keep && !kept ? (
+          <CellAction
+            before={<IconTemplates />}
+            disabled={busy !== null}
+            onClick={() => void keep()}
+          >
+            Сохранить как шаблон
+          </CellAction>
+        ) : null}
       </CellList>
+      {kept ? (
+        <div className="section">
+          <Banner tone="success" title="Шаблон в каталоге">
+            Следующий такой документ начните на вкладке «Создать».
+          </Banner>
+        </div>
+      ) : null}
 
       <div className="section">
         <DocPreview text={doc.preview} />
@@ -144,7 +175,9 @@ export function DocumentPage() {
               title={
                 fact.kind === 'created' && fact.source === 'copy'
                   ? 'Создан на основе другого'
-                  : (FACT_LABEL[fact.kind] ?? fact.kind)
+                  : fact.kind === 'created' && fact.source === 'file'
+                    ? 'Создан по вашему файлу'
+                    : (FACT_LABEL[fact.kind] ?? fact.kind)
               }
               after={
                 <Typography.Text variant="description" color="tertiary" className="nowrap">

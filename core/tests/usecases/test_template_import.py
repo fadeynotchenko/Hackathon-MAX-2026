@@ -159,8 +159,33 @@ async def test_assistant_outage_leaves_places_to_the_person(session: AsyncSessio
     off = await import_template_file(
         session, user_id=user_id, data=offer_docx(), filename="a.docx", llm=None, max_bytes=LIMIT
     )
-    assert (down.found_by, down.fields) == ("none", ())
-    assert down.notice and off.notice and "сами" in off.notice
+    # Без помощника места ищут правила: подпись с двоеточием, линейки, реквизиты.
+    assert down.found_by == off.found_by == "rules"
+    by_label = {field.label: field for field in off.fields}
+    assert by_label["Для"].places == (Place("ООО «Альфа»", "Для: "),)
+    assert by_label["ИНН"].type is FieldType.INN
+    assert by_label["Заказчик"].places == (Place("________", "Заказчик: "),)
+    assert not any(field.required for field in off.fields), "правила только подсказывают"
+    assert down.notice and "не ответил" in down.notice
+    assert off.notice and "выключен" in off.notice and "проверьте" in off.notice
+
+
+async def test_nothing_found_leaves_places_to_the_person(session: AsyncSession) -> None:
+    user_id = await make_user(session)
+    document = DocxDocument()
+    document.add_paragraph("Просто текст без данных")
+    buffer = BytesIO()
+    document.save(buffer)
+    draft = await import_template_file(
+        session,
+        user_id=user_id,
+        data=buffer.getvalue(),
+        filename="a.docx",
+        llm=None,
+        max_bytes=LIMIT,
+    )
+    assert (draft.found_by, draft.fields) == ("none", ())
+    assert draft.notice and "сами" in draft.notice
 
 
 async def test_pdf_becomes_a_text_template_and_scans_are_refused(session: AsyncSession) -> None:

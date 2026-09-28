@@ -20,6 +20,8 @@ export function makeTemplate(overrides: Partial<Template> = {}): Template {
     description: 'Счёт с реквизитами продавца',
     body_format: 'text',
     is_builtin: true,
+    in_library: true,
+    can_keep: false,
     body: 'Счёт на оплату № {{number}} от {{date}}',
     preview: 'Счёт на оплату № __________ от __________',
     fields: [
@@ -33,6 +35,7 @@ export function makeTemplate(overrides: Partial<Template> = {}): Template {
         max_length: null,
         carry_over: true,
         today_by_default: false,
+        default: '',
       },
       {
         key: 'client_inn',
@@ -44,6 +47,7 @@ export function makeTemplate(overrides: Partial<Template> = {}): Template {
         max_length: null,
         carry_over: true,
         today_by_default: false,
+        default: '',
       },
       {
         key: 'total',
@@ -55,6 +59,7 @@ export function makeTemplate(overrides: Partial<Template> = {}): Template {
         max_length: null,
         carry_over: true,
         today_by_default: false,
+        default: '',
       },
       {
         key: 'seller_name',
@@ -66,6 +71,7 @@ export function makeTemplate(overrides: Partial<Template> = {}): Template {
         max_length: null,
         carry_over: true,
         today_by_default: false,
+        default: '',
       },
     ],
     ...overrides,

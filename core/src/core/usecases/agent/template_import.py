@@ -1,11 +1,13 @@
 """Свой шаблон из файла-образца: найти в «рыбе» места для данных.
 
 Пользователь присылает готовый документ (DOCX или PDF): КП клиенту, свой счёт,
-фирменный бланк. Места для данных находятся двумя путями:
+фирменный бланк. Места для данных находятся тремя путями:
 
 - метки, которые человек сам поставил в файле: ``{{Название клиента}}``;
 - если меток нет — помощник показывает, какие фрагменты текста меняются от
-  документа к документу (клиент, сумма, даты).
+  документа к документу (клиент, сумма, даты);
+- без помощника (выключен, не ответил, ничего не нашёл) — правила по самому
+  тексту: линейки «______» с подписью, реквизиты, даты (``core.domain.sample_rules``).
 
 Помощник не переписывает документ: он называет фрагменты, а сервер оставляет
 только те, что буквально есть в тексте файла. Итог — черновик шаблона, который
@@ -17,7 +19,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePath
 from typing import Any
@@ -29,7 +31,14 @@ from core.domain.documents import FieldType
 from core.domain.exceptions import AppError
 from core.domain.media import DOCX, MediaKind, require_media
 from core.domain.places import LABEL_MARKER, Place, found, label_of
-from core.files import TemplateFileError, docx_lines, pdf_lines
+from core.domain.sample_rules import rule_fields
+from core.files import (
+    TemplateFileError,
+    docx_layout,
+    docx_lines,
+    mark_blank_cells,
+    pdf_lines,
+)
 from core.llm import ChatMessage, LLMClient, LLMError
 from core.logs import biz_warn
 from core.usecases.agent.prompts import TEMPLATE_PLACES_INSTRUCTIONS
@@ -55,10 +64,18 @@ MAX_PROMPT_CHARS = 15_000
 UNUSED_FILE_TTL = timedelta(days=1)
 FOUND_BY_MARKERS = "markers"
 FOUND_BY_ASSISTANT = "assistant"
+FOUND_BY_RULES = "rules"
 FOUND_NONE = "none"
 # Пустая линия «______» или «……» без текста перед ней — неизвестно, чья она.
 _BLANK_LINE = re.compile(r"^[\s_.…-]+$")
+_DATE_BLANK = re.compile(r"«\s*_+\s*»\s*_+\s*(?:20)?_+\s*(?:г\.?)?")
 _SPACES = re.compile(r"\s+")
+_CYRILLIC = re.compile(r"[а-яё]", re.IGNORECASE)
+KIND_TITLES = {
+    "invoice": "Счёт на оплату",
+    "offer": "Коммерческое предложение",
+    "contract": "Договор",
+}
 
 
 @dataclass(frozen=True)
@@ -69,6 +86,20 @@ class ImportedField:
     type: FieldType
     required: bool
     places: tuple[Place, ...]
+
+    @property
+    def value(self) -> str:
+        """Что стоит на месте в файле сейчас; у линейки и метки — ничего."""
+        for place in self.places:
+            text = place.text.strip()
+            if (
+                text
+                and not _BLANK_LINE.match(text)
+                and not _DATE_BLANK.fullmatch(text)
+                and not LABEL_MARKER.fullmatch(text)
+            ):
+                return text
+        return ""
 
 
 @dataclass(frozen=True)
@@ -183,6 +214,16 @@ def suggested_fields(raw: dict[str, Any], lines: Sequence[str]) -> list[Imported
     ]
 
 
+def ruled_fields(lines: Sequence[str]) -> list[ImportedField]:
+    """Места по правилам: подсказка человеку, а не решение, поэтому поля
+    необязательные — пустая линейка в документе останется линейкой. Метки,
+    вписанные в пустые ячейки бланка, правила уже не трогают."""
+    return [
+        ImportedField(field.key, field.label[:LABEL_MAX], field.type, False, tuple(field.places))
+        for field in rule_fields([LABEL_MARKER.sub("", line) for line in lines], limit=FIELDS_MAX)
+    ]
+
+
 def _title_from(filename: str) -> str:
     """«Фирменный_КП-2026.docx» → «Фирменный КП 2026»."""
     stem = PurePath(filename).stem
@@ -217,9 +258,8 @@ async def import_template_file(
     notice: str | None = None
     fields = marker_fields(lines)
     found_by = FOUND_BY_MARKERS if fields else FOUND_NONE
-    if not fields and llm is None:
-        notice = "Помощник выключен — отметьте места для данных сами"
-    elif not fields and llm is not None:
+    assistant_down = llm is None
+    if not fields and llm is not None:
         try:
             raw = await llm.complete_json(
                 [
@@ -230,23 +270,48 @@ async def import_template_file(
             )
         except LLMError as exc:
             biz_warn(logger, "agent.template_import.llm_failed", error=str(exc))
-            notice = "Помощник сейчас не ответил — отметьте места для данных сами"
+            assistant_down = True
         else:
             fields = suggested_fields(raw, lines)
             title = str(raw.get("title") or "").strip()
             kind = str(raw.get("kind") or "")
             found_by = FOUND_BY_ASSISTANT if fields else FOUND_NONE
+    if not fields:
+        # Бланк с пустыми ячейками-линейками: метки по подписям вписываются в
+        # копию файла, дальше она и есть образец.
+        marked = mark_blank_cells(data) if media is DOCX else None
+        if marked is not None:
+            data, lines = marked, docx_lines(marked)
+            text = "\n".join(lines).strip("\n")
+        # Метки в пустых ячейках вписаны разбором, а не человеком: как и правила,
+        # они подсказка — пустая ячейка останется пустой.
+        cells = [replace(field, required=False) for field in marker_fields(lines)]
+        fields = cells + ruled_fields(lines)
+        found_by = FOUND_BY_RULES if fields else FOUND_NONE
+        who = "Помощник выключен" if llm is None else "Помощник сейчас не ответил"
+        if fields and assistant_down:
+            notice = f"{who} — места нашлись по линейкам и реквизитам в файле, проверьте их"
+        elif assistant_down:
+            notice = f"{who} — отметьте места для данных сами"
 
     name = PurePath(filename).name[:255] or f"template.{media.extension}"
     file_id = None
     if media is DOCX:
         repo = TemplateFileRepository(session)
         await repo.delete_unused(user_id, before=datetime.now(UTC) - UNUSED_FILE_TTL)
-        file_id = (await repo.create(owner_user_id=user_id, filename=name, data=data, text=text)).id
+        layout = "\n".join(docx_layout(data))
+        file_id = (
+            await repo.create(
+                owner_user_id=user_id, filename=name, data=data, text=text, layout=layout
+            )
+        ).id
     title = (title or _title_from(name))[:TITLE_MAX]
     if kind not in KINDS:
         heading = [line for line in lines if line.strip()][:3]
         kind = guess_kind(title, name, *heading)
+    if not _CYRILLIC.search(title) and kind in KIND_TITLES:
+        # «kommercheskoe predlozhenie obrazec» — транслит имени файла; вид понятнее.
+        title = KIND_TITLES[kind]
     return TemplateImport(
         file_id=file_id,
         filename=name,

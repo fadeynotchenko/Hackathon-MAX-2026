@@ -39,6 +39,7 @@ function spec(
     max_length: null,
     carry_over: true,
     today_by_default: false,
+    default: '',
     ...extra,
   };
 }

@@ -9,6 +9,7 @@ from .chat import (
     handle_chat_attachment,
     handle_chat_message,
 )
+from .document_import import DocumentFromFile, document_from_file
 from .recognize import (
     RecognizedRequisites,
     VoiceFillResult,
@@ -27,12 +28,14 @@ __all__ = [
     "ChatButton",
     "ChatReply",
     "ChatSender",
+    "DocumentFromFile",
     "ImportedField",
     "MediaFetcher",
     "RecognizedRequisites",
     "TemplateImport",
     "VoiceFillResult",
     "answer_question",
+    "document_from_file",
     "draft_cover_letter",
     "fill_from_file",
     "fill_from_message",

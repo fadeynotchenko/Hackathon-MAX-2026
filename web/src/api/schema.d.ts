@@ -194,6 +194,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Документ по своему файлу: поменять данные, оставив оформление
+         * @description Находит в файле места для данных (метки {{Название поля}}, помощник или линейки и реквизиты) и создаёт документ, где значения полей — как в файле. Дальше документ правится и собирается как любой другой: DOCX — в копии присланного файла, из PDF переносится только текст.
+         */
+        post: operations["import_document"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}": {
         parameters: {
             query?: never;
@@ -600,6 +620,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/templates/{template_id}/keep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Сохранить в каталог шаблон документа, сделанного по файлу
+         * @description Следующий такой же документ начнётся с этого шаблона.
+         */
+        post: operations["keep_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -895,6 +935,28 @@ export interface components {
              */
             updated_at: string;
         };
+        /** DocumentImportSchema */
+        DocumentImportSchema: {
+            /** @description Документ по файлу: значения — как в файле */
+            document: components["schemas"]["DocumentSchema"];
+            /**
+             * Format
+             * @description docx — документ соберётся в копии файла; pdf — перенесён только текст
+             * @enum {string}
+             */
+            format: "docx" | "pdf";
+            /**
+             * Found By
+             * @description Кто нашёл места: метки {{…}} в файле, помощник или правила по линейкам и реквизитам
+             * @enum {string}
+             */
+            found_by: "markers" | "assistant" | "rules";
+            /**
+             * Notice
+             * @description Почему места искал не помощник
+             */
+            notice: string | null;
+        };
         /**
          * DocumentPartiesRequest
          * @description От кого и кому уже созданный документ. Поле не передано — эта сторона
@@ -1036,6 +1098,12 @@ export interface components {
              * @default true
              */
             carry_over: boolean;
+            /**
+             * Default
+             * @description Значение нового документа, пока не введено своё («Без НДС»)
+             * @default
+             */
+            default: string;
             /** Group */
             group: string;
             /** Hint */
@@ -1343,6 +1411,12 @@ export interface components {
              */
             carry_over: boolean;
             /**
+             * Default
+             * @description Значение нового документа по умолчанию
+             * @default
+             */
+            default: string;
+            /**
              * Hint
              * @default
              */
@@ -1405,10 +1479,10 @@ export interface components {
             format: "docx" | "pdf";
             /**
              * Found By
-             * @description Кто нашёл места: метки {{…}} в файле, помощник или никто
+             * @description Кто нашёл места: метки {{…}} в файле, помощник, правила по линейкам и реквизитам или никто
              * @enum {string}
              */
-            found_by: "markers" | "assistant" | "none";
+            found_by: "markers" | "assistant" | "rules" | "none";
             /**
              * Kind
              * @description Вид документа по мнению помощника или по заголовку
@@ -1470,14 +1544,26 @@ export interface components {
             body: string;
             /** Body Format */
             body_format: string;
+            /**
+             * Can Keep
+             * @description Шаблон документа по файлу: его можно сохранить в каталог (POST …/keep)
+             * @default false
+             */
+            can_keep: boolean;
             /** Description */
             description: string;
             /** Fields */
             fields: components["schemas"]["FieldSpecSchema"][];
-            /** @description Файл-образец DOCX: документ собирается в его оформлении */
+            /** @description Файл-образец или бланк DOCX: документ собирается в его оформлении */
             file?: components["schemas"]["TemplateFileSchema"] | null;
             /** Id */
             id: number;
+            /**
+             * In Library
+             * @description Шаблон в каталоге; нет — шаблон документа по файлу или прошлая редакция
+             * @default true
+             */
+            in_library: boolean;
             /** Is Builtin */
             is_builtin: boolean;
             /**
@@ -1546,7 +1632,7 @@ export interface components {
          *     черновик, ручной ввод и справочники — нет.
          * @enum {string}
          */
-        ValueSource: "manual" | "profile" | "counterparty" | "ocr" | "agent" | "default";
+        ValueSource: "manual" | "profile" | "counterparty" | "ocr" | "agent" | "default" | "file";
         /** VoiceFillResponse */
         VoiceFillResponse: {
             document: components["schemas"]["DocumentSchema"];
@@ -2163,6 +2249,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_document: {
+        parameters: {
+            query?: {
+                /** @description Имя файла у пользователя */
+                filename?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Документ: DOCX или PDF */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+                "application/pdf": string;
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentImportSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3815,6 +3976,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    keep_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateSchema"];
                 };
             };
             /** @description Unauthorized */
