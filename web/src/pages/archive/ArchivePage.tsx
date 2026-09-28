@@ -2,7 +2,7 @@
 // Группа клиента — то, что в макете называлось «проект»: документы одной
 // сделки с одним контрагентом (отдельной сущности «проект» в API пока нет).
 import { Button, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type { DocumentSummary } from '@/api/client';
@@ -18,6 +18,7 @@ import {
   kindStyle,
 } from '@/lib/format';
 import { matchesQuery, needsSearch } from '@/lib/search';
+import { useScreenState } from '@/lib/screenMemory';
 import { useAsync } from '@/lib/useAsync';
 
 const NO_CLIENT = 'Без клиента';
@@ -40,8 +41,8 @@ export function ArchivePage() {
   const { api } = useAuth();
   const navigate = useNavigate();
   const state = useAsync(() => Promise.all([api.documents(), api.templates()]), [api]);
-  const [query, setQuery] = useState('');
-  const [kind, setKind] = useState<string | null>(null);
+  const [query, setQuery] = useScreenState('query', '');
+  const [kind, setKind] = useScreenState<string | null>('kind', null);
 
   const [documents, templates] = state.data ?? [[], []];
   const kindByTitle = useMemo(

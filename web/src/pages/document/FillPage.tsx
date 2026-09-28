@@ -90,8 +90,11 @@ export function FillPage() {
     );
   }
   return (
+    // Форма держит правку в своём состоянии. Экран способа или выбора стороны
+    // меняет документ на сервере, и по возвращении форма собирается заново из
+    // свежей версии; вернулись без изменений — остаётся как была.
     <FillForm
-      key={loaded.data.id}
+      key={`${loaded.data.id}:${loaded.data.updated_at}`}
       loaded={loaded.data}
       organizations={organizations.data}
       onBack={back}
@@ -206,8 +209,10 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
       if (!mounted.current) return;
       const lost = Object.keys(rejectedEdits(next, draft)).length;
       if (lost === 0) {
-        // leaving не снимается: экран уходит.
+        // Экран остаётся в стеке под открытым: вернутся — кнопки снова доступны.
         void navigate(to, state ? { state } : undefined);
+        running.current = false;
+        setLeaving(false);
         return;
       }
       hapticResult('error');

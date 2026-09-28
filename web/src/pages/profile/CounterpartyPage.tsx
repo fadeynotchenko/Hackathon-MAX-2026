@@ -92,7 +92,7 @@ function CounterpartyForm({ initial, counterpartyId, onBack }: CounterpartyFormP
       if (returnTo) {
         void navigate(returnTo, { replace: true, state: { counterpartyId: saved.id } });
       } else {
-        void navigate('/profile/counterparties', { replace: true });
+        onBack();
       }
     } catch (err) {
       hapticResult('error');
@@ -113,7 +113,7 @@ function CounterpartyForm({ initial, counterpartyId, onBack }: CounterpartyFormP
     setDeleting(true);
     try {
       await api.deleteCounterparty(counterpartyId);
-      void navigate('/profile/counterparties', { replace: true });
+      onBack();
     } catch (err) {
       setError(errorText(err, 'Не удалось удалить карточку'));
       setDeleting(false);

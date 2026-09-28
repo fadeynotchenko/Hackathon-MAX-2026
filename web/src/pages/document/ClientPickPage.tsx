@@ -4,7 +4,6 @@
 // первой строкой: выбор и добавление в одном месте, новая карточка подставляется
 // сразу после сохранения (parties.ts).
 import { Button, CellAction, CellList, CellSimple } from '@maxhub/max-ui';
-import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { Banner } from '@/components/Banner';
@@ -14,6 +13,7 @@ import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
 import { matchesCard, needsSearch } from '@/lib/search';
+import { useScreenState } from '@/lib/screenMemory';
 import { useAsync } from '@/lib/useAsync';
 
 import { partyPickPath, usePartyPick } from './parties';
@@ -27,7 +27,7 @@ export function ClientPickPage() {
     () => Promise.all([api.document(documentId), api.counterparties()]),
     [api, documentId],
   );
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useScreenState('query', '');
   const current = state.data?.[0].counterparty_id ?? null;
   const cards = state.data?.[1] ?? [];
   const visible = cards.filter((card) => matchesCard(card, query));

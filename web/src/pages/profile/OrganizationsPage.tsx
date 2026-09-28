@@ -1,7 +1,6 @@
 // Мои организации: ООО, ИП — всё, от чьего имени пользователь выставляет документы.
 // Основная стоит первой: от неё документ, если организацию не выбрали.
 import { CellAction, CellList, CellSimple } from '@maxhub/max-ui';
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { IconPlus } from '@/components/icons';
@@ -10,6 +9,7 @@ import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
 import { matchesCard, needsSearch } from '@/lib/search';
+import { useScreenState } from '@/lib/screenMemory';
 import { useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 
@@ -18,7 +18,7 @@ export function OrganizationsPage() {
   const navigate = useNavigate();
   const back = useBack('/profile');
   const state = useAsync(() => api.organizations(), [api]);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useScreenState('query', '');
   const visible = state.data?.filter((item) => matchesCard(item, query)) ?? [];
 
   return (

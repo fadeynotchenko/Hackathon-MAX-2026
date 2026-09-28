@@ -1,31 +1,23 @@
-// Итог: файл ушёл в чат с ботом. Главное действие — вернуться в чат,
-// документ уже лежит в архиве.
+// Итог: файл ушёл в чат с ботом. Закрыть мини-апп можно системной кнопкой
+// клиента, поэтому свои действия — только открыть документ или начать новый.
 import { Button, Typography } from '@maxhub/max-ui';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { IconCheck } from '@/components/icons';
 import { Page } from '@/components/Page';
-import { closeApp, isInsideMax } from '@/max/webapp';
 
 export function SentPage() {
   const navigate = useNavigate();
   const documentId = Number(useParams().documentId);
   const sent = useLocation().state as { filename?: string } | null;
-  const inside = isInsideMax();
 
   return (
     <Page
       title=""
       footer={
         <>
-          {inside ? (
-            <Button size="large" stretched onClick={() => closeApp()}>
-              Вернуться в чат
-            </Button>
-          ) : null}
           <Button
             size="large"
-            variant={inside ? 'secondary' : 'primary'}
             stretched
             onClick={() => navigate(`/documents/${documentId}`, { replace: true })}
           >

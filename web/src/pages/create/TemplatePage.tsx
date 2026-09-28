@@ -16,6 +16,7 @@ import { ErrorState, Loading } from '@/components/StateViews';
 import { DocPreview } from '@/components/DocPreview';
 import { useAuth } from '@/auth/context';
 import { errorText, useAsync } from '@/lib/useAsync';
+import { useBack } from '@/lib/useBack';
 
 export function TemplatePage() {
   const { api } = useAuth();
@@ -29,7 +30,7 @@ export function TemplatePage() {
   const busy = useRef(false);
   // Ушли «Назад», пока черновик создавался, — в его форму уже не ведём.
   const mounted = useRef(false);
-  const back = () => navigate('/create');
+  const back = useBack('/create');
 
   useEffect(() => {
     mounted.current = true;
@@ -46,8 +47,11 @@ export function TemplatePage() {
     try {
       const document = await api.createDocument({ template_id: template.id });
       if (!mounted.current) return;
-      // Обычный переход, не replace: «Назад» из формы вернёт к шаблону.
+      // Обычный переход, не replace: «Назад» из формы вернёт к шаблону,
+      // и он снова готов создать черновик.
       void navigate(`/documents/${document.id}/fill`);
+      busy.current = false;
+      setCreating(false);
     } catch (err) {
       if (!mounted.current) return;
       setError(errorText(err, 'Не удалось создать документ'));
@@ -104,12 +108,14 @@ export function TemplatePage() {
           </Banner>
         </div>
       ) : null}
-      <TemplateActions template={template} />
+      <TemplateActions template={template} onGone={back} />
     </Page>
   );
 }
 
-function TemplateActions({ template }: { template: Template }) {
+// Удалённый шаблон закрывает экран шагом назад: каталог под ним в стеке
+// обновится сам, а замена адресом оставила бы под новым каталогом прежний.
+function TemplateActions({ template, onGone }: { template: Template; onGone: () => void }) {
   const { api } = useAuth();
   const navigate = useNavigate();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -139,7 +145,7 @@ function TemplateActions({ template }: { template: Template }) {
     setDeleting(true);
     try {
       await api.deleteTemplate(template.id);
-      void navigate('/create', { replace: true });
+      onGone();
     } catch (err) {
       setError(errorText(err, 'Не удалось удалить шаблон'));
       setDeleting(false);

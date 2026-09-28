@@ -5,12 +5,10 @@
 // две подписанные сетки: «Мои шаблоны» (если есть) над «Стандартными». Поиск
 // стоит над сетками и ищет по обеим. Второй вход — чат с ботом, в самом низу.
 import { CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
-import { Banner } from '@/components/Banner';
-import { IconChat, IconEdit, IconPlus, IconUpload } from '@/components/icons';
+import { IconEdit, IconPlus, IconUpload } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
@@ -18,8 +16,9 @@ import { DocPreview } from '@/components/DocPreview';
 import { useAuth } from '@/auth/context';
 import { kindStyle } from '@/lib/format';
 import { matchesQuery, needsSearch } from '@/lib/search';
+import { useScreenState } from '@/lib/screenMemory';
 import { useAsync } from '@/lib/useAsync';
-import { closeApp, haptic } from '@/max/webapp';
+import { haptic } from '@/max/webapp';
 
 import { catalogSections } from './catalog';
 
@@ -27,8 +26,7 @@ export function CreatePage() {
   const { api } = useAuth();
   const navigate = useNavigate();
   const templates = useAsync(() => api.templates(), [api]);
-  const [chatHint, setChatHint] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useScreenState('query', '');
   const all = templates.data ?? [];
   const visible = all.filter((template) =>
     matchesQuery(
@@ -45,10 +43,6 @@ export function CreatePage() {
   const open = (template: Template) => {
     haptic('light');
     void navigate(`/create/${template.id}`);
-  };
-
-  const toChat = () => {
-    if (!closeApp()) setChatHint(true);
   };
 
   return (
@@ -104,27 +98,6 @@ export function CreatePage() {
           <TemplateGrid templates={list} onOpen={open} />
         </Section>
       ))}
-
-      <CellList mode="island" filled>
-        <CellSimple
-          title="Написать боту"
-          subtitle="Текстом, голосом или фото"
-          before={
-            <span className="themed-icon">
-              <IconChat />
-            </span>
-          }
-          showChevron
-          onClick={toChat}
-        />
-      </CellList>
-      {chatHint ? (
-        <div className="section">
-          <Banner tone="info" title="Откройте чат с ботом в MAX">
-            Например: «Счёт на 120 000 для ООО Ромашка»
-          </Banner>
-        </div>
-      ) : null}
     </Page>
   );
 }

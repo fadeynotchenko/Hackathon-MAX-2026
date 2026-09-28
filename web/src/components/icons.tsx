@@ -129,14 +129,6 @@ export function IconText(props: IconProps) {
   );
 }
 
-export function IconChat(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z" />
-    </Icon>
-  );
-}
-
 export function IconBuilding(props: IconProps) {
   return (
     <Icon {...props}>

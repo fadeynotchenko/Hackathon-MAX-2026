@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate, type Location } from 'react-router-dom';
 
 import { useAuth } from '@/auth/context';
+import { TAB_PATHS } from '@/components/tabs';
+import { ScreenContext, useScreenStack, useScrollMemory } from '@/lib/screenMemory';
 import { startRoute } from '@/lib/startRoute';
 import { getStartParam } from '@/max/webapp';
 import { AdminPage } from '@/pages/admin/AdminPage';
@@ -40,51 +42,91 @@ function StartRedirect() {
   return null;
 }
 
+// Экран стека: скрыт, пока поверх него открыт другой, и помнит, сколько раз
+// на него возвращались.
+function StackedScreen({
+  location,
+  active,
+  isAdmin,
+}: {
+  location: Location;
+  active: boolean;
+  isAdmin: boolean;
+}) {
+  const [returns, setReturns] = useState(0);
+  const [wasActive, setWasActive] = useState(active);
+  if (wasActive !== active) {
+    setWasActive(active);
+    if (active) setReturns((n) => n + 1);
+  }
+  const activity = useMemo(() => ({ active, returns }), [active, returns]);
+  return (
+    <ScreenContext.Provider value={activity}>
+      <div style={{ display: active ? 'contents' : 'none' }}>
+        <AppRoutes location={location} isAdmin={isAdmin} />
+      </div>
+    </ScreenContext.Provider>
+  );
+}
+
 export function App() {
   const { status, user } = useAuth();
+  const location = useLocation();
+  const stack = useScreenStack();
+  useScrollMemory(TAB_PATHS);
   if (status !== 'ready' || !user) return <GatePage />;
   return (
     <>
       <StartRedirect />
-      <Routes>
-        <Route path="/" element={<Navigate to="/create" replace />} />
-        <Route path="/create" element={<CreatePage />} />
-        <Route path="/create/:templateId" element={<TemplatePage />} />
-        {/* Экрана «Для кого документ?» больше нет: «Заполнить» сразу открывает форму. */}
-        <Route
-          path="/create/:templateId/client"
-          element={<Navigate to=".." relative="path" replace />}
+      {stack.map((entry) => (
+        <StackedScreen
+          key={entry.key}
+          location={entry}
+          active={entry.key === location.key}
+          isAdmin={user.is_admin}
         />
-        <Route path="/templates/new" element={<TemplateEditorPage />} />
-        <Route path="/templates/upload" element={<TemplateSamplePage />} />
-        <Route path="/templates/:templateId/edit" element={<TemplateEditorPage />} />
-        <Route path="/documents/import" element={<ImportPage />} />
-        <Route path="/documents/:documentId" element={<DocumentPage />} />
-        <Route path="/documents/:documentId/fill" element={<FillPage />} />
-        <Route path="/documents/:documentId/fill/photo" element={<PhotoFillPage />} />
-        <Route path="/documents/:documentId/fill/voice" element={<VoiceFillPage />} />
-        <Route path="/documents/:documentId/fill/text" element={<TextFillPage />} />
-        <Route path="/documents/:documentId/fill/client" element={<ClientPickPage />} />
-        <Route path="/documents/:documentId/fill/seller" element={<SellerPickPage />} />
-        <Route path="/documents/:documentId/review" element={<ReviewPage />} />
-        <Route path="/documents/:documentId/export" element={<ExportPage />} />
-        <Route path="/documents/:documentId/sent" element={<SentPage />} />
-        <Route path="/archive" element={<ArchivePage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/profile/organizations" element={<OrganizationsPage />} />
-        <Route path="/profile/organizations/new" element={<OrganizationPage />} />
-        <Route path="/profile/organizations/:organizationId" element={<OrganizationPage />} />
-        {/* Старые ссылки из бота и закладок вели на единственную «мою организацию». */}
-        <Route path="/profile/company" element={<Navigate to="/profile/organizations" replace />} />
-        <Route path="/profile/counterparties" element={<CounterpartiesPage />} />
-        <Route path="/profile/counterparties/new" element={<CounterpartyPage />} />
-        <Route path="/profile/counterparties/:counterpartyId" element={<CounterpartyPage />} />
-        <Route
-          path="/admin"
-          element={user.is_admin ? <AdminPage /> : <Navigate to="/profile" replace />}
-        />
-        <Route path="*" element={<Navigate to="/create" replace />} />
-      </Routes>
+      ))}
     </>
+  );
+}
+
+function AppRoutes({ location, isAdmin }: { location: Location; isAdmin: boolean }) {
+  return (
+    <Routes location={location}>
+      <Route path="/" element={<Navigate to="/create" replace />} />
+      <Route path="/create" element={<CreatePage />} />
+      <Route path="/create/:templateId" element={<TemplatePage />} />
+      {/* Экрана «Для кого документ?» больше нет: «Заполнить» сразу открывает форму. */}
+      <Route
+        path="/create/:templateId/client"
+        element={<Navigate to=".." relative="path" replace />}
+      />
+      <Route path="/templates/new" element={<TemplateEditorPage />} />
+      <Route path="/templates/upload" element={<TemplateSamplePage />} />
+      <Route path="/templates/:templateId/edit" element={<TemplateEditorPage />} />
+      <Route path="/documents/import" element={<ImportPage />} />
+      <Route path="/documents/:documentId" element={<DocumentPage />} />
+      <Route path="/documents/:documentId/fill" element={<FillPage />} />
+      <Route path="/documents/:documentId/fill/photo" element={<PhotoFillPage />} />
+      <Route path="/documents/:documentId/fill/voice" element={<VoiceFillPage />} />
+      <Route path="/documents/:documentId/fill/text" element={<TextFillPage />} />
+      <Route path="/documents/:documentId/fill/client" element={<ClientPickPage />} />
+      <Route path="/documents/:documentId/fill/seller" element={<SellerPickPage />} />
+      <Route path="/documents/:documentId/review" element={<ReviewPage />} />
+      <Route path="/documents/:documentId/export" element={<ExportPage />} />
+      <Route path="/documents/:documentId/sent" element={<SentPage />} />
+      <Route path="/archive" element={<ArchivePage />} />
+      <Route path="/profile" element={<ProfilePage />} />
+      <Route path="/profile/organizations" element={<OrganizationsPage />} />
+      <Route path="/profile/organizations/new" element={<OrganizationPage />} />
+      <Route path="/profile/organizations/:organizationId" element={<OrganizationPage />} />
+      {/* Старые ссылки из бота и закладок вели на единственную «мою организацию». */}
+      <Route path="/profile/company" element={<Navigate to="/profile/organizations" replace />} />
+      <Route path="/profile/counterparties" element={<CounterpartiesPage />} />
+      <Route path="/profile/counterparties/new" element={<CounterpartyPage />} />
+      <Route path="/profile/counterparties/:counterpartyId" element={<CounterpartyPage />} />
+      <Route path="/admin" element={isAdmin ? <AdminPage /> : <Navigate to="/profile" replace />} />
+      <Route path="*" element={<Navigate to="/create" replace />} />
+    </Routes>
   );
 }

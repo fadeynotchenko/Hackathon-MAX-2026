@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState, type DependencyList } from 'react';
 
 import { ApiError } from '@/api/client';
 
+import { useScreenActivity } from './screenMemory';
+
 export interface AsyncState<T> {
   data: T | null;
   error: string | null;
@@ -55,6 +57,27 @@ export function useAsync<T>(load: () => Promise<T>, deps: DependencyList): Async
     // load и key пересоздаются на каждый рендер; перезапуск задают их элементы.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, key);
+
+  // Вернулись на экран из стека: данные мог поменять экран выше. Обновляются
+  // тихо, без «загружается», а ошибка не стирает показанное.
+  const { returns } = useScreenActivity();
+  useEffect(() => {
+    if (returns === 0) return;
+    let cancelled = false;
+    load().then(
+      (data) => {
+        if (!cancelled)
+          setSettled((prev) =>
+            prev && sameKey(prev.key, key) ? { key, data, error: null } : prev,
+          );
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returns]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
   const setData = (data: T) => setSettled({ key, data, error: null });

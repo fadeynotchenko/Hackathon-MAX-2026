@@ -47,7 +47,7 @@ describe('CreatePage', () => {
     const standard = screen.getByText('Стандартные');
     expect(follows(screen.getByText('Свой шаблон'), own)).toBe(true);
     expect(follows(own, standard)).toBe(true);
-    expect(follows(standard, screen.getByText('Написать боту'))).toBe(true);
+    expect(screen.queryByText('Написать боту')).toBeNull();
 
     expect(within(section('Мои шаблоны')).getByText('Фирменный КП')).toBeInTheDocument();
     expect(within(section('Мои шаблоны')).queryByText('Счёт на оплату')).toBeNull();

@@ -70,6 +70,8 @@ export function DocumentPage() {
     try {
       const copied = await api.copyDocument(doc.id);
       void navigate(`/documents/${copied.id}/fill`);
+      // Карточка остаётся в стеке под формой копии.
+      setBusy(null);
     } catch (err) {
       setError(errorText(err, 'Не удалось создать копию'));
       setBusy(null);

@@ -24,6 +24,7 @@ import { IconAlert, IconCheckCircle, IconClock } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { formatNumber, kindStyle } from '@/lib/format';
+import { useScreenState } from '@/lib/screenMemory';
 import { useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 
@@ -50,7 +51,7 @@ import {
 export function AdminPage() {
   const { api } = useAuth();
   const back = useBack('/profile');
-  const [days, setDays] = useState<number>(DEFAULT_PERIOD);
+  const [days, setDays] = useScreenState<number>('days', DEFAULT_PERIOD);
   const state = useAsync(() => api.adminMetrics(days), [api, days]);
   // Смена периода держит прежние графики полупрозрачными, пока не придут новые:
   // без спиннера на весь экран и прыжка раскладки.

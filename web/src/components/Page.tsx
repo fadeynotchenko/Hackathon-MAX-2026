@@ -4,6 +4,7 @@
 import { CellHeader, IconButton, Typography } from '@maxhub/max-ui';
 import { useEffect, type ReactNode } from 'react';
 
+import { useScreenActivity } from '@/lib/screenMemory';
 import { hasBackButton, showBackButton } from '@/max/webapp';
 
 import { IconBack } from './icons';
@@ -21,10 +22,13 @@ export interface PageProps {
 }
 
 export function Page({ title, subtitle, onBack, tabs, footer, headerAfter, children }: PageProps) {
+  // Под верхним экраном стека остаются смонтированными прежние: их
+  // обработчики сработали бы на то же нажатие.
+  const { active } = useScreenActivity();
   useEffect(() => {
-    if (!onBack) return;
+    if (!onBack || !active) return;
     return showBackButton(onBack);
-  }, [onBack]);
+  }, [onBack, active]);
 
   return (
     <div className="screen">

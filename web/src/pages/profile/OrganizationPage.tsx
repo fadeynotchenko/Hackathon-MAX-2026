@@ -85,7 +85,7 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
       if (returnTo) {
         void navigate(returnTo, { replace: true, state: { organizationId: saved.id } });
       } else {
-        void navigate('/profile/organizations', { replace: true });
+        onBack();
       }
     } catch (err) {
       hapticResult('error');
@@ -106,7 +106,7 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
     setDeleting(true);
     try {
       await api.deleteOrganization(organization.id);
-      void navigate('/profile/organizations', { replace: true });
+      onBack();
     } catch (err) {
       setError(errorText(err, 'Не удалось удалить организацию'));
       setDeleting(false);

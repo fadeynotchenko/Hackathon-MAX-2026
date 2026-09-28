@@ -85,14 +85,6 @@ export function markReady(): void {
   bridge?.expand?.();
 }
 
-// Вернуться в чат: готовый файл бот уже прислал туда.
-export function closeApp(): boolean {
-  const close = getWebApp()?.close;
-  if (!close) return false;
-  close();
-  return true;
-}
-
 // Вибрации нет в браузере и на десктопе MAX: мост отклоняет промис объектом
 // {error: {code: 'client.haptic_feedback_*.request_timeout'}}. Это не ошибка
 // приложения, а без перехвата каждое нажатие оставляло Uncaught в консоли.
