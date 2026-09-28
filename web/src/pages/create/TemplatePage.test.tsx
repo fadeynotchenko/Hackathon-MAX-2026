@@ -1,9 +1,10 @@
 // Экран шаблона: «Заполнить» сразу создаёт черновик и открывает форму, без
-// выбора сторон и без напоминания про реквизиты; действия — по виду шаблона.
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+// выбора сторон и без напоминания про реквизиты; ушли «Назад», пока черновик
+// создавался, — в форму он уже не уводит. Действия — по виду шаблона.
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ApiError, type Template } from '@/api/client';
+import { ApiError, type DocumentView, type Template } from '@/api/client';
 import { makeDocument, makeTemplate, mockApi, renderScreen } from '@/test-utils';
 
 import { TemplatePage } from './TemplatePage';
@@ -38,6 +39,24 @@ describe('TemplatePage', () => {
     fireEvent.click(fill);
 
     expect(createDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not open the form after the person went back', async () => {
+    const { createDocument } = setup();
+    let created!: (document: DocumentView) => void;
+    createDocument.mockReturnValue(
+      new Promise((resolve) => {
+        created = resolve;
+      }),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Заполнить' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/create$/);
+
+    await act(async () => created(makeDocument({ id: 9 })));
+
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/create$/);
   });
 
   it('says why the draft was not created and lets retry', async () => {

@@ -2,14 +2,13 @@
 // способ заполнения (фото, голос, текст) открывается после сохранения правок и
 // возвращает в форму с плашкой, проверка пускает к экспорту только готовый
 // документ, экспорт отправляет выбранный формат с текстом и ведёт на экран
-// «отправлено». Кнопка тестовых данных есть только у администратора.
-import { MaxUI } from '@maxhub/max-ui';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+// «отправлено». Кнопка тестовых данных есть только у администратора. Действия
+// формы идут по одному, «Назад» во время сохранения никуда потом не уводит, а
+// отклонённая правка не теряется ни при повторном тапе, ни при правке соседнего поля.
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ApiClient } from '@/api/client';
-import { AuthContext, type AuthState } from '@/auth/context';
+import type { ApiClient, DocumentView } from '@/api/client';
 import { makeDocument, mockApi, renderScreen } from '@/test-utils';
 
 import { ExportPage } from './ExportPage';
@@ -17,48 +16,30 @@ import { FillPage } from './FillPage';
 import { ReviewPage } from './ReviewPage';
 import { TextFillPage } from './TextFillPage';
 
-function Location() {
-  return <span data-testid="location">{useLocation().pathname}</span>;
-}
-
 // Форма и экран текста в одном роутере — чтобы пройти туда и обратно по
 // истории; пользователь — обычный или администратор.
 function renderForm(api: ApiClient, { admin = false }: { admin?: boolean } = {}) {
-  const auth: AuthState = {
-    status: 'ready',
-    mode: 'dev',
-    user: {
-      id: 1,
-      max_user_id: 100,
-      first_name: 'Анна',
-      last_name: null,
-      username: 'anna',
-      display_name: 'Анна',
-      language_code: 'ru',
-      photo_url: null,
-      is_admin: admin,
-      created_at: '2026-09-01T00:00:00Z',
-      last_login_at: null,
-    },
-    error: null,
+  return renderScreen(<FillPage />, {
     api,
-    logout: vi.fn(),
-    retry: vi.fn(),
-  };
-  return render(
-    <MaxUI colorScheme="light" platform="ios">
-      <AuthContext.Provider value={auth}>
-        <MemoryRouter initialEntries={['/documents/7/fill']}>
-          <Routes>
-            <Route path="/documents/:documentId/fill" element={<FillPage />} />
-            <Route path="/documents/:documentId/fill/text" element={<TextFillPage />} />
-            <Route path="*" element={<span>другой экран</span>} />
-          </Routes>
-          <Location />
-        </MemoryRouter>
-      </AuthContext.Provider>
-    </MaxUI>,
-  );
+    path: '/documents/:documentId/fill',
+    route: '/documents/7/fill',
+    user: { is_admin: admin },
+    routes: [{ path: '/documents/:documentId/fill/text', element: <TextFillPage /> }],
+  });
+}
+
+const innRejected = {
+  key: 'client_inn',
+  code: 'field.inn_invalid',
+  message: '«ИНН клиента»: ИНН не проходит проверку',
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 const ready = makeDocument({
@@ -339,6 +320,122 @@ describe('document flow', () => {
     // Свёрнутое необязательное поле и реквизиты продавца раскрыты.
     expect(screen.getByLabelText(/ИНН клиента/)).toHaveValue(sent['client_inn']);
     expect(screen.getByLabelText(/Название продавца/)).toBeInTheDocument();
+  });
+
+  it('runs one form action at a time', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    const setFields = vi.spyOn(api, 'setFields').mockReturnValue(new Promise(() => {}));
+    renderForm(api, { admin: true });
+
+    fireEvent.change(await screen.findByLabelText(/Название клиента/), {
+      target: { value: 'ООО «Альфа»' },
+    });
+    // Второй тап приходит раньше перерисовки с выключенными кнопками.
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Текстом' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Тест — мок данных' }));
+    });
+
+    expect(setFields).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Проверить документ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'С фото' })).toBeDisabled();
+  });
+
+  it('keeps the check off while test data is being applied', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    vi.spyOn(api, 'setFields').mockReturnValue(new Promise(() => {}));
+    renderForm(api, { admin: true });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Тест — мок данных' }));
+
+    expect(screen.getByRole('button', { name: 'Проверить документ' })).toBeDisabled();
+  });
+
+  it('does not open a fill method after the person went back', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    const saved = deferred<DocumentView>();
+    vi.spyOn(api, 'setFields').mockReturnValue(saved.promise);
+    renderForm(api);
+
+    fireEvent.change(await screen.findByLabelText(/Название клиента/), {
+      target: { value: 'ООО «Альфа»' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Текстом' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/documents\/7$/);
+
+    await act(async () => saved.resolve(makeDocument()));
+
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/documents\/7$/);
+  });
+
+  it('stays on the form on a second tap after a rejected edit', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    // Сервер отклоняет ИНН и хранит прежнее (пустое) значение.
+    const setFields = vi
+      .spyOn(api, 'setFields')
+      .mockResolvedValue(makeDocument({ errors: [innRejected] }));
+    renderForm(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ещё 1 поле' }));
+    fireEvent.change(screen.getByLabelText(/ИНН клиента/), { target: { value: '123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Текстом' }));
+    expect(await screen.findByText('Исправьте 1 поле')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Текстом' }));
+
+    await waitFor(() => expect(setFields).toHaveBeenCalledTimes(2));
+    expect(setFields).toHaveBeenLastCalledWith(7, { client_inn: '123' });
+    expect(await screen.findByText('Исправьте 1 поле')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/documents\/7\/fill$/);
+    expect(screen.getByLabelText(/ИНН клиента/)).toHaveValue('123');
+  });
+
+  it('keeps a rejected edit when another field is saved', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    const setFields = vi
+      .spyOn(api, 'setFields')
+      .mockResolvedValueOnce(makeDocument({ errors: [innRejected] }))
+      .mockResolvedValueOnce(
+        makeDocument({
+          errors: [innRejected],
+          values: {
+            ...makeDocument().values,
+            client_name: {
+              value: 'ООО «Альфа»',
+              source: 'manual',
+              confirmed: true,
+              fragment: null,
+              confidence: null,
+            },
+          },
+        }),
+      );
+    renderForm(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ещё 1 поле' }));
+    fireEvent.change(screen.getByLabelText(/ИНН клиента/), { target: { value: '123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
+    expect(await screen.findByText('ИНН не проходит проверку')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Название клиента/), {
+      target: { value: 'ООО «Альфа»' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
+
+    await waitFor(() => expect(setFields).toHaveBeenCalledTimes(2));
+    expect(setFields).toHaveBeenLastCalledWith(7, {
+      client_inn: '123',
+      client_name: 'ООО «Альфа»',
+    });
+    expect(await screen.findByText('ИНН не проходит проверку')).toBeInTheDocument();
+    expect(screen.getByLabelText(/ИНН клиента/)).toHaveValue('123');
   });
 
   it('asks to confirm recognized values before export', async () => {

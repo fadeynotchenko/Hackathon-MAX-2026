@@ -10,6 +10,7 @@ import {
   draftFromDocument,
   fieldErrors,
   mergeAfterSave,
+  rejectedEdits,
   sourceOf,
   stripLabel,
 } from './fields';
@@ -63,6 +64,27 @@ describe('document form state', () => {
     const merged = mergeAfterSave(doc, { client_name: 'ооо альфа', client_inn: '123', total: '' });
     expect(merged['client_name']).toBe('ООО «Альфа»');
     expect(merged['client_inn']).toBe('123');
+  });
+
+  it('names rejected edits the server did not keep', () => {
+    const doc = makeDocument({
+      values: {
+        client_inn: {
+          value: '7736207543',
+          source: 'counterparty',
+          confirmed: true,
+          fragment: null,
+          confidence: null,
+        },
+      },
+      errors: [
+        { key: 'client_inn', code: 'field.inn_invalid', message: 'ИНН не проходит проверку' },
+        { key: 'total', code: 'field.money_invalid', message: 'Сумма не распознана' },
+      ],
+    });
+    // В поле ИНН — отклонённая правка; в поле суммы — то же, что на сервере.
+    expect(rejectedEdits(doc, { client_inn: '123', total: '' })).toEqual({ client_inn: '123' });
+    expect(rejectedEdits(doc, { client_inn: ' 7736207543 ', total: '' })).toEqual({});
   });
 
   it('puts error text under the field without repeating its label', () => {

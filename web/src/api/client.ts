@@ -29,6 +29,7 @@ export type DocumentView = components['schemas']['DocumentSchema'];
 export type DocumentSummary = components['schemas']['DocumentSummarySchema'];
 export type DocumentFact = components['schemas']['DocumentFactSchema'];
 export type DocumentFile = components['schemas']['DocumentFileSchema'];
+export type DocumentParties = components['schemas']['DocumentPartiesRequest'];
 export type Organization = components['schemas']['OrganizationSchema'];
 export type OrganizationRequest = components['schemas']['OrganizationRequest'];
 export type Counterparty = components['schemas']['CounterpartySchema'];
@@ -257,6 +258,17 @@ export class ApiClient {
       values: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }])),
     };
     return this.request<DocumentView>(`/api/v1/documents/${documentId}/fields`, {
+      method: 'PATCH',
+      body,
+    });
+  }
+
+  // От кого и кому готовый черновик: id — реквизиты организации или карточки
+  // встают вместо всех полей этой стороны, null — отвязать, поля нет — сторону
+  // не трогать. Шлют только сменившуюся сторону: тот же id заново затёр бы
+  // набранное по ней руками.
+  setParties(documentId: number, body: DocumentParties): Promise<DocumentView> {
+    return this.request<DocumentView>(`/api/v1/documents/${documentId}/parties`, {
       method: 'PATCH',
       body,
     });

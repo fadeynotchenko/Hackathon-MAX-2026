@@ -1,5 +1,6 @@
 // Карточка своей организации: новая или существующая. Новая может открываться из
-// создания документа — тогда после сохранения возвращаемся туда.
+// формы документа («От кого») — тогда после сохранения возвращаемся к выбору
+// организации с её id, и выбор сразу подставляет её в документ.
 import { Button, CellAction, CellList } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -77,10 +78,15 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
     setSaving(true);
     try {
       const body = { name, values, is_default: makeDefault };
-      if (organization) await api.updateOrganization(organization.id, body);
-      else await api.createOrganization(body);
+      const saved = organization
+        ? await api.updateOrganization(organization.id, body)
+        : await api.createOrganization(body);
       hapticResult('success');
-      void navigate(returnTo ?? '/profile/organizations', { replace: true });
+      if (returnTo) {
+        void navigate(returnTo, { replace: true, state: { organizationId: saved.id } });
+      } else {
+        void navigate('/profile/organizations', { replace: true });
+      }
     } catch (err) {
       hapticResult('error');
       const split = splitRequisiteErrors(errorText(err, 'Не удалось сохранить'));

@@ -8,11 +8,13 @@ import { AdminPage } from '@/pages/admin/AdminPage';
 import { ArchivePage } from '@/pages/archive/ArchivePage';
 import { CreatePage } from '@/pages/create/CreatePage';
 import { TemplatePage } from '@/pages/create/TemplatePage';
+import { ClientPickPage } from '@/pages/document/ClientPickPage';
 import { DocumentPage } from '@/pages/document/DocumentPage';
 import { ExportPage } from '@/pages/document/ExportPage';
 import { FillPage } from '@/pages/document/FillPage';
 import { PhotoFillPage } from '@/pages/document/PhotoFillPage';
 import { ReviewPage } from '@/pages/document/ReviewPage';
+import { SellerPickPage } from '@/pages/document/SellerPickPage';
 import { SentPage } from '@/pages/document/SentPage';
 import { TextFillPage } from '@/pages/document/TextFillPage';
 import { VoiceFillPage } from '@/pages/document/VoiceFillPage';
@@ -60,6 +62,8 @@ export function App() {
         <Route path="/documents/:documentId/fill/photo" element={<PhotoFillPage />} />
         <Route path="/documents/:documentId/fill/voice" element={<VoiceFillPage />} />
         <Route path="/documents/:documentId/fill/text" element={<TextFillPage />} />
+        <Route path="/documents/:documentId/fill/client" element={<ClientPickPage />} />
+        <Route path="/documents/:documentId/fill/seller" element={<SellerPickPage />} />
         <Route path="/documents/:documentId/review" element={<ReviewPage />} />
         <Route path="/documents/:documentId/export" element={<ExportPage />} />
         <Route path="/documents/:documentId/sent" element={<SentPage />} />

@@ -1,4 +1,6 @@
 // Обвязка для тестов экранов: сессия с подменённым API и роутер в памяти.
+// Соседние экраны (routes) — для переходов туда и обратно по истории;
+// user — поправки к пользователю сессии (например, администратор).
 /* eslint-disable react-refresh/only-export-components -- тестовая обвязка, в HMR не участвует */
 import { MaxUI } from '@maxhub/max-ui';
 import { render } from '@testing-library/react';
@@ -6,7 +8,7 @@ import type { ReactElement } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { vi } from 'vitest';
 
-import { ApiClient, type DocumentView, type Template } from '@/api/client';
+import { ApiClient, type DocumentView, type Template, type UserProfile } from '@/api/client';
 import { AuthContext, type AuthState } from '@/auth/context';
 
 export function makeTemplate(overrides: Partial<Template> = {}): Template {
@@ -107,9 +109,17 @@ function LocationProbe() {
   return <span data-testid="location">{location.pathname}</span>;
 }
 
+export interface ScreenOptions {
+  api: ApiClient;
+  path: string;
+  route: string;
+  user?: Partial<UserProfile>;
+  routes?: Array<{ path: string; element: ReactElement }>;
+}
+
 export function renderScreen(
   element: ReactElement,
-  { api, path, route }: { api: ApiClient; path: string; route: string },
+  { api, path, route, user, routes = [] }: ScreenOptions,
 ) {
   const auth: AuthState = {
     status: 'ready',
@@ -126,6 +136,7 @@ export function renderScreen(
       is_admin: false,
       created_at: '2026-09-01T00:00:00Z',
       last_login_at: null,
+      ...user,
     },
     error: null,
     api,
@@ -138,6 +149,9 @@ export function renderScreen(
         <MemoryRouter initialEntries={[route]}>
           <Routes>
             <Route path={path} element={element} />
+            {routes.map((item) => (
+              <Route key={item.path} path={item.path} element={item.element} />
+            ))}
             <Route path="*" element={<span>другой экран</span>} />
           </Routes>
           <LocationProbe />

@@ -114,6 +114,16 @@ describe('ApiClient', () => {
     expect(init.body).toBe(audio);
   });
 
+  it('sends only the party being changed', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { id: 7 }));
+    const client = new ApiClient({ baseUrl: '', fetchFn });
+    await client.setParties(7, { counterparty_id: null });
+    const [url, init] = fetchFn.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/v1/documents/7/parties');
+    expect(init.method).toBe('PATCH');
+    expect(init.body).toBe(JSON.stringify({ counterparty_id: null }));
+  });
+
   it('wraps non-json errors', async () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response('bad gateway', { status: 502 }));
     const client = new ApiClient({ baseUrl: '', fetchFn });

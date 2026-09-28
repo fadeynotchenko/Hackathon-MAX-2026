@@ -49,6 +49,20 @@ export function mergeAfterSave(document: DocumentView, draft: Draft): Draft {
   return merged;
 }
 
+// Отклонённые правки: сервер ответил ошибкой и оставил у себя прежнее значение,
+// а в поле — то, что ввёл человек. В документе их нет, поэтому форма шлёт их с
+// каждым сохранением (иначе ответ на правку другого поля вернул бы в поле
+// прежнее значение молча) и не уходит с экрана, пока они есть.
+export function rejectedEdits(document: DocumentView, draft: Draft): Draft {
+  const stored = draftFromDocument(document);
+  const edits: Draft = {};
+  for (const { key } of document.errors) {
+    const value = draft[key];
+    if (value !== undefined && value.trim() !== (stored[key] ?? '').trim()) edits[key] = value;
+  }
+  return edits;
+}
+
 export function sourceOf(
   document: DocumentView,
   field: FieldSpec,

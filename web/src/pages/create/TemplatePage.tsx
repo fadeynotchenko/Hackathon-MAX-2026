@@ -5,7 +5,7 @@
 // документ?» только удлинял путь. Свой шаблон здесь меняют и удаляют,
 // стандартный — берут за основу своего.
 import { Button, CellAction, CellList, CellSimple } from '@maxhub/max-ui';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
@@ -27,7 +27,16 @@ export function TemplatePage() {
   // Второй тап может прийти раньше перерисовки с `loading` — без ref вышло бы
   // два черновика.
   const busy = useRef(false);
+  // Ушли «Назад», пока черновик создавался, — в его форму уже не ведём.
+  const mounted = useRef(false);
   const back = () => navigate('/create');
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const fill = async (template: Template) => {
     if (busy.current) return;
@@ -36,9 +45,11 @@ export function TemplatePage() {
     setError(null);
     try {
       const document = await api.createDocument({ template_id: template.id });
+      if (!mounted.current) return;
       // Обычный переход, не replace: «Назад» из формы вернёт к шаблону.
       void navigate(`/documents/${document.id}/fill`);
     } catch (err) {
+      if (!mounted.current) return;
       setError(errorText(err, 'Не удалось создать документ'));
       busy.current = false;
       setCreating(false);
