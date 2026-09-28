@@ -79,11 +79,11 @@ describe('CreatePage', () => {
 
     fireEvent.change(search, { target: { value: 'счёт' } });
     expect(within(section('Мои шаблоны')).getByText('Счёт для своих')).toBeInTheDocument();
-    expect(within(section('Стандартные')).getByText('Счёт-оферта')).toBeInTheDocument();
+    expect(within(section('Счета')).getByText('Счёт-оферта')).toBeInTheDocument();
     expect(screen.queryByText('Фирменный КП')).toBeNull();
 
     fireEvent.change(search, { target: { value: 'фирменный' } });
-    expect(screen.queryByText('Стандартные')).toBeNull();
+    expect(screen.queryByText('Счета')).toBeNull();
     expect(screen.getByText('Фирменный КП')).toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: 'накладная' } });

@@ -452,8 +452,15 @@ def marker_name(match: re.Match[str]) -> str:
 
 
 def template_markers(body: str) -> list[str]:
-    """Ключи полей в теле шаблона по порядку появления, без повторов."""
-    return list(dict.fromkeys(match.group(1) for match in MARKER.finditer(body)))
+    """Ключи полей в теле шаблона по порядку появления, без повторов. Поле из
+    аргумента варианта (``quantity`` в ``{{total|per:quantity}}``) — тоже в тексте."""
+    keys: list[str] = []
+    for match in MARKER.finditer(body):
+        keys.append(match.group(1))
+        variant = match.group(2) or ""
+        if ":" in variant:
+            keys.append(variant.split(":", 1)[1])
+    return list(dict.fromkeys(keys))
 
 
 def _money_variants(key: str, amount: Decimal) -> dict[str, str]:
@@ -469,6 +476,7 @@ def _money_variants(key: str, amount: Decimal) -> dict[str, str]:
 def _date_variants(key: str, day: date) -> dict[str, str]:
     return {
         f"{key}|long": date_long(day),
+        f"{key}|text": f"{day.day:02d} {month_genitive(day)} {day.year}",
         f"{key}|day": f"{day.day:02d}",
         f"{key}|month": month_genitive(day),
         f"{key}|year": str(day.year),
@@ -480,17 +488,16 @@ def fill_context(specs: tuple[FieldSpec, ...], values: Mapping[str, FieldValue])
     """Всё, что подставляется в шаблон: значения полей и варианты их записи.
 
     Сумма — ещё и прописью, рублями и копейками отдельно («120 000 (сто двадцать
-    тысяч) рублей 00 копеек»), и ценой за единицу, если в шаблоне есть целое
-    число (``{{total|per:quantity}}``); дата — словами и по частям для бланков
-    вида «____» ________ 20__ г.»."""
+    тысяч) рублей 00 копеек»), ценой за единицу и НДС в том числе, если в шаблоне
+    есть целое число (``{{total|per:quantity}}``, ``{{total|vat:vat_rate}}``);
+    дата — словами и по частям для бланков вида «____» ________ 20__ г.»."""
     out = render_context(specs, values)
-    counts = {
+    numbers = {
         spec.key: int(values[spec.key].value)
         for spec in specs
         if spec.type is FieldType.INTEGER
         and spec.key in values
         and values[spec.key].value.isdigit()
-        and int(values[spec.key].value) > 0
     }
     for spec in specs:
         value = values.get(spec.key)
@@ -498,9 +505,15 @@ def fill_context(specs: tuple[FieldSpec, ...], values: Mapping[str, FieldValue])
             continue
         if spec.type is FieldType.MONEY and (amount := parse_money(value.value)) is not None:
             out |= _money_variants(spec.key, amount)
-            for count_key, count in counts.items():
-                share = (amount / count).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                out[f"{spec.key}|per:{count_key}"] = format_money(share)
+            for number_key, number in numbers.items():
+                if number > 0:
+                    share = (amount / number).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    out[f"{spec.key}|per:{number_key}"] = format_money(share)
+                # НДС в том числе по ставке из целого поля: 120 000 при 20% — 20 000,00.
+                vat = (amount * number / (100 + number)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                out[f"{spec.key}|vat:{number_key}"] = format_money(vat)
         elif spec.type is FieldType.DATE and (day := parse_date(value.value)) is not None:
             out |= _date_variants(spec.key, day)
     return out

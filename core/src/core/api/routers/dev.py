@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from core.api.dependencies import StateDep
 from core.domain.initdata import build_dev_init_data
+from core.usecases.documents.demo import DEMO_CLIENT, DEMO_SELLER
 
 router = APIRouter(prefix="/dev", tags=["dev"])
 
@@ -49,3 +50,19 @@ async def dev_init_data(
         max_user_id=max_user_id,
         is_admin=max_user_id in admin_ids,
     )
+
+
+class DevRequisitesResponse(BaseModel):
+    seller: dict[str, str] = Field(description="Своя организация: реквизиты по ключам карточки")
+    client: dict[str, str] = Field(description="Клиент: реквизиты по ключам карточки")
+
+
+@router.get(
+    "/requisites",
+    response_model=DevRequisitesResponse,
+    operation_id="dev_requisites",
+    summary="Тестовые реквизиты, проходящие все проверки (только вне production)",
+    description="ИНН, ОГРН, КПП, БИК, расчётный и корр. счёт сходятся между собой.",
+)
+async def dev_requisites() -> DevRequisitesResponse:
+    return DevRequisitesResponse(seller=dict(DEMO_SELLER), client=dict(DEMO_CLIENT))

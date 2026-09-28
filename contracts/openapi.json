@@ -491,6 +491,32 @@
         "title": "DevInitDataResponse",
         "type": "object"
       },
+      "DevRequisitesResponse": {
+        "properties": {
+          "client": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Клиент: реквизиты по ключам карточки",
+            "title": "Client",
+            "type": "object"
+          },
+          "seller": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Своя организация: реквизиты по ключам карточки",
+            "title": "Seller",
+            "type": "object"
+          }
+        },
+        "required": [
+          "seller",
+          "client"
+        ],
+        "title": "DevRequisitesResponse",
+        "type": "object"
+      },
       "DistributionSchema": {
         "properties": {
           "count": {
@@ -2804,6 +2830,28 @@
           }
         },
         "summary": "initData тестового пользователя (только вне production)",
+        "tags": [
+          "dev"
+        ]
+      }
+    },
+    "/api/v1/dev/requisites": {
+      "get": {
+        "description": "ИНН, ОГРН, КПП, БИК, расчётный и корр. счёт сходятся между собой.",
+        "operationId": "dev_requisites",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevRequisitesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Тестовые реквизиты, проходящие все проверки (только вне production)",
         "tags": [
           "dev"
         ]

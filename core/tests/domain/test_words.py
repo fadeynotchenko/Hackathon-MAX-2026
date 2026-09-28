@@ -86,7 +86,7 @@ def test_template_variants_of_one_value() -> None:
         "«28» сентября 2026 г.; «28» сентября 2026"
     )
     assert fill_text_template("{{total|words}}", {}) == "__________", "пустое — прочерк"
-    assert template_markers(body) == ["total", "date"], "вариант — не отдельное поле"
+    assert template_markers(body) == ["total", "quantity", "date"], "аргумент варианта — поле"
 
 
 def test_correspondent_account_is_keyed_by_the_bank() -> None:

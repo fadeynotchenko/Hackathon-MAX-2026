@@ -149,7 +149,10 @@ intent:
   числа, даты, ФИО, реквизиты, в том числе столбиком или через запятую;
 - question — человек спрашивает о текущем документе и ничего не присылает для заполнения.
 Если текущего документа нет, запрос на заполнение означает new.
-template — вид нового документа из списка ниже или пустая строка, если вид не ясен."""
+template — вид нового документа из списка ниже или пустая строка, если вид не ясен.
+Вид назван без уточнения («счёт», «КП», «договор») — основной шаблон вида:
+invoice, offer или service-contract; вариант — только если человек его назвал
+(«договор с самозанятым», «счёт на товар»)."""
 
 MediaFetcher = Callable[[str], Awaitable[bytes]]
 
@@ -406,7 +409,10 @@ async def _active_document(session: AsyncSession, user_id: int) -> DocumentView 
 async def _route(
     llm: LLMClient, text: str, active: DocumentView | None, templates: list[TemplateView]
 ) -> tuple[str, str]:
-    catalog = "\n".join(f"- {t.slug}: {t.title}" for t in templates)
+    catalog = "\n".join(
+        f"- {t.slug}: {t.title}" + (f" — {t.description}" if t.description else "")
+        for t in templates
+    )
     current = (
         f"{_heading(active)}, ждёт значений: {missing_text(active) or 'нет'}" if active else "нет"
     )

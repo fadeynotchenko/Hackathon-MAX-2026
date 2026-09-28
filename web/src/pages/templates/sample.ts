@@ -80,7 +80,9 @@ const VARIANT_LABEL: Record<string, string> = {
 };
 
 function variantLabel(variant: string): string {
-  return variant.startsWith('per:') ? 'за единицу' : (VARIANT_LABEL[variant] ?? variant);
+  if (variant.startsWith('per:')) return 'за единицу';
+  if (variant.startsWith('vat:')) return 'НДС в том числе';
+  return VARIANT_LABEL[variant] ?? variant;
 }
 
 // Поле стоит в бланке меткой {{key}}: места ему не нужны, а убрать его нельзя —

@@ -154,6 +154,15 @@ def _conflicts(document: DocumentView, reading: _Reading, protected: set[str]) -
     return tuple(out)
 
 
+# Паспортные данные с фото модели не отдаём, пока не принято решение по правовому
+# минимуму (docs/PRODUCT.md, «Распознавание»): такие поля заполняют руками.
+_NOT_RECOGNIZED = ("passport",)
+
+
+def recognizable(fields: tuple[FieldSpec, ...]) -> tuple[FieldSpec, ...]:
+    return tuple(spec for spec in fields if not any(word in spec.key for word in _NOT_RECOGNIZED))
+
+
 async def fill_from_file(
     session: AsyncSession,
     *,
@@ -171,7 +180,7 @@ async def fill_from_file(
     model = require_llm(llm)
     media = require_media(data, kinds=READABLE, max_bytes=max_bytes)
     document = await get_document(session, user_id=user_id, document_id=document_id)
-    fields = document.template.fields
+    fields = recognizable(document.template.fields)
     reading = await _read(
         model,
         instructions=RECOGNIZE_INSTRUCTIONS,

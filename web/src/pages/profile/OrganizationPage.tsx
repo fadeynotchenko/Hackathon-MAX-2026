@@ -129,7 +129,7 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
           <Banner tone="error" title={error} />
         </div>
       ) : null}
-      <RequisitesForm values={values} onChange={setValues} errors={errors} />
+      <RequisitesForm values={values} onChange={setValues} errors={errors} side="seller" />
       {organization ? (
         <CellList mode="island" filled>
           {!organization.is_default ? (

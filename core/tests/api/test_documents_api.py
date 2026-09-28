@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.events import DocumentReady
 from core.usecases.documents import ensure_builtin_templates
+from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 
 
 async def _auth(client: AsyncClient, make_init_data, user_id: int = 1) -> dict[str, str]:
@@ -34,7 +35,8 @@ async def test_template_library_lists_builtin(
     response = await client.get("/api/v1/templates", headers=headers)
     assert response.status_code == 200
     slugs = {item["slug"] for item in response.json()}
-    assert slugs == {"invoice", "offer", "service-contract"}
+    assert slugs == {template.slug for template in BUILTIN_TEMPLATES}
+    assert {"invoice", "offer", "service-contract"} <= slugs, "основные шаблоны на месте"
     invoice = next(item for item in response.json() if item["slug"] == "invoice")
     assert invoice["is_builtin"] is True
     field = next(f for f in invoice["fields"] if f["key"] == "seller_inn")

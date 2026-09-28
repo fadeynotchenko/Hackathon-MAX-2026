@@ -135,7 +135,7 @@ function CounterpartyForm({ initial, counterpartyId, onBack }: CounterpartyFormP
           <Banner tone="error" title={error} />
         </div>
       ) : null}
-      <RequisitesForm values={values} onChange={setValues} errors={errors} />
+      <RequisitesForm values={values} onChange={setValues} errors={errors} side="client" />
       {!isNew ? (
         <CellList mode="island" filled>
           <CellAction

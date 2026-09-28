@@ -14,12 +14,14 @@ from core.usecases.agent import (
     recognize_requisites,
     transcribe,
 )
+from core.usecases.agent.recognize import recognizable
 from core.usecases.documents import (
     create_draft,
     create_organization,
     ensure_builtin_templates,
     list_templates,
 )
+from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 from tests.fakes import FakeLLM
 from tests.usecases.test_documents import make_user
 
@@ -242,3 +244,11 @@ async def test_voice_for_foreign_document_is_not_sent_to_the_model(session: Asyn
             session, user_id=user_id, document_id=424242, data=VOICE, llm=llm, max_bytes=LIMIT
         )
     assert llm.calls == [], "голосовое не уходит к провайдеру ради чужого документа"
+
+
+def test_passport_fields_are_not_sent_to_recognition() -> None:
+    """Паспортные поля заполняют руками: решения по правовому минимуму ещё нет."""
+    (persons,) = [t for t in BUILTIN_TEMPLATES if t.slug == "contract-persons"]
+    keys = {spec.key for spec in recognizable(persons.fields)}
+    assert "client_name" in keys
+    assert not any("passport" in key for key in keys)

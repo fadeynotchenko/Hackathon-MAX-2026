@@ -2,14 +2,14 @@
 // карточки предприятия — распознанное подставляется в поля и помечается,
 // а сохраняет человек, проверив значения. Пример значения — плейсхолдером
 // в пустом поле, а не строкой под ним.
-import { CellList } from '@maxhub/max-ui';
+import { CellList, CellSimple } from '@maxhub/max-ui';
 import { useState } from 'react';
 
 import { ApiError } from '@/api/client';
 import { Banner } from '@/components/Banner';
 import { FieldInput } from '@/components/FieldInput';
 import { FilePick } from '@/components/FilePick';
-import { IconCamera } from '@/components/icons';
+import { IconCamera, IconSparkle } from '@/components/icons';
 import { Section } from '@/components/Page';
 import { useAuth } from '@/auth/context';
 import { pluralize } from '@/lib/format';
@@ -21,10 +21,12 @@ export interface RequisitesFormProps {
   values: Requisites;
   onChange: (values: Requisites) => void;
   errors: Record<string, string>;
+  // Чьи реквизиты: своей организации или клиента — для тестового набора на стенде.
+  side: 'seller' | 'client';
 }
 
-export function RequisitesForm({ values, onChange, errors }: RequisitesFormProps) {
-  const { api } = useAuth();
+export function RequisitesForm({ values, onChange, errors, side }: RequisitesFormProps) {
+  const { api, mode } = useAuth();
   const [recognized, setRecognized] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{
@@ -67,6 +69,22 @@ export function RequisitesForm({ values, onChange, errors }: RequisitesFormProps
     }
   };
 
+  // Стенд вне MAX: сходящиеся ИНН, БИК и счета руками не придумать.
+  const fillDemo = async () => {
+    setNotice(null);
+    try {
+      const demo = await api.devRequisites();
+      onChange({ ...values, ...demo[side] });
+      setRecognized(new Set());
+      setNotice({
+        tone: 'success',
+        title: 'Подставлены тестовые реквизиты — они проходят проверку',
+      });
+    } catch (err) {
+      setNotice({ tone: 'error', title: errorText(err, 'Тестовые реквизиты недоступны') });
+    }
+  };
+
   return (
     <>
       <CellList mode="island" filled>
@@ -76,6 +94,15 @@ export function RequisitesForm({ values, onChange, errors }: RequisitesFormProps
           title="Заполнить с фото"
           onPick={(file) => void recognize(file)}
         />
+        {mode === 'dev' ? (
+          <CellSimple
+            title="Тестовые реквизиты"
+            subtitle="Только на стенде: ИНН, БИК и счета сходятся"
+            before={<IconSparkle />}
+            showChevron
+            onClick={() => void fillDemo()}
+          />
+        ) : null}
       </CellList>
       {notice ? (
         <div className="section">

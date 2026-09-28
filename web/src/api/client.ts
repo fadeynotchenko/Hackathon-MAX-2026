@@ -15,6 +15,7 @@ export type DailyMetrics = components['schemas']['DailyMetricsSchema'];
 export type NotifyRequest = components['schemas']['NotifyRequest'];
 export type NotifyResponse = components['schemas']['NotifyResponse'];
 export type DevInitDataResponse = components['schemas']['DevInitDataResponse'];
+export type DevRequisites = components['schemas']['DevRequisitesResponse'];
 export type Template = components['schemas']['TemplateSchema'];
 export type TemplateRequest = components['schemas']['TemplateRequest'];
 export type TemplateImport = components['schemas']['TemplateImportSchema'];
@@ -185,6 +186,11 @@ export class ApiClient {
   }
 
   // Существует только вне production: в проде отвечает 404.
+  // Сходящиеся тестовые реквизиты; ручка есть только вне production.
+  devRequisites(): Promise<DevRequisites> {
+    return this.request<DevRequisites>('/api/v1/dev/requisites', { auth: false });
+  }
+
   devInitData(): Promise<DevInitDataResponse> {
     return this.request<DevInitDataResponse>('/api/v1/dev/init-data', {
       auth: false,

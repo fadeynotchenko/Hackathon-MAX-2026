@@ -10,9 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import Template, TemplateFile
 from core.db.repositories import UserRepository, UserUpsert
-from core.domain.documents import BLANK, FieldValue, ValueSource, template_markers
+from core.domain.documents import (
+    BLANK,
+    FieldType,
+    FieldValue,
+    ValueSource,
+    fill_context,
+    template_markers,
+    validate_fields,
+)
 from core.domain.exceptions import NotFoundError, ValidationError
-from core.files import docx_layout
+from core.files import docx_layout, docx_lines, fill_docx
 from core.usecases.documents import (
     STATUS_DRAFT,
     STATUS_READY,
@@ -27,6 +35,7 @@ from core.usecases.documents import (
     set_fields,
 )
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES
+from core.usecases.documents.demo import DEMO_CLIENT, DEMO_SELLER
 
 
 async def make_user(session: AsyncSession, max_user_id: int = 1) -> int:
@@ -281,3 +290,35 @@ async def test_counterparty_card_can_be_edited(session: AsyncSession) -> None:
             values={"inn": other.inn or ""},
         )
     assert twin.value.code == "counterparty.duplicate_inn"
+
+
+def test_every_blank_fills_with_demo_requisites_without_errors() -> None:
+    """Тестовые реквизиты сходятся в любом стандартном бланке, и готовый файл
+    не содержит ни одного маркера: проверка БИК и счёта их не отвергает."""
+    for template in BUILTIN_TEMPLATES:
+        common = {"number": "17", "date": "28.09.2026", "city": "Москва", "total": "120 000"}
+        keys = {spec.key for spec in template.fields}
+        raw = {key: value for key, value in common.items() if key in keys}
+        for spec in template.fields:
+            for prefix, demo in (("seller_", DEMO_SELLER), ("client_", DEMO_CLIENT)):
+                if spec.key.startswith(prefix) and spec.key.removeprefix(prefix) in demo:
+                    raw[spec.key] = demo[spec.key.removeprefix(prefix)]
+            if spec.key not in raw:
+                raw[spec.key] = spec.default or {
+                    FieldType.DATE: "31.10.2026",
+                    FieldType.INTEGER: "10",
+                    FieldType.MONEY: "1 000",
+                }.get(spec.type, "значение")
+        checked = validate_fields(
+            template.fields, {key: FieldValue(value) for key, value in raw.items()}
+        )
+        assert checked.errors == () and checked.ready, (template.slug, checked.errors)
+        filled = fill_docx(
+            template.blank_bytes(),
+            places=[],
+            context=fill_context(template.fields, checked.values),
+            blank="<пусто>",
+        )
+        # Линейки для подписей — часть бланка; пустых мест под данные не осталось.
+        text = "\n".join(docx_lines(filled))
+        assert "{{" not in text and "<пусто>" not in text, template.slug

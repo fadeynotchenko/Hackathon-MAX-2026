@@ -99,7 +99,7 @@ export function CreatePage() {
       {all.length > 0 && visible.length === 0 ? <EmptyState title="Ничего не нашлось" /> : null}
       {/* Заголовок и у единственной сетки: «Стандартные» под «Своим шаблоном»
           говорит, что это общие бланки, а свой делается выше. */}
-      {catalogSections(visible).map(([title, list]) => (
+      {catalogSections(visible, all).map(([title, list]) => (
         <Section key={title} title={title}>
           <TemplateGrid templates={list} onOpen={open} />
         </Section>

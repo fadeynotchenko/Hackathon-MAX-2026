@@ -25,7 +25,27 @@ describe('catalog sections', () => {
     ]);
   });
 
+  it('keeps the kind sections while searching a split catalog', () => {
+    const selfEmployed = makeTemplate({ id: 4, kind: 'contract', title: 'С самозанятым' });
+    const catalog = [contract, selfEmployed, offer, invoice];
+    expect(catalogSections([invoice], catalog)).toEqual([['Счета', [invoice]]]);
+  });
+
   it('drops a section the search left empty', () => {
     expect(catalogSections([ownOffer])).toEqual([['Мои шаблоны', [ownOffer]]]);
+  });
+
+  it('splits the standard ones by kind when a kind has several variants', () => {
+    const selfEmployed = makeTemplate({
+      id: 4,
+      kind: 'contract',
+      title: 'Договор оказания услуг: с самозанятым',
+    });
+    expect(catalogSections([contract, selfEmployed, offer, invoice, ownOffer])).toEqual([
+      ['Мои шаблоны', [ownOffer]],
+      ['Счета', [invoice]],
+      ['Коммерческие предложения', [offer]],
+      ['Договоры', [contract, selfEmployed]],
+    ]);
   });
 });

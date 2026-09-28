@@ -159,6 +159,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dev/requisites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Тестовые реквизиты, проходящие все проверки (только вне production)
+         * @description ИНН, ОГРН, КПП, БИК, расчётный и корр. счёт сходятся между собой.
+         */
+        get: operations["dev_requisites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents": {
         parameters: {
             query?: never;
@@ -874,6 +894,23 @@ export interface components {
             is_admin: boolean;
             /** Max User Id */
             max_user_id: number;
+        };
+        /** DevRequisitesResponse */
+        DevRequisitesResponse: {
+            /**
+             * Client
+             * @description Клиент: реквизиты по ключам карточки
+             */
+            client: {
+                [key: string]: string;
+            };
+            /**
+             * Seller
+             * @description Своя организация: реквизиты по ключам карточки
+             */
+            seller: {
+                [key: string]: string;
+            };
         };
         /** DistributionSchema */
         DistributionSchema: {
@@ -2129,6 +2166,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dev_requisites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevRequisitesResponse"];
                 };
             };
         };

@@ -34,6 +34,7 @@ from core.usecases.agent.chat import (
     UNSUPPORTED_FILE_TEXT,
 )
 from core.usecases.documents import TemplateInput, create_template, ensure_builtin_templates
+from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 from core.usecases.documents.templates import OWN_TEMPLATES_MAX
 from tests.api.test_events_worker import _handlers
 from tests.fakes import FakeLLM
@@ -114,7 +115,7 @@ async def test_unclear_request_offers_template_buttons(
 
     (reply,) = await _replies(redis)
     payloads = {row[0].payload for row in reply.buttons or []}
-    assert payloads == {"doc:new:invoice", "doc:new:offer", "doc:new:service-contract"}
+    assert payloads == {f"doc:new:{template.slug}" for template in BUILTIN_TEMPLATES}
 
 
 async def test_own_templates_are_offered_within_keyboard_limits(
@@ -144,12 +145,10 @@ async def test_own_templates_are_offered_within_keyboard_limits(
     rows = reply.buttons or []
     assert len(rows) <= KEYBOARD_ROWS
     titles = [button.text for row in rows for button in row]
-    assert len(titles) == OWN_TEMPLATES_MAX + 3
-    assert titles[:3] == [
-        "🤝 Договор оказания услуг",
-        "💼 Коммерческое предложение",
-        "🧾 Счёт на оплату",
-    ]
+    assert len(titles) == OWN_TEMPLATES_MAX + len(BUILTIN_TEMPLATES)
+    standard = titles[: len(BUILTIN_TEMPLATES)]
+    assert standard[0] == "🤝 Договор оказания услуг", "основной договор — первым в своём виде"
+    assert "💼 Коммерческое предложение" in standard and "🧾 Счёт на оплату" in standard
 
 
 async def test_question_about_active_document_is_answered(

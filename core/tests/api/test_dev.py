@@ -7,7 +7,9 @@ from httpx import ASGITransport, AsyncClient
 from core.api.main import create_app
 from core.api.state import ApiState
 from core.config.app_config import AppConfig
+from core.domain.documents import account_key_valid
 from core.events import EventBus
+from core.usecases.documents.requisites import validate_requisites
 from tests.conftest import ADMIN_MAX_ID
 
 
@@ -59,3 +61,17 @@ async def test_dev_route_is_absent_in_production(
         assert (await c.get("/api/v1/openapi.json")).status_code == 404, (
             "в production Swagger выключен"
         )
+
+
+async def test_demo_requisites_pass_every_check(client: AsyncClient) -> None:
+    """Тестовые реквизиты сходятся: ИНН, ОГРН, КПП и оба счёта с ключом по БИК."""
+    response = await client.get("/api/v1/dev/requisites")
+    assert response.status_code == 200
+    body = response.json()
+    for side in ("seller", "client"):
+        values, errors = validate_requisites(body[side])
+        assert errors == [], (side, errors)
+        assert values == body[side], "значения уже в каноническом виде"
+        assert account_key_valid(values["account"], values["bic"])
+        assert account_key_valid(values["corr_account"], values["bic"], correspondent=True)
+    assert body["seller"]["inn"] != body["client"]["inn"]
