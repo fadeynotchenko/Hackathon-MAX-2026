@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { FieldSpec, FieldType } from '@/api/client';
 
+import { keyFor } from '../templates/editor';
 import { mockValues } from './mock';
 
 // Детерминированный генератор для повторяемых прогонов.
@@ -105,6 +106,37 @@ const CONTRACT = [
 ];
 
 const BUILTIN = { invoice: INVOICE, offer: OFFER, contract: CONTRACT };
+
+// Свой шаблон: ключи — как у редактора, транслит названия со стороной в конце.
+function own(fields: Array<[label: string, type: FieldType]>): FieldSpec[] {
+  const taken = new Set<string>();
+  return fields.map(([label, type]) => {
+    const key = keyFor(label, taken);
+    taken.add(key);
+    return spec(key, label, type);
+  });
+}
+
+const OWN_CONTRACT = own([
+  ['Номер договора', 'text'],
+  ['Дата договора', 'date'],
+  ['Город', 'text'],
+  ['Название заказчика', 'text'],
+  ['ИНН заказчика', 'inn'],
+  ['ОГРН заказчика', 'ogrn'],
+  ['Адрес заказчика', 'address'],
+  ['Подписант заказчика', 'name'],
+  ['Название исполнителя', 'text'],
+  ['ИНН исполнителя', 'inn'],
+  ['КПП исполнителя', 'kpp'],
+  ['Адрес исполнителя', 'address'],
+  ['Банк исполнителя', 'text'],
+  ['БИК исполнителя', 'bic'],
+  ['Расчётный счёт исполнителя', 'account'],
+  ['Телефон исполнителя', 'phone'],
+  ['Почта исполнителя', 'email'],
+  ['Стоимость услуг', 'money'],
+]);
 
 // Record по FieldType: новый тип поля без строки здесь не соберётся.
 const TYPE_LABEL: Record<FieldType, string> = {
@@ -416,6 +448,105 @@ describe('mockValues — тестовые данные для админа', () 
     expect(values['kontaktnoe_litso']).toMatch(/^[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+$/);
     expect(Number(values['srok_oplaty_dney'])).toBeGreaterThanOrEqual(1);
     expect(Number(values['srok_oplaty_dney'])).toBeLessThanOrEqual(60);
+  });
+
+  it('gives each party of an own template one organisation of its own', () => {
+    expect(OWN_CONTRACT.map((field) => field.key)).toEqual([
+      'nomer_dogovora',
+      'data_dogovora',
+      'gorod',
+      'nazvanie_zakazchika',
+      'inn_zakazchika',
+      'ogrn_zakazchika',
+      'adres_zakazchika',
+      'podpisant_zakazchika',
+      'nazvanie_ispolnitelya',
+      'inn_ispolnitelya',
+      'kpp_ispolnitelya',
+      'adres_ispolnitelya',
+      'bank_ispolnitelya',
+      'bik_ispolnitelya',
+      'raschetnyy_schet_ispolnitelya',
+      'telefon_ispolnitelya',
+      'pochta_ispolnitelya',
+      'stoimost_uslug',
+    ]);
+    const soleClients = new Set<boolean>();
+    for (const seed of SEEDS) {
+      const values = generate(OWN_CONTRACT, seed);
+      expect(serverErrors(OWN_CONTRACT, values)).toEqual([]);
+      expect(values['nazvanie_zakazchika']).not.toBe(values['nazvanie_ispolnitelya']);
+      expect(values['inn_zakazchika']).not.toBe(values['inn_ispolnitelya']);
+      expect(values['adres_zakazchika']).not.toBe(values['adres_ispolnitelya']);
+      // Название, ИНН и ОГРН — одной организации: ИП с ИНН из 12 цифр и ОГРНИП.
+      const sole = (values['nazvanie_zakazchika'] ?? '').startsWith('ИП ');
+      expect(values['inn_zakazchika']).toHaveLength(sole ? 12 : 10);
+      expect(values['ogrn_zakazchika']).toHaveLength(sole ? 15 : 13);
+      if (sole) expect(values['nazvanie_zakazchika']).toBe(`ИП ${values['podpisant_zakazchika']}`);
+      soleClients.add(sole);
+      // У исполнителя есть КПП: он организация, и КПП — от его ИНН.
+      expect(values['nazvanie_ispolnitelya']).toMatch(/^(ООО|АО) «.+»$/);
+      expect(values['kpp_ispolnitelya']?.slice(0, 4)).toBe(values['inn_ispolnitelya']?.slice(0, 4));
+    }
+    expect([...soleClients].sort()).toEqual([false, true]);
+  });
+
+  it('keys own-template accounts to the BIC the server will compare them with', () => {
+    // Два БИК: сервер счета с ними не сверяет (raschetnyy_schet_* и bik_* для
+    // него не пара), но счёт всё равно сходится с банком своей стороны.
+    const twoBanks = own([
+      ['БИК исполнителя', 'bic'],
+      ['Расчётный счёт исполнителя', 'account'],
+      ['БИК заказчика', 'bic'],
+      ['Расчётный счёт заказчика', 'account'],
+    ]);
+    // Один БИК: сервер сверяет с ним любой счёт, и счёт заказчика тоже.
+    const oneBank = own([
+      ['БИК исполнителя', 'bic'],
+      ['Расчётный счёт исполнителя', 'account'],
+      ['Расчётный счёт заказчика', 'account'],
+    ]);
+    expect(twoBanks.map((field) => field.key)).toEqual([
+      'bik_ispolnitelya',
+      'raschetnyy_schet_ispolnitelya',
+      'bik_zakazchika',
+      'raschetnyy_schet_zakazchika',
+    ]);
+    for (const seed of SEEDS) {
+      const two = generate(twoBanks, seed);
+      const valid = (account: string, bic: string) =>
+        accountKeyValid(two[account] ?? '', two[bic] ?? '');
+      expect(valid('raschetnyy_schet_ispolnitelya', 'bik_ispolnitelya')).toBe(true);
+      expect(valid('raschetnyy_schet_zakazchika', 'bik_zakazchika')).toBe(true);
+      const one = generate(oneBank, seed);
+      expect(serverErrors(oneBank, one)).toEqual([]);
+    }
+  });
+
+  it('gives own fields without a party to the seller, not an organisation per word', () => {
+    const fields = own([
+      ['Название исполнителя', 'text'],
+      ['ИНН исполнителя', 'inn'],
+      ['ИНН', 'inn'],
+      ['Название организации', 'text'],
+      ['КПП организации', 'kpp'],
+      ['ИНН покупателя', 'inn'],
+    ]);
+    expect(fields.map((field) => field.key)).toEqual([
+      'nazvanie_ispolnitelya',
+      'inn_ispolnitelya',
+      'inn',
+      'nazvanie_organizatsii',
+      'kpp_organizatsii',
+      'inn_pokupatelya',
+    ]);
+    for (const seed of SEEDS) {
+      const values = generate(fields, seed);
+      expect(values['inn']).toBe(values['inn_ispolnitelya']);
+      expect(values['nazvanie_organizatsii']).toBe(values['nazvanie_ispolnitelya']);
+      expect(values['kpp_organizatsii']?.slice(0, 4)).toBe(values['inn']?.slice(0, 4));
+      expect(values['inn_pokupatelya']).not.toBe(values['inn']);
+    }
   });
 
   it('works with the real clock and Math.random', () => {

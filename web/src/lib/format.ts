@@ -139,7 +139,7 @@ export function groupFields(fields: FieldSpec[]): Array<[string, FieldSpec[]]> {
 }
 
 // Вид документа → подписи: коротко для выбора типа, во множественном числе для
-// фильтров и графиков, полностью для разделов каталога.
+// фильтров и графиков, полностью — для поиска по каталогу («договоры», «счета»).
 export type TemplateKind = TemplateRequest['kind'];
 
 export interface KindStyle {

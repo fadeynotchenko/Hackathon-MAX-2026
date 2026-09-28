@@ -104,6 +104,10 @@ export function VoiceFillPage() {
   };
 
   const start = async () => {
+    // Прежняя запись уходит сразу, а не после включения микрофона: не включится
+    // он — экран покажет выбор файла, и «Заполнить» не отправит тихо старую запись.
+    setClip(null);
+    setElapsed(0);
     setPhase('starting');
     let stream: MediaStream;
     try {
@@ -155,8 +159,6 @@ export function VoiceFillPage() {
       fail(NO_RECORDING);
       return;
     }
-    setClip(null);
-    setElapsed(0);
     setPhase('recording');
   };
 

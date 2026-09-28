@@ -6,7 +6,9 @@
 // Плашку для формы экран способа оставляет здесь, в памяти: navigate(-1) не
 // несёт state, а новый переход вперёд задвоил бы форму в истории. Сами
 // значения не передаются — форма при входе перечитывает документ с сервера.
-import { useState } from 'react';
+// Ушёл человек «Назад», не дождавшись ответа, — ответ экран уже не трогает:
+// значения сервер сохранит, форма покажет их при следующем входе.
+import { useEffect, useRef, useState } from 'react';
 
 import type { AgentFillResponse, VoiceFillResponse } from '@/api/client';
 import { pluralize } from '@/lib/format';
@@ -25,7 +27,7 @@ export interface FillNotice {
 }
 
 // Голосовое отвечает тем же, что текст и фото, плюс расшифровкой.
-export type FillResult = AgentFillResponse & Partial<Pick<VoiceFillResponse, 'transcript'>>;
+type FillResult = AgentFillResponse & Partial<Pick<VoiceFillResponse, 'transcript'>>;
 
 const FAILURE: Record<FillMethod, string> = {
   photo: 'Не удалось распознать файл',
@@ -100,7 +102,7 @@ export function emptyNotice(result: FillResult): FillNotice {
   return { tone: 'info', title: 'Ничего не заполнено', ...(text ? { text } : {}) };
 }
 
-export interface FillSubmit {
+interface FillSubmit {
   busy: boolean;
   notice: FillNotice | null;
   back: () => void;
@@ -113,12 +115,25 @@ export function useFillSubmit(documentId: number, method: FillMethod): FillSubmi
   const back = useBack(fillFormPath(documentId));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<FillNotice | null>(null);
+  // «Назад» доступен и во время запроса. Если экран уже закрыт, человек стоит
+  // в форме, прочитавшей документ до ответа: плашка залежалась бы до следующего
+  // входа, а back() — navigate(-1) работает и после размонтирования — увёл бы
+  // его ещё на шаг назад, мимо формы.
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const submit = async (run: () => Promise<FillResult>) => {
     setBusy(true);
     setNotice(null);
     try {
       const result = await run();
+      if (!mounted.current) return;
       if (result.filled.length > 0) {
         hapticResult('success');
         leaveNotice(documentId, filledNotice(result));
@@ -129,6 +144,7 @@ export function useFillSubmit(documentId: number, method: FillMethod): FillSubmi
       hapticResult('warning');
       setNotice(emptyNotice(result));
     } catch (err) {
+      if (!mounted.current) return;
       hapticResult('error');
       setNotice({ tone: 'error', title: errorText(err, FAILURE[method]) });
     }

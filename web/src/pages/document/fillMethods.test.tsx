@@ -1,11 +1,14 @@
 // Экраны способов заполнения: запрос уходит с тем, что дал человек, удачный
 // ответ возвращает в форму с плашкой, пустой — оставляет на экране с ответом
-// помощника. Запись голоса в jsdom — поддельный MediaRecorder; без него экран
-// предлагает готовый файл.
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+// помощника, а ответ после ухода «Назад» формы уже не касается. Запись голоса
+// в jsdom — поддельный MediaRecorder; без него экран предлагает готовый файл.
+import { MaxUI } from '@maxhub/max-ui';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AgentFillResponse, FieldError } from '@/api/client';
+import type { AgentFillResponse, ApiClient, FieldError } from '@/api/client';
+import { AuthContext, type AuthState } from '@/auth/context';
 import { makeDocument, mockApi, renderScreen } from '@/test-utils';
 
 import { dropNotice, emptyNotice, filledNotice, peekNotice } from './fillMethods';
@@ -33,6 +36,52 @@ function pickFile(container: HTMLElement, file: File) {
   const input = container.querySelector<HTMLInputElement>('input[type="file"]');
   if (!input) throw new Error('нет поля выбора файла');
   fireEvent.change(input, { target: { files: [file] } });
+}
+
+function Location() {
+  return <span data-testid="location">{useLocation().pathname}</span>;
+}
+
+// Экран текста, открытый из формы, а форма — из каталога: «Назад» идёт по
+// истории, и лишний шаг назад был бы виден по адресу.
+function renderTextOverForm(api: ApiClient) {
+  const auth: AuthState = {
+    status: 'ready',
+    mode: 'dev',
+    user: {
+      id: 1,
+      max_user_id: 100,
+      first_name: 'Анна',
+      last_name: null,
+      username: 'anna',
+      display_name: 'Анна',
+      language_code: 'ru',
+      photo_url: null,
+      is_admin: false,
+      created_at: '2026-09-01T00:00:00Z',
+      last_login_at: null,
+    },
+    error: null,
+    api,
+    logout: vi.fn(),
+    retry: vi.fn(),
+  };
+  return render(
+    <MaxUI colorScheme="light" platform="ios">
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter
+          initialEntries={['/create/3', '/documents/7/fill', '/documents/7/fill/text']}
+          initialIndex={2}
+        >
+          <Routes>
+            <Route path="/documents/:documentId/fill/text" element={<TextFillPage />} />
+            <Route path="*" element={<span>другой экран</span>} />
+          </Routes>
+          <Location />
+        </MemoryRouter>
+      </AuthContext.Provider>
+    </MaxUI>,
+  );
 }
 
 afterEach(() => {
@@ -131,6 +180,32 @@ describe('text fill', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось заполнить поля');
     expect(screen.getByTestId('location')).toHaveTextContent('/documents/7/fill/text');
+  });
+
+  it('leaves the form alone when the answer comes after Back', async () => {
+    const api = mockApi();
+    let answer: (result: AgentFillResponse) => void = () => undefined;
+    vi.spyOn(api, 'fillFromMessage').mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    renderTextOverForm(api);
+
+    fireEvent.change(screen.getByLabelText('Данные для документа'), {
+      target: { value: 'Счёт для Альфы на 180 000 ₽' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Заполнить' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/documents\/7\/fill$/);
+
+    await act(async () => {
+      answer(fillResult());
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/documents\/7\/fill$/);
+    expect(peekNotice(7)).toBeNull();
   });
 });
 
@@ -233,6 +308,33 @@ describe('voice fill', () => {
     const sent = voice.mock.calls[0]![1];
     expect(sent.type).toBe('audio/webm;codecs=opus');
     expect(sent.size).toBeGreaterThan(0);
+  });
+
+  it('drops the old recording when recording again fails', async () => {
+    vi.stubGlobal('MediaRecorder', FakeRecorder);
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce({ getTracks: () => [{ stop: vi.fn() }] })
+      .mockRejectedValueOnce(new DOMException('busy', 'NotReadableError'));
+    stubMicrophone(getUserMedia);
+    const api = mockApi();
+    const voice = vi.spyOn(api, 'voiceIntoDocument');
+    renderScreen(<VoiceFillPage />, {
+      api,
+      path: '/documents/:documentId/fill/voice',
+      route: '/documents/7/fill/voice',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Начать запись' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Остановить запись' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Записать заново' }));
+
+    expect(await screen.findByText('Не удалось включить микрофон')).toBeInTheDocument();
+    expect(screen.getByText('Выбрать аудиофайл')).toBeInTheDocument();
+    const submit = screen.getByRole('button', { name: 'Заполнить' });
+    expect(submit).toBeDisabled();
+    fireEvent.click(submit);
+    expect(voice).not.toHaveBeenCalled();
   });
 
   it('turns the microphone off when the screen closes mid-recording', async () => {

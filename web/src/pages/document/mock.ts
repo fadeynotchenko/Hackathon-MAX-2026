@@ -6,9 +6,11 @@
 // стороны, что выберет сервер (_bic_for), — иначе кнопка давала бы ошибки там,
 // где человек их не делал.
 //
-// У стороны (seller_*, client_*) одна организация на все её поля: название,
-// ИНН, банк и почта сходятся между собой, а продавец и клиент различаются.
-// ИП выпадает только стороне без поля КПП: у ИП его не бывает. Смысл текстовых
+// У стороны одна организация на все её поля: название, ИНН, банк и почта
+// сходятся между собой, а продавец и клиент различаются. Сторона стандартного
+// поля — в префиксе ключа (seller_*, client_*), своего — в словах названия и
+// ключа: «ИНН заказчика» — клиент, «Название исполнителя» — продавец. ИП
+// выпадает только стороне без поля КПП: у ИП его не бывает. Смысл текстовых
 // полей угадывается по ключу и по названию — у своих шаблонов ключ — транслит
 // названия, поэтому одинаково важны оба.
 //
@@ -16,7 +18,7 @@
 import type { FieldSpec, FieldType } from '@/api/client';
 import { pluralize } from '@/lib/format';
 
-export interface MockOptions {
+interface MockOptions {
   today?: Date;
   random?: () => number;
 }
@@ -27,6 +29,8 @@ interface Bank {
   name: string;
   bic: string;
 }
+
+type Side = 'seller' | 'client';
 
 interface Party {
   // ИП: ИНН из 12 цифр, ОГРНИП из 15, счёт 40802.
@@ -335,24 +339,37 @@ function settlementHead(party: Party): string {
   return party.sole ? '40802810' : '40702810';
 }
 
-// Сторона счёта и БИК — как у сервера: всё до последнего «_».
+// Пару счёт — БИК сервер ищет по ключу: всё до последнего «_». Это не
+// организация: у транслита inn_zakazchika «сторона» для сервера — inn.
 function sideOf(key: string): string {
   const at = key.lastIndexOf('_');
   return at === -1 ? '' : key.slice(0, at);
 }
 
 // БИК, с которым сервер сверит счёт (core.domain.documents._bic_for).
-function bicFor(accountKey: string, bicKeys: readonly string[]): string | undefined {
-  const side = sideOf(accountKey);
-  const sameSide = bicKeys.find((key) => sideOf(key) === side);
+function bicFor(account: FieldSpec, bics: readonly FieldSpec[]): FieldSpec | undefined {
+  const side = sideOf(account.key);
+  const sameSide = bics.find((bic) => sideOf(bic.key) === side);
   if (sameSide !== undefined) return sameSide;
-  return bicKeys.length === 1 ? bicKeys[0] : undefined;
+  return bics.length === 1 ? bics[0] : undefined;
 }
 
-// Организация поля: seller_bank_bic — продавец, как и seller_name.
-function partyOf(key: string): string {
-  const prefix = /^(seller|client)_/.exec(key);
-  return prefix?.[1] ?? sideOf(key);
+// Кто из сторон назван в своём поле: ключ — транслит названия, сторона в нём
+// последним словом («ИНН заказчика» → inn_zakazchika).
+const CLIENT_WORDS = /заказчик|покупател|клиент|zakazchik|pokupatel|klient/;
+const SELLER_WORDS = /исполнител|поставщик|продав|ispolnitel|postavschik|prodav/;
+
+// Организация поля: seller_bank_bic — продавец, как и seller_name. Своё поле
+// без стороны («Адрес», «ИНН организации») — тоже продавец: такие поля обычно
+// про того, кто составляет документ, и они сходятся между собой, а не дают по
+// организации на каждое слово ключа. Названы обе стороны — решает первая.
+function partyOf(field: FieldSpec): Side {
+  if (field.key.startsWith('seller_')) return 'seller';
+  if (field.key.startsWith('client_')) return 'client';
+  const words = `${field.label.toLowerCase()} ${field.key}`;
+  const client = words.search(CLIENT_WORDS);
+  const seller = words.search(SELLER_WORDS);
+  return client !== -1 && (seller === -1 || client < seller) ? 'client' : 'seller';
 }
 
 // --- форматы -------------------------------------------------------------
@@ -596,14 +613,12 @@ function fit(field: FieldSpec, value: string): string {
 }
 
 function generator(fields: readonly FieldSpec[], random: Random, today: Date) {
-  const parties = new Map<string, Party>();
+  const parties = new Map<Side, Party>();
   const takenCompanies = new Set<number>();
   const takenSurnames = new Set<number>();
   // ИП бывает только у стороны без поля КПП: у ИП КПП нет.
-  const withKpp = new Set(
-    fields.filter((field) => field.type === 'kpp').map((field) => partyOf(field.key)),
-  );
-  const bicKeys = fields.filter((field) => field.type === 'bic').map((field) => field.key);
+  const withKpp = new Set(fields.filter((field) => field.type === 'kpp').map(partyOf));
+  const bics = fields.filter((field) => field.type === 'bic');
   const totalKey =
     fields.find((field) => field.type === 'money' && field.key === 'total')?.key ??
     fields.find(
@@ -616,7 +631,7 @@ function generator(fields: readonly FieldSpec[], random: Random, today: Date) {
   const totalAmount = () => (total ??= amount());
   const theProject = () => (project ??= pick(random, PROJECTS));
 
-  const party = (name: string): Party => {
+  const party = (name: Side): Party => {
     const known = parties.get(name);
     if (known) return known;
     const city = pick(random, CITIES);
@@ -657,13 +672,13 @@ function generator(fields: readonly FieldSpec[], random: Random, today: Date) {
     return created;
   };
 
-  const sideParty = (field: FieldSpec) => party(partyOf(field.key));
+  const sideParty = (field: FieldSpec) => party(partyOf(field));
 
   // Счёт ключуется тем БИК, с которым его сверит сервер; нет такого — своим банком.
   const account = (field: FieldSpec): string => {
     const own = sideParty(field);
-    const bicKey = bicFor(field.key, bicKeys);
-    const bic = bicKey === undefined ? own.bank.bic : party(partyOf(bicKey)).bank.bic;
+    const bicField = bicFor(field, bics);
+    const bic = bicField === undefined ? own.bank.bic : sideParty(bicField).bank.bic;
     if (matches(field, CORR)) return accountOf('30101810', `00000000${bic.slice(6, 9)}`, bic);
     return accountOf(settlementHead(own), digits(random, 11), bic);
   };
@@ -757,7 +772,7 @@ function generator(fields: readonly FieldSpec[], random: Random, today: Date) {
         return own().address;
       case 'city':
         // «Город» документа — город своей организации.
-        return `г. ${party(partyOf(field.key) || 'seller').city}`;
+        return `г. ${own().city}`;
       case 'date': {
         const iso = isoDate(dateOf(field));
         return iso.split('-').reverse().join('.');
