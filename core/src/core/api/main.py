@@ -43,7 +43,7 @@ from core.files import FilesConfig
 from core.llm import GigaChatConfig, build_llm_client
 from core.logs import biz_error, biz_info, biz_warn, setup_logging
 from core.usecases.auth.config import get_auth_config
-from core.usecases.documents import ensure_builtin_templates
+from core.usecases.documents import ensure_builtin_templates, warm_builtin_previews
 
 API_V1_PREFIX = "/api/v1"
 logger = logging.getLogger("api")
@@ -64,6 +64,18 @@ def _report_worker_exit(task: asyncio.Task[None]) -> None:
     exc = task.exception()
     if exc is not None:
         biz_error(logger, "events.worker.crashed", error=str(exc), exc_info=exc)
+
+
+async def _warm_previews(files_config: FilesConfig) -> None:
+    """Прогрев листов стандартных бланков в фоне: API отвечает сразу, а каталог
+    к первому человеку уже с картинками. Ошибка прогрева не роняет процесс."""
+    try:
+        async with get_session() as session:
+            ready = await warm_builtin_previews(session, cfg=files_config)
+    except Exception as exc:
+        biz_warn(logger, "previews.warm_failed", error=str(exc))
+        return
+    biz_info(logger, "previews.warmed", count=ready)
 
 
 @asynccontextmanager
@@ -115,6 +127,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         name="events-worker",
     )
     app.state.events_task.add_done_callback(_report_worker_exit)
+    app.state.warm_task = asyncio.create_task(
+        _warm_previews(app.state.api.files_config), name="warm-previews"
+    )
     if app_config.dev_login_enabled and not app_config.is_production:
         # Dev-вход выдаёт сессию любому user_id без подписи клиента MAX: в логе
         # старта это должно быть видно.
@@ -123,6 +138,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        app.state.warm_task.cancel()
         stop.set()
         try:
             await asyncio.wait_for(app.state.events_task, timeout=10)

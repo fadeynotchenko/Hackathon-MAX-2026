@@ -1,7 +1,9 @@
 // Лист документа картинкой: страницы того же PDF, что уходит в чат (сервер
 // рисует их из бланка). Так видно настоящее оформление — таблицы, линии, шрифты,
-// — а не только текст. Пока картинка грузится или сервер не умеет рисовать
-// (локальный стенд без LibreOffice), показывается текстовый лист DocPreview.
+// — а не только текст. Пока картинка грузится — пустой белый лист того же
+// размера: текст на его месте выглядел как «моковая рыба», которую потом
+// подменяет настоящая. Текстовый лист DocPreview — только если картинку не
+// нарисовать (локальный стенд без LibreOffice).
 //
 // Картинки кешируются на время сессии по источнику и версии: каталог и экран
 // шаблона не просят один и тот же бланк дважды, а правка документа меняет
@@ -71,6 +73,7 @@ export function SheetPreview({
   const { api } = useAuth();
   const size: PreviewSize = mini ? 'thumb' : 'page';
   const [pages, setPages] = useState<{ key: string; urls: string[] } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const key = `${source.kind}:${source.id}:${version}:${size}`;
 
   useEffect(() => {
@@ -90,6 +93,7 @@ export function SheetPreview({
         if (!cancelled) setPages({ key, urls: [first.url, ...rest.map((item) => item.url)] });
       } catch {
         // Лист картинкой — улучшение, а не условие: остаётся текстовый.
+        if (!cancelled) setFailed(key);
       }
     })();
     return () => {
@@ -100,7 +104,14 @@ export function SheetPreview({
   }, [api, key]);
 
   const urls = pages?.key === key ? pages.urls : null;
-  if (!urls) return <DocPreview text={text} marks={marks} mini={mini} />;
+  if (!urls && failed === key) return <DocPreview text={text} marks={marks} mini={mini} />;
+  if (!urls) {
+    return (
+      <div className={`sheet sheet--image${mini ? ' sheet--mini' : ''}`} aria-busy="true">
+        <div className="sheet__image sheet__image--loading" />
+      </div>
+    );
+  }
   return (
     <div className={`sheet sheet--image${mini ? ' sheet--mini' : ''}`}>
       {urls.map((url, index) => (

@@ -1,5 +1,5 @@
-// Каталог «Новый документ»: сверху «Свой шаблон», под ним свои шаблоны, затем
-// стандартные — каждая сетка под своим заголовком; поиск ищет по обеим.
+// Каталог «Новый документ»: под заголовком поиск и теги, затем свои шаблоны и
+// стандартные — каждая сетка под своим заголовком; своё — за «+» в шапке.
 import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -48,12 +48,12 @@ function follows(first: HTMLElement, second: HTMLElement): boolean {
 }
 
 describe('CreatePage', () => {
-  it('puts «Свой шаблон» first, then own templates, then the standard ones', async () => {
+  it('puts search first, then own templates, then the standard ones', async () => {
     setup([invoice, offer, ownOffer]);
 
     const own = await screen.findByText('Мои шаблоны');
     const standard = screen.getByText('Стандартные');
-    expect(follows(screen.getByText('Свой шаблон'), own)).toBe(true);
+    expect(follows(screen.getByRole('searchbox'), own)).toBe(true);
     expect(follows(own, standard)).toBe(true);
     expect(screen.queryByText('Написать боту')).toBeNull();
 
@@ -68,7 +68,16 @@ describe('CreatePage', () => {
 
     expect(await screen.findByText('Стандартные')).toBeInTheDocument();
     expect(screen.queryByText('Мои шаблоны')).toBeNull();
-    expect(follows(screen.getByText('Свой шаблон'), screen.getByText('Стандартные'))).toBe(true);
+  });
+
+  it('keeps own template and own file behind the «+» in the header', async () => {
+    setup([invoice, offer]);
+    await screen.findByText('Стандартные');
+    expect(screen.queryByText('Сделать свой шаблон')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свой шаблон или свой файл' }));
+    fireEvent.click(await screen.findByText('Сделать свой шаблон'));
+    expect(screen.getByTestId('location')).toHaveTextContent('/templates/upload');
   });
 
   it('searches both grids and hides a section without matches', async () => {
@@ -82,7 +91,6 @@ describe('CreatePage', () => {
       template(8, 'Счёт для своих', 'invoice', false),
     ]);
     const search = await screen.findByRole('searchbox');
-    expect(follows(screen.getByText('Свой шаблон'), search)).toBe(true);
     expect(follows(search, screen.getByText('Мои шаблоны'))).toBe(true);
 
     fireEvent.change(search, { target: { value: 'счёт' } });
@@ -105,6 +113,5 @@ describe('CreatePage', () => {
 
     fireEvent.change(search, { target: { value: 'накладная' } });
     expect(screen.getByText('Ничего не нашлось')).toBeInTheDocument();
-    expect(screen.getByText('Свой шаблон')).toBeInTheDocument();
   });
 });

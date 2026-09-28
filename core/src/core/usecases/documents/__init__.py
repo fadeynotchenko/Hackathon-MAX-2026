@@ -49,7 +49,7 @@ from .organizations import (
     seller_for_document,
     update_organization,
 )
-from .previews import document_preview, template_preview
+from .previews import document_preview, template_preview, warm_builtin_previews
 from .requisites import REQUISITE_FIELDS
 from .templates import (
     KINDS,
@@ -123,4 +123,5 @@ __all__ = [
     "update_counterparty",
     "update_organization",
     "update_template",
+    "warm_builtin_previews",
 ]

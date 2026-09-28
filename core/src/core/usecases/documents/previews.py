@@ -14,10 +14,17 @@ from functools import partial
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.exceptions import AppError, NotFoundError
-from core.files import FilesConfig, PdfUnavailableError, PreviewCache, PreviewPage, convert_to_pdf
+from core.files import (
+    PREVIEW_WIDTHS,
+    FilesConfig,
+    PdfUnavailableError,
+    PreviewCache,
+    PreviewPage,
+    convert_to_pdf,
+)
 from core.usecases.documents.drafts import get_document
 from core.usecases.documents.files import template_source
-from core.usecases.documents.templates import get_template
+from core.usecases.documents.templates import get_template, list_templates
 
 
 async def _same(pdf: bytes) -> bytes:
@@ -69,3 +76,21 @@ async def document_preview(
         session, document.template, document.values, title=document.title, text=document.preview
     )
     return await _page(source, page=page, size=size, cfg=cfg)
+
+
+async def warm_builtin_previews(session: AsyncSession, *, cfg: FilesConfig) -> int:
+    """Нарисовать первую страницу стандартных бланков заранее. Первый показ
+    каталога иначе ждал бы LibreOffice по секунде-другой на бланк, и человек
+    видел текстовую заглушку вместо настоящего листа. Возвращает, сколько
+    бланков готово; без LibreOffice — ноль, каталог покажет текстовый лист."""
+    templates = [t for t in await list_templates(session, user_id=0) if t.is_builtin]
+    for number, template in enumerate(templates):
+        source = await template_source(
+            session, template, {}, title=template.title, text=template.preview
+        )
+        try:
+            for size in PREVIEW_WIDTHS:
+                await _page(source, page=1, size=size, cfg=cfg)
+        except AppError:
+            return number
+    return len(templates)

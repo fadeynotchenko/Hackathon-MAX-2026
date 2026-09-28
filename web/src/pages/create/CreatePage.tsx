@@ -1,13 +1,13 @@
-// Вкладка «Создать»: каталог шаблонов — единственная точка выбора бланка
-// (в макете каталог жил и здесь, и в профиле). Первым — «Свой шаблон»: новый
-// бланк из файла или текста, чтобы это действие не терялось под сеткой; рядом —
-// «Свой документ»: файл, которого нет в каталоге, меняется без шаблона. Ниже —
-// две подписанные сетки: «Мои шаблоны» (если есть) над «Стандартными». Поиск
-// стоит над сетками и ищет по обеим. Второй вход — чат с ботом, в самом низу.
-import { CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
+// Вкладка «Создать»: каталог шаблонов — единственная точка выбора бланка.
+// Под заголовком сразу поиск и теги, ниже — сетки: «Мои шаблоны» (если есть)
+// над стандартными. Свой шаблон и правка своего файла — за «+» в шапке:
+// ячейки над поиском отодвигали каталог, ради которого сюда приходят.
+import { Button, CellList, CellSimple, IconButton, Typography } from '@maxhub/max-ui';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
+import { BottomPanel } from '@/components/BottomPanel';
 import { IconEdit, IconPlus } from '@/components/icons';
 import { FilterChips } from '@/components/FilterChips';
 import { Page, Section } from '@/components/Page';
@@ -16,7 +16,7 @@ import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { SheetPreview } from '@/components/SheetPreview';
 import { useAuth } from '@/auth/context';
 import { asKind, kindStyle } from '@/lib/format';
-import { matchesQuery, needsSearch } from '@/lib/search';
+import { matchesQuery } from '@/lib/search';
 import { useScreenState } from '@/lib/screenMemory';
 import { templateVersion } from '@/lib/templateVersion';
 import { useAsync } from '@/lib/useAsync';
@@ -47,47 +47,31 @@ export function CreatePage() {
       ),
   );
 
+  const [adding, setAdding] = useState(false);
+
   const open = (template: Template) => {
     haptic('light');
     void navigate(`/create/${template.id}`);
   };
 
   return (
-    <Page title="Новый документ" tabs>
-      <CellList mode="island" filled header={<CellHeader>Свой шаблон</CellHeader>}>
-        {/* Один вход вместо «Из файла» и «Написать текст»: выбор между ними —
-            уже на экране шаблона, где видно, чем они отличаются. */}
-        <CellSimple
-          title="Сделать свой шаблон"
-          subtitle="Из своего файла или текстом"
-          before={
-            <span className="themed-icon">
-              <IconPlus />
-            </span>
-          }
-          showChevron
-          onClick={() => navigate('/templates/upload')}
-        />
-      </CellList>
-
-      <CellList mode="island" filled header={<CellHeader>Свой документ</CellHeader>}>
-        <CellSimple
-          title="Изменить свой файл"
-          subtitle="Поменяем данные, оформление останется"
-          before={
-            <span className="themed-icon">
-              <IconEdit />
-            </span>
-          }
-          showChevron
-          onClick={() => navigate('/documents/import')}
-        />
-      </CellList>
-
-      {needsSearch(all.length) ? (
-        <SearchField value={query} onChange={setQuery} hint="Счёт, договор, КП" />
-      ) : null}
-      {needsSearch(all.length) && tags.length > 1 ? (
+    <Page
+      title="Новый документ"
+      tabs
+      headerAfter={
+        <IconButton
+          variant="secondary"
+          size="medium"
+          aria-label="Свой шаблон или свой файл"
+          aria-expanded={adding}
+          onClick={() => setAdding(true)}
+        >
+          <IconPlus />
+        </IconButton>
+      }
+    >
+      <SearchField value={query} onChange={setQuery} hint="Счёт, договор, КП" />
+      {tags.length > 1 ? (
         <FilterChips label="Вид шаблона" options={tags} value={tag} onChange={setTag} />
       ) : null}
       {templates.loading ? <Loading /> : null}
@@ -96,19 +80,49 @@ export function CreatePage() {
         tag === OWN_TAG && !query.trim() ? (
           <EmptyState
             title="Своих шаблонов пока нет"
-            text="Сделайте его из файла или текста — «Свой шаблон» вверху экрана."
+            text="Из своего документа или бланка — оформление сохранится."
+            action={
+              <Button onClick={() => navigate('/templates/upload')}>Сделать свой шаблон</Button>
+            }
           />
         ) : (
           <EmptyState title="Ничего не нашлось" />
         )
       ) : null}
-      {/* Заголовок и у единственной сетки: «Стандартные» под «Своим шаблоном»
-          говорит, что это общие бланки, а свой делается выше. */}
       {catalogSections(visible, all).map(([title, list]) => (
         <Section key={title} title={title}>
           <TemplateGrid templates={list} onOpen={open} />
         </Section>
       ))}
+
+      {adding ? (
+        <BottomPanel title="Своё" onClose={() => setAdding(false)}>
+          <CellList mode="island" filled>
+            <CellSimple
+              title="Сделать свой шаблон"
+              subtitle="Из своего файла или текстом"
+              before={
+                <span className="themed-icon">
+                  <IconPlus />
+                </span>
+              }
+              showChevron
+              onClick={() => navigate('/templates/upload')}
+            />
+            <CellSimple
+              title="Изменить свой файл"
+              subtitle="Поменяем данные, оформление останется"
+              before={
+                <span className="themed-icon">
+                  <IconEdit />
+                </span>
+              }
+              showChevron
+              onClick={() => navigate('/documents/import')}
+            />
+          </CellList>
+        </BottomPanel>
+      ) : null}
     </Page>
   );
 }

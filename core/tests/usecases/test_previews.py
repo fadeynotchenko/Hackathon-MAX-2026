@@ -17,7 +17,9 @@ from core.usecases.documents import (
     previews,
     set_fields,
     template_preview,
+    warm_builtin_previews,
 )
+from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 from tests.usecases.test_documents import make_user
 
 
@@ -98,3 +100,19 @@ async def test_preview_without_converter_is_unavailable(
             session, user_id=user_id, template_id=invoice.id, page=1, size="page", cfg=files_config
         )
     assert (exc.value.code, exc.value.status_code) == ("preview.unavailable", 503)
+
+
+async def test_builtin_blanks_are_warmed_ahead(
+    session: AsyncSession, files_config: FilesConfig, converter: list[bytes]
+) -> None:
+    await ensure_builtin_templates(session)
+
+    ready = await warm_builtin_previews(session, cfg=files_config)
+
+    assert ready == len(BUILTIN_TEMPLATES) == len(converter)
+    user_id = await make_user(session)
+    invoice = (await list_templates(session, user_id=user_id, slug="invoice"))[0]
+    await template_preview(
+        session, user_id=user_id, template_id=invoice.id, page=1, size="thumb", cfg=files_config
+    )
+    assert len(converter) == len(BUILTIN_TEMPLATES), "первый показ каталога — уже из кеша"

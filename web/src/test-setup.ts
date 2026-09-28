@@ -16,5 +16,6 @@ if (!window.matchMedia) {
     }) as MediaQueryList;
 }
 
-// Прокрутку к ошибкам формы jsdom тоже не умеет.
+// Прокрутку к ошибкам формы и к тексту шаблона jsdom тоже не умеет.
 window.scrollTo = () => undefined;
+Element.prototype.scrollIntoView = () => undefined;

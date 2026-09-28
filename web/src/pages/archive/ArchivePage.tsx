@@ -1,7 +1,8 @@
-// Вкладка «Документы»: всё созданное — поиск, фильтр по виду и группы по клиентам.
+// Вкладка «Документы»: всё созданное — поиск, фильтры по статусу и виду,
+// группы по клиентам или по дате.
 // Группа клиента — то, что в макете называлось «проект»: документы одной
 // сделки с одним контрагентом (отдельной сущности «проект» в API пока нет).
-import { Button, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
+import { Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -18,18 +19,16 @@ import {
   formatRelative,
   kindStyle,
 } from '@/lib/format';
-import { matchesQuery, needsSearch } from '@/lib/search';
 import { useScreenState } from '@/lib/screenMemory';
 import { useAsync } from '@/lib/useAsync';
 
-const NO_CLIENT = 'Без клиента';
-
-function matches(doc: DocumentSummary, query: string): boolean {
-  return matchesQuery(
-    [doc.title, doc.number, doc.template_title, doc.client, doc.counterparty_name],
-    query,
-  );
-}
+import {
+  filterDocuments,
+  type Grouping,
+  groupDocuments,
+  STATUS_FILTERS,
+  type StatusFilter,
+} from './archive';
 
 const STATUS_TONE: Record<DocumentState['tone'], string> = {
   draft: '',
@@ -43,36 +42,49 @@ export function ArchivePage() {
   const navigate = useNavigate();
   const state = useAsync(() => Promise.all([api.documents(), api.templates()]), [api]);
   const [query, setQuery] = useScreenState('query', '');
-  const [kind, setKind] = useScreenState<string | null>('kind', null);
+  // Один ряд фильтров: статус или вид документа — «status:draft», «kind:offer».
+  const [filter, setFilter] = useScreenState<string | null>('filter', null);
+  const [scope, value] = filter?.split(':') ?? [];
+  const status = scope === 'status' ? (value as StatusFilter) : null;
+  const kind = scope === 'kind' ? (value ?? null) : null;
+  const [grouping, setGrouping] = useScreenState<Grouping>('grouping', 'client');
 
   const [documents, templates] = state.data ?? [[], []];
   const kindByTitle = useMemo(
     () => new Map(templates.map((template) => [template.title, template.kind])),
     [templates],
   );
-  const kinds = useMemo(
-    () => [...new Set(documents.map((doc) => kindByTitle.get(doc.template_title) ?? 'other'))],
-    [documents, kindByTitle],
+  const kindOf = useMemo(
+    () => (doc: DocumentSummary) => kindByTitle.get(doc.template_title) ?? 'other',
+    [kindByTitle],
   );
-
-  const groups = useMemo(() => {
-    const visible = documents
-      .filter((doc) => !kind || (kindByTitle.get(doc.template_title) ?? 'other') === kind)
-      .filter((doc) => matches(doc, query))
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-    const byClient = new Map<string, DocumentSummary[]>();
-    for (const doc of visible) {
-      const client = doc.counterparty_name || doc.client || NO_CLIENT;
-      byClient.set(client, [...(byClient.get(client) ?? []), doc]);
-    }
-    // Клиенты — по свежести последнего документа, «Без клиента» — в конце.
-    return [...byClient.entries()].sort(([a], [b]) =>
-      a === NO_CLIENT ? 1 : b === NO_CLIENT ? -1 : 0,
-    );
-  }, [documents, kind, kindByTitle, query]);
+  const kinds = useMemo(() => [...new Set(documents.map(kindOf))], [documents, kindOf]);
+  const visible = useMemo(
+    () => filterDocuments(documents, { query, status, kind, kindOf }),
+    [documents, query, status, kind, kindOf],
+  );
+  const groups = useMemo(() => groupDocuments(visible, grouping), [visible, grouping]);
+  const filtered = Boolean(query.trim() || status || kind);
 
   return (
-    <Page title="Мои документы" tabs>
+    <Page
+      title="Мои документы"
+      tabs
+      headerAfter={
+        documents.length > 1 ? (
+          // Порядок — в шапке, а не отдельной строкой над списком: переключают
+          // его редко, а место под поиском нужнее фильтрам.
+          <Button
+            size="small"
+            variant="secondary"
+            aria-label={`Порядок: ${grouping === 'client' ? 'по клиентам' : 'по дате'}`}
+            onClick={() => setGrouping(grouping === 'client' ? 'date' : 'client')}
+          >
+            {grouping === 'client' ? 'По клиентам' : 'По дате'}
+          </Button>
+        ) : null
+      }
+    >
       {state.loading ? <Loading /> : null}
       {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : null}
       {state.data && documents.length === 0 ? (
@@ -83,19 +95,44 @@ export function ArchivePage() {
       ) : null}
       {state.data && documents.length > 0 ? (
         <>
-          {/* Поиск и фильтр — когда документов столько, что их уже не окинуть взглядом. */}
-          {needsSearch(documents.length) ? (
-            <SearchField value={query} onChange={setQuery} hint="Название или клиент" />
+          {/* Поиск и фильтры — всегда: даже десяток документов быстрее найти
+              по клиенту или статусу, чем пролистать. */}
+          <SearchField value={query} onChange={setQuery} hint="Название, номер или клиент" />
+          <FilterChips
+            label="Фильтр"
+            options={[
+              ...STATUS_FILTERS.map((item) => ({
+                value: `status:${item.value}`,
+                title: item.title,
+              })),
+              ...(kinds.length > 1
+                ? kinds.map((item) => ({ value: `kind:${item}`, title: kindStyle(item).plural }))
+                : []),
+            ]}
+            value={filter}
+            onChange={setFilter}
+          />
+          {filtered && visible.length > 0 ? (
+            <Typography.Text variant="description" color="tertiary" className="archive__found">
+              Нашлось {visible.length} из {documents.length}
+            </Typography.Text>
           ) : null}
-          {needsSearch(documents.length) && kinds.length > 1 ? (
-            <FilterChips
-              label="Вид документа"
-              options={kinds.map((item) => ({ value: item, title: kindStyle(item).plural }))}
-              value={kind}
-              onChange={setKind}
+          {groups.length === 0 ? (
+            <EmptyState
+              title="Ничего не нашлось"
+              action={
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setQuery('');
+                    setFilter(null);
+                  }}
+                >
+                  Сбросить фильтры
+                </Button>
+              }
             />
           ) : null}
-          {groups.length === 0 ? <EmptyState title="Ничего не нашлось" /> : null}
           {groups.map(([client, docs]) => (
             <CellList
               key={client}

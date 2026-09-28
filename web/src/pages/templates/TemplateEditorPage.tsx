@@ -8,7 +8,7 @@
 // state) или правкой своего (/templates/5/edit); шаблон на файле DOCX — свой из
 // образца или стандартный бланк — правится на экране образца.
 import { Button, Textarea, Typography } from '@maxhub/max-ui';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
@@ -122,6 +122,17 @@ function TemplateEditor({ title, initial, templateId, onBack }: TemplateEditorPr
   // Куда вставлять поле: курсор текста запоминается, пока человек жмёт кнопки ниже.
   const selection = useRef({ start: initial.text.length, end: initial.text.length });
   const fields = useMemo(() => fieldsOf(draft), [draft]);
+
+  // Панель полей открылась — текст встаёт над ней, чтобы было видно, куда
+  // вставляется поле. Прокрутка после отрисовки: до неё у экрана ещё нет
+  // нижнего отступа под панель, и прокручивать некуда.
+  useEffect(() => {
+    if (!picking) return;
+    const frame = requestAnimationFrame(() =>
+      textRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [picking]);
 
   const remember = () => {
     const element = textRef.current;
@@ -252,7 +263,6 @@ function TemplateEditor({ title, initial, templateId, onBack }: TemplateEditorPr
           >
             {picking ? 'Скрыть поля' : 'Вставить поле в текст'}
           </Button>
-          {picking ? <FieldPicker onInsert={insert} /> : null}
         </div>
       </Section>
 
@@ -287,6 +297,21 @@ function TemplateEditor({ title, initial, templateId, onBack }: TemplateEditorPr
         <Section title="Как будет выглядеть">
           <DocPreview text={previewText(draft.text)} marks={false} />
         </Section>
+      ) : null}
+      {/* Поля — панелью снизу поверх экрана: на телефоне список ниже текста
+          заставлял мотать вверх-вниз после каждой вставки. */}
+      {picking ? (
+        <div className="bottom-panel" role="dialog" aria-label="Вставить поле">
+          <div className="bottom-panel__head">
+            <Typography.Text variant="body-strong">Вставить поле</Typography.Text>
+            <Button size="small" variant="secondary" onClick={() => setPicking(false)}>
+              Готово
+            </Button>
+          </div>
+          <div className="bottom-panel__body">
+            <FieldPicker onInsert={insert} />
+          </div>
+        </div>
       ) : null}
     </Page>
   );
