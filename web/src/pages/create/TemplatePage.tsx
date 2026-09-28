@@ -1,10 +1,11 @@
 // Шаблон перед созданием: пустой бланк таким, каким он станет PDF, и одна
-// кнопка. Список полей не нужен — они видны на самом бланке. Отсюда же —
-// напоминание про реквизиты своей организации: без них каждый документ
-// пришлось бы дозаполнять руками. Свой шаблон здесь меняют и удаляют,
+// кнопка. Список полей не нужен — они видны на самом бланке. «Заполнить» сразу
+// создаёт черновик и открывает форму: продавцом сервер ставит основную
+// организацию, клиента вписывают в самой форме — отдельный шаг «Для кого
+// документ?» только удлинял путь. Свой шаблон здесь меняют и удаляют,
 // стандартный — берут за основу своего.
 import { Button, CellAction, CellList, CellSimple } from '@maxhub/max-ui';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
@@ -20,11 +21,29 @@ export function TemplatePage() {
   const { api } = useAuth();
   const navigate = useNavigate();
   const templateId = Number(useParams().templateId);
-  const state = useAsync(
-    () => Promise.all([api.template(templateId), api.organizations()]),
-    [api, templateId],
-  );
+  const state = useAsync(() => api.template(templateId), [api, templateId]);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Второй тап может прийти раньше перерисовки с `loading` — без ref вышло бы
+  // два черновика.
+  const busy = useRef(false);
   const back = () => navigate('/create');
+
+  const fill = async (template: Template) => {
+    if (busy.current) return;
+    busy.current = true;
+    setCreating(true);
+    setError(null);
+    try {
+      const document = await api.createDocument({ template_id: template.id });
+      // Обычный переход, не replace: «Назад» из формы вернёт к шаблону.
+      void navigate(`/documents/${document.id}/fill`);
+    } catch (err) {
+      setError(errorText(err, 'Не удалось создать документ'));
+      busy.current = false;
+      setCreating(false);
+    }
+  };
 
   if (state.loading) {
     return (
@@ -41,35 +60,20 @@ export function TemplatePage() {
     );
   }
 
-  const [template, organizations] = state.data;
+  const template = state.data;
   return (
     <Page
       title={template.title}
       onBack={back}
       footer={
-        <Button size="large" stretched onClick={() => navigate(`/create/${template.id}/client`)}>
+        <Button size="large" stretched loading={creating} onClick={() => void fill(template)}>
           Заполнить
         </Button>
       }
     >
-      {organizations.length === 0 ? (
+      {error ? (
         <div className="section">
-          <Banner tone="warning" title="Добавьте свои реквизиты">
-            Один раз — и они будут во всех документах.
-            <div style={{ marginTop: 8 }}>
-              <Button
-                size="small"
-                variant="secondary"
-                onClick={() =>
-                  navigate('/profile/organizations/new', {
-                    state: { returnTo: `/create/${template.id}` },
-                  })
-                }
-              >
-                Добавить
-              </Button>
-            </div>
-          </Banner>
+          <Banner tone="error" title={error} />
         </div>
       ) : null}
       <div className="section">
@@ -98,8 +102,8 @@ function TemplateActions({ template }: { template: Template }) {
     return (
       <CellList mode="island" filled>
         <CellSimple
-          title="Сделать свой на основе этого"
-          subtitle="Поменяйте текст под себя — стандартный останется как есть"
+          title="Создать свой шаблон на основе этого"
+          subtitle="Стандартный шаблон останется как есть"
           before={<IconCopy />}
           showChevron
           onClick={() => navigate(`/templates/new?from=${template.id}`)}

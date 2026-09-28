@@ -1,14 +1,65 @@
 // Сквозной путь по экранам документа: ошибка исправляется в той же форме,
-// проверка пускает к экспорту только готовый документ, экспорт отправляет
-// выбранный формат с текстом и ведёт на экран «отправлено».
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+// способ заполнения (фото, голос, текст) открывается после сохранения правок и
+// возвращает в форму с плашкой, проверка пускает к экспорту только готовый
+// документ, экспорт отправляет выбранный формат с текстом и ведёт на экран
+// «отправлено». Кнопка тестовых данных есть только у администратора.
+import { MaxUI } from '@maxhub/max-ui';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { ApiClient } from '@/api/client';
+import { AuthContext, type AuthState } from '@/auth/context';
 import { makeDocument, mockApi, renderScreen } from '@/test-utils';
 
 import { ExportPage } from './ExportPage';
 import { FillPage } from './FillPage';
 import { ReviewPage } from './ReviewPage';
+import { TextFillPage } from './TextFillPage';
+
+function Location() {
+  return <span data-testid="location">{useLocation().pathname}</span>;
+}
+
+// Форма и экран текста в одном роутере — чтобы пройти туда и обратно по
+// истории; пользователь — обычный или администратор.
+function renderForm(api: ApiClient, { admin = false }: { admin?: boolean } = {}) {
+  const auth: AuthState = {
+    status: 'ready',
+    mode: 'dev',
+    user: {
+      id: 1,
+      max_user_id: 100,
+      first_name: 'Анна',
+      last_name: null,
+      username: 'anna',
+      display_name: 'Анна',
+      language_code: 'ru',
+      photo_url: null,
+      is_admin: admin,
+      created_at: '2026-09-01T00:00:00Z',
+      last_login_at: null,
+    },
+    error: null,
+    api,
+    logout: vi.fn(),
+    retry: vi.fn(),
+  };
+  return render(
+    <MaxUI colorScheme="light" platform="ios">
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter initialEntries={['/documents/7/fill']}>
+          <Routes>
+            <Route path="/documents/:documentId/fill" element={<FillPage />} />
+            <Route path="/documents/:documentId/fill/text" element={<TextFillPage />} />
+            <Route path="*" element={<span>другой экран</span>} />
+          </Routes>
+          <Location />
+        </MemoryRouter>
+      </AuthContext.Provider>
+    </MaxUI>,
+  );
+}
 
 const ready = makeDocument({
   status: 'ready',
@@ -146,6 +197,148 @@ describe('document flow', () => {
     expect(await screen.findByText('ИНН не проходит проверку')).toBeInTheDocument();
     expect(screen.getByLabelText(/ИНН клиента/)).toHaveValue('7707083894');
     expect(screen.queryByText('Из карточки')).not.toBeInTheDocument();
+  });
+
+  it('offers photo, voice and text filling at the top of the form', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    renderForm(api);
+
+    for (const name of ['С фото', 'Голосом', 'Текстом']) {
+      expect(await screen.findByRole('button', { name })).toBeEnabled();
+    }
+    expect(screen.queryByRole('button', { name: 'Тест — мок данных' })).not.toBeInTheDocument();
+  });
+
+  it('saves unsaved edits before opening a fill method', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    const setFields = vi.spyOn(api, 'setFields').mockResolvedValue(
+      makeDocument({
+        values: {
+          ...makeDocument().values,
+          client_name: {
+            value: 'ООО «Альфа»',
+            source: 'manual',
+            confirmed: true,
+            fragment: null,
+            confidence: null,
+          },
+        },
+      }),
+    );
+    renderForm(api);
+
+    fireEvent.change(await screen.findByLabelText(/Название клиента/), {
+      target: { value: 'ООО «Альфа»' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Текстом' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/documents/7/fill/text'),
+    );
+    expect(setFields).toHaveBeenCalledWith(7, { client_name: 'ООО «Альфа»' });
+  });
+
+  it('stays on the form when the edits could not be saved', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    vi.spyOn(api, 'setFields').mockRejectedValue(new Error('offline'));
+    renderForm(api);
+
+    fireEvent.change(await screen.findByLabelText(/Название клиента/), {
+      target: { value: 'ООО «Альфа»' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'С фото' }));
+
+    expect(await screen.findByText('Не удалось сохранить')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/documents\/7\/fill$/);
+    expect(screen.getByLabelText(/Название клиента/)).toHaveValue('ООО «Альфа»');
+  });
+
+  it('comes back from text filling with the values and a notice', async () => {
+    const api = mockApi();
+    const filled = makeDocument({
+      values: {
+        ...makeDocument().values,
+        client_name: {
+          value: 'ООО «Альфа»',
+          source: 'agent',
+          confirmed: false,
+          fragment: 'ООО «Альфа»',
+          confidence: null,
+        },
+        total: {
+          value: '180000.00',
+          source: 'agent',
+          confirmed: false,
+          fragment: '180 тысяч',
+          confidence: null,
+        },
+      },
+      missing: [],
+      unconfirmed: ['client_name', 'total'],
+    });
+    const load = vi
+      .spyOn(api, 'document')
+      .mockResolvedValueOnce(makeDocument())
+      .mockResolvedValue(filled);
+    vi.spyOn(api, 'fillFromMessage').mockResolvedValue({
+      reply: 'Заполнил: название клиента, сумма к оплате.',
+      filled: ['client_name', 'total'],
+      rejected: [
+        {
+          key: 'client_inn',
+          code: 'field.inn_invalid',
+          message: '«ИНН клиента»: ИНН не проходит проверку',
+        },
+      ],
+      document: filled,
+    });
+    renderForm(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Текстом' }));
+    fireEvent.change(await screen.findByLabelText('Данные для документа'), {
+      target: { value: 'Для ООО «Альфа», ИНН 123, на 180 тысяч' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Заполнить' }));
+
+    expect(await screen.findByText('Заполнено 2 поля — проверьте')).toBeInTheDocument();
+    expect(
+      screen.getByText('Не записали: ИНН клиента — ИНН не проходит проверку.'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/documents\/7\/fill$/);
+    expect(screen.getByLabelText(/Название клиента/)).toHaveValue('ООО «Альфа»');
+    expect(screen.getByLabelText(/Сумма к оплате/)).toHaveValue('180 000');
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets an admin fill every field with test data', async () => {
+    const api = mockApi();
+    const doc = makeDocument();
+    vi.spyOn(api, 'document').mockResolvedValue(doc);
+    const setFields = vi.spyOn(api, 'setFields').mockImplementation(async (_id, values) =>
+      makeDocument({
+        values: Object.fromEntries(
+          Object.entries(values).map(([key, value]) => [
+            key,
+            { value, source: 'manual', confirmed: true, fragment: null, confidence: null },
+          ]),
+        ),
+        missing: [],
+      }),
+    );
+    renderForm(api, { admin: true });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Тест — мок данных' }));
+
+    expect(await screen.findByText('Тестовые данные подставлены')).toBeInTheDocument();
+    const sent = setFields.mock.calls[0]![1];
+    expect(Object.keys(sent).sort()).toEqual(doc.template.fields.map((f) => f.key).sort());
+    for (const value of Object.values(sent)) expect(value.trim()).not.toBe('');
+    // Свёрнутое необязательное поле и реквизиты продавца раскрыты.
+    expect(screen.getByLabelText(/ИНН клиента/)).toHaveValue(sent['client_inn']);
+    expect(screen.getByLabelText(/Название продавца/)).toBeInTheDocument();
   });
 
   it('asks to confirm recognized values before export', async () => {

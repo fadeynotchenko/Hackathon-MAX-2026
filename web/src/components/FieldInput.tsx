@@ -2,6 +2,8 @@
 // рядом с полем. Тип ввода (дата, сумма, цифры) берётся из типа поля шаблона.
 // Пример значения и «необязательно» живут в пустом поле плейсхолдером, а не
 // отдельной строкой: форма короче, а подсказка исчезает, как только она не нужна.
+// Модификатор однострочное/многострочное — для широкого экрана: там однострочные
+// поля встают по два в ряд, а адрес и длинный текст занимают всю строку.
 import { Input, Textarea, Typography } from '@maxhub/max-ui';
 import { useId } from 'react';
 
@@ -52,7 +54,9 @@ export function FieldInput({
   };
 
   return (
-    <div className={`field${error ? ' field--error' : ''}`}>
+    <div
+      className={`field ${kind.multiline ? 'field--multiline' : 'field--single'}${error ? ' field--error' : ''}`}
+    >
       <div className="field__label">
         <Typography.Text variant="description-strong" color="secondary" asChild>
           <label htmlFor={id}>

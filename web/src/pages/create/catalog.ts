@@ -1,15 +1,14 @@
 // Разделы каталога шаблонов во вкладке «Создать».
 import type { Template } from '@/api/client';
-import { asKind, KIND_ORDER, KIND_STYLE } from '@/lib/format';
 
-// Без своих шаблонов — одна сетка; со своими — разделы по видам документа,
-// в каждом стандартный шаблон первым (сервер отдаёт их раньше своих).
+// Свои шаблоны — отдельной сеткой над стандартными: свой бланк человек сделал
+// под себя и ищет прежде всего его, а среди стандартных он терялся. Порядок
+// внутри раздела — как отдал сервер. Пустой раздел не показываем: заголовок
+// без карточек (нет своих шаблонов, поиск ничего не нашёл) только путает.
 export function catalogSections(templates: Template[]): Array<[string, Template[]]> {
-  if (!templates.some((template) => !template.is_builtin)) {
-    return templates.length > 0 ? [['Шаблоны', templates]] : [];
-  }
-  return KIND_ORDER.map((kind): [string, Template[]] => [
-    KIND_STYLE[kind].section,
-    templates.filter((template) => asKind(template.kind) === kind),
-  ]).filter(([, list]) => list.length > 0);
+  const sections: Array<[string, Template[]]> = [
+    ['Мои шаблоны', templates.filter((template) => !template.is_builtin)],
+    ['Стандартные', templates.filter((template) => template.is_builtin)],
+  ];
+  return sections.filter(([, list]) => list.length > 0);
 }

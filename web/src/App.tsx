@@ -6,14 +6,16 @@ import { startRoute } from '@/lib/startRoute';
 import { getStartParam } from '@/max/webapp';
 import { AdminPage } from '@/pages/admin/AdminPage';
 import { ArchivePage } from '@/pages/archive/ArchivePage';
-import { ClientPage } from '@/pages/create/ClientPage';
 import { CreatePage } from '@/pages/create/CreatePage';
 import { TemplatePage } from '@/pages/create/TemplatePage';
 import { DocumentPage } from '@/pages/document/DocumentPage';
 import { ExportPage } from '@/pages/document/ExportPage';
 import { FillPage } from '@/pages/document/FillPage';
+import { PhotoFillPage } from '@/pages/document/PhotoFillPage';
 import { ReviewPage } from '@/pages/document/ReviewPage';
 import { SentPage } from '@/pages/document/SentPage';
+import { TextFillPage } from '@/pages/document/TextFillPage';
+import { VoiceFillPage } from '@/pages/document/VoiceFillPage';
 import { GatePage } from '@/pages/GatePage';
 import { CounterpartiesPage } from '@/pages/profile/CounterpartiesPage';
 import { CounterpartyPage } from '@/pages/profile/CounterpartyPage';
@@ -45,12 +47,19 @@ export function App() {
         <Route path="/" element={<Navigate to="/create" replace />} />
         <Route path="/create" element={<CreatePage />} />
         <Route path="/create/:templateId" element={<TemplatePage />} />
-        <Route path="/create/:templateId/client" element={<ClientPage />} />
+        {/* Экрана «Для кого документ?» больше нет: «Заполнить» сразу открывает форму. */}
+        <Route
+          path="/create/:templateId/client"
+          element={<Navigate to=".." relative="path" replace />}
+        />
         <Route path="/templates/new" element={<TemplateEditorPage />} />
         <Route path="/templates/upload" element={<TemplateSamplePage />} />
         <Route path="/templates/:templateId/edit" element={<TemplateEditorPage />} />
         <Route path="/documents/:documentId" element={<DocumentPage />} />
         <Route path="/documents/:documentId/fill" element={<FillPage />} />
+        <Route path="/documents/:documentId/fill/photo" element={<PhotoFillPage />} />
+        <Route path="/documents/:documentId/fill/voice" element={<VoiceFillPage />} />
+        <Route path="/documents/:documentId/fill/text" element={<TextFillPage />} />
         <Route path="/documents/:documentId/review" element={<ReviewPage />} />
         <Route path="/documents/:documentId/export" element={<ExportPage />} />
         <Route path="/documents/:documentId/sent" element={<SentPage />} />

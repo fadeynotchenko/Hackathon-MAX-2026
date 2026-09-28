@@ -91,6 +91,29 @@ describe('ApiClient', () => {
     expect(refreshCalls).toBe(1);
   });
 
+  it('sends a fill message as json', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { filled: [] }));
+    const client = new ApiClient({ baseUrl: '', fetchFn });
+    await client.fillFromMessage(7, 'Счёт на 120 000 ₽');
+    const [url, init] = fetchFn.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/v1/documents/7/agent/fill');
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
+    expect(init.body).toBe(JSON.stringify({ message: 'Счёт на 120 000 ₽' }));
+  });
+
+  it('sends a voice recording as the raw body with its type', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { transcript: 'ok' }));
+    const client = new ApiClient({ baseUrl: '', fetchFn });
+    const audio = new Blob(['OggS'], { type: 'audio/ogg;codecs=opus' });
+    await client.voiceIntoDocument(7, audio);
+    const [url, init] = fetchFn.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/v1/documents/7/agent/voice');
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('audio/ogg;codecs=opus');
+    expect(init.body).toBe(audio);
+  });
+
   it('wraps non-json errors', async () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response('bad gateway', { status: 502 }));
     const client = new ApiClient({ baseUrl: '', fetchFn });

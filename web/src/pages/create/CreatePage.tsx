@@ -1,8 +1,8 @@
 // Вкладка «Создать»: каталог шаблонов — единственная точка выбора бланка
-// (в макете каталог жил и здесь, и в профиле). Когда у пользователя есть свои
-// шаблоны, каталог делится по видам документа: свой КП стоит рядом со
-// стандартным, как «Шаблоны КП» в макете. Отсюда же создаётся новый свой
-// шаблон. Второй вход — чат с ботом.
+// (в макете каталог жил и здесь, и в профиле). Первым — «Свой шаблон»: новый
+// бланк из файла или текста, чтобы это действие не терялось под сеткой. Ниже —
+// две подписанные сетки: «Мои шаблоны» (если есть) над «Стандартными». Поиск
+// стоит над сетками и ищет по обеим. Второй вход — чат с ботом, в самом низу.
 import { CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -40,9 +40,6 @@ export function CreatePage() {
       query,
     ),
   );
-  // Заголовок «Шаблоны» над единственной сеткой ничего не различает — разделы
-  // подписаны, только когда каталог делится по видам.
-  const grouped = all.some((template) => !template.is_builtin);
 
   const open = (template: Template) => {
     haptic('light');
@@ -55,18 +52,6 @@ export function CreatePage() {
 
   return (
     <Page title="Новый документ" tabs>
-      {templates.loading ? <Loading /> : null}
-      {templates.error ? <ErrorState message={templates.error} onRetry={templates.reload} /> : null}
-      {needsSearch(all.length) ? (
-        <SearchField value={query} onChange={setQuery} hint="Счёт, договор, КП" />
-      ) : null}
-      {all.length > 0 && visible.length === 0 ? <EmptyState title="Ничего не нашлось" /> : null}
-      {catalogSections(visible).map(([title, list]) => (
-        <Section key={title} title={grouped ? title : undefined}>
-          <TemplateGrid templates={list} onOpen={open} />
-        </Section>
-      ))}
-
       <CellList mode="island" filled header={<CellHeader>Свой шаблон</CellHeader>}>
         <CellSimple
           title="Из файла"
@@ -90,6 +75,20 @@ export function CreatePage() {
           onClick={() => navigate('/templates/new')}
         />
       </CellList>
+
+      {needsSearch(all.length) ? (
+        <SearchField value={query} onChange={setQuery} hint="Счёт, договор, КП" />
+      ) : null}
+      {templates.loading ? <Loading /> : null}
+      {templates.error ? <ErrorState message={templates.error} onRetry={templates.reload} /> : null}
+      {all.length > 0 && visible.length === 0 ? <EmptyState title="Ничего не нашлось" /> : null}
+      {/* Заголовок и у единственной сетки: «Стандартные» под «Своим шаблоном»
+          говорит, что это общие бланки, а свой делается выше. */}
+      {catalogSections(visible).map(([title, list]) => (
+        <Section key={title} title={title}>
+          <TemplateGrid templates={list} onOpen={open} />
+        </Section>
+      ))}
 
       <CellList mode="island" filled>
         <CellSimple
@@ -115,6 +114,7 @@ export function CreatePage() {
   );
 }
 
+// Метки «свой / стандартный» на карточке нет: это говорит заголовок раздела.
 function TemplateGrid({
   templates,
   onOpen,
@@ -133,13 +133,6 @@ function TemplateGrid({
         >
           <DocPreview text={template.preview} marks={false} mini />
           <Typography.Text variant="detail-strong">{template.title}</Typography.Text>
-          {/* Метка только у своего шаблона: «Стандартный» под каждой карточкой
-              ничего не различало. */}
-          {template.is_builtin ? null : (
-            <Typography.Text variant="description" color="tertiary">
-              Ваш шаблон
-            </Typography.Text>
-          )}
         </button>
       ))}
     </div>

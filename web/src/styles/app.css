@@ -2,7 +2,8 @@
    Цвета, шрифты, радиусы и отступы — только токены MAX UI: --background-*,
    --text-*, --icon-*, --divider-*, --font-*, --spacing-*, --size-border-radius-*.
    Своих значений цвета здесь нет: светлую и тёмную тему, iOS и Android
-   переключает провайдер <MaxUI>. */
+   переключает провайдер <MaxUI>. Правила по умолчанию — телефон; широкий
+   экран (браузер, десктопный клиент) — блок «Широкий экран» с min-width. */
 
 * {
   box-sizing: border-box;
@@ -972,4 +973,360 @@ input[type='search']::-webkit-search-cancel-button {
 /* Число в строке списка (сколько клиентов) — с отступом от шеврона. */
 .cell-count {
   margin-inline-end: var(--spacing-size-s);
+}
+
+/* Широкий экран: окно десктопного клиента MAX (от 600px), браузер на
+   компьютере (от 1024px) и монитор Full HD (от 1600px). Всё выше — раскладка
+   телефона, она остаётся по умолчанию; здесь только min-width, и до 600px не
+   меняется ни пиксель.
+   Экран — колонка по центру (--column): шапка, содержимое и кнопка внизу
+   выровнены по одному краю, а фон страницы и таб-бар идут во всю ширину. */
+@media (min-width: 600px) {
+  .screen {
+    --column: 720px;
+  }
+
+  .screen__header,
+  .screen__body,
+  .screen__footer {
+    width: 100%;
+    max-width: var(--column);
+    margin-inline: auto;
+  }
+
+  /* Пункты таб-бара — группой по центру: растянутые на всё окно, они
+     разбегались к краям экрана. */
+  .tabbar {
+    grid-template-columns: repeat(3, minmax(0, 160px));
+    justify-content: center;
+  }
+
+  /* Каталог: сколько карточек по 200px влезает — три в окне клиента,
+     четыре-пять в браузере. auto-fill, а не auto-fit: единственный свой шаблон
+     остаётся карточкой, а не полосой во всю ширину. */
+  .templates {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  /* Лист — не шире 720px и по центру: во всю колонку A4 вырос бы выше двух
+     экранов. width обязателен: у контейнера (container-type) нет своей
+     ширины, и без неё лист по центру схлопнулся бы в ноль. */
+  .sheet:not(.sheet--mini) {
+    width: 100%;
+    max-width: 720px;
+    margin-inline: auto;
+  }
+
+  /* Кегль — как на бумаге: 12 pt на 210 мм — это 2 % ширины листа, но не
+     мельче телефонных 12px. У миниатюры свой кегль, он сильнее по каскаду. */
+  .sheet__page {
+    --sheet-font: max(12px, 2cqw);
+  }
+
+  /* Фильтры и выбор типа поля переносятся по строкам: мышью строку со
+     скрытой полосой прокрутки не пролистать. */
+  .chips {
+    flex-wrap: wrap;
+  }
+}
+
+@media (min-width: 900px) {
+  /* Форма: однострочные поля FieldInput встают по два в ряд, всё остальное
+     (адрес, длинный текст, кнопки, переключатели) — во всю строку, как на
+     телефоне. Порядок — как в разметке, без dense: Tab идёт так, как
+     читается. Обёртка вокруг поля (data-field на экране заполнения) —
+     тоже половина строки. */
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .fields > * {
+    grid-column: 1 / -1;
+  }
+
+  .fields > .field--single,
+  .fields > :has(> .field--single) {
+    grid-column: auto;
+  }
+
+  .fields > .link-button {
+    justify-self: start;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  /* --side — правая колонка экрана с листом (ниже). */
+  .screen {
+    --column: 960px;
+    --side: 360px;
+  }
+
+  /* Кнопки внизу — в ряд справа, главная крайняя (row-reverse: в разметке
+     она первая), как в формах на компьютере: кнопка во всю колонку была бы
+     почти в метр шириной. Ширина — как у карточек правой колонки, и на всех
+     шагах кнопка стоит на одном месте; втроём, если не влезают, сжимаются.
+     Только когда в футере одни кнопки. */
+  .screen__footer:not(:has(> :not(button))) {
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+  }
+
+  .screen__footer:not(:has(> :not(button))) > button {
+    flex: 0 1 calc(var(--side) - 2 * var(--spacing-size-xl));
+    width: auto;
+  }
+
+  /* Экран итога: сообщение и кнопки — одной группой посередине окна. Кнопки
+     у нижнего края, как на телефоне, оказались бы в полуметре от сообщения. */
+  .screen:has(.result) {
+    justify-content: center;
+  }
+
+  .screen:has(.result) .screen__body {
+    flex: none;
+  }
+
+  .screen:has(.result) .screen__footer {
+    justify-content: center;
+  }
+
+  /* Экран с листом (карточка документа, проверка, шаблон): лист слева,
+     состояние, действия и история — колонкой справа, как в просмотрщике
+     документов. Лист — секция, где он единственный ребёнок: в редакторах
+     шаблона над листом заголовок, и там раскладка обычная. Колонка справа —
+     только когда в ней есть что показать (у проверки шаги не в счёт): иначе
+     лист по центру, а не прижат влево к пустой колонке. Строки сетки заданы
+     заранее, последняя — 1fr: лист тянется через все, лишняя высота уходит в
+     последнюю, и карточки справа не разъезжаются. Шаги — над обеими. */
+  .screen__body:has(> .section > .sheet:only-child):not(:has(> .steps)):has(> :nth-child(2)),
+  .screen__body:has(> .section > .sheet:only-child):has(> .steps):has(> :nth-child(3)) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--side);
+    grid-template-rows: repeat(6, auto) 1fr;
+    column-gap: var(--spacing-size-xl);
+    align-content: start;
+  }
+
+  /* Места в сетке. Работают, только когда тело экрана — сетка (выше): у
+     flex-колонки grid-column и grid-row ничего не значат. */
+  .screen__body > * {
+    grid-column: 2;
+  }
+
+  .screen__body > .steps {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .screen__body > .section:has(> .sheet:only-child) {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  .screen__body:has(> .steps) > .section:has(> .sheet:only-child) {
+    grid-row: 2 / -1;
+  }
+
+  /* Метрики: разделы с графиками — по два в ряд, плитки сверху во всю ширину.
+     Зазор между колонками дают отступы самих разделов. */
+  .dashboard {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 0;
+    align-items: start;
+  }
+
+  .dashboard > .stat-grid {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Монитор Full HD: колонка шире — пять карточек каталога в ряд, лист рядом с
+   карточками справа — почти в натуральную величину. */
+@media (min-width: 1600px) {
+  .screen {
+    --column: 1120px;
+  }
+}
+
+/* Мышь: отклик на наведение там, где его не дают компоненты MAX UI. Оттенок —
+   тот же токен и тот же приём (градиент поверх фона), что у ячеек MAX UI. */
+@media (hover: hover) and (pointer: fine) {
+  .template-card:hover {
+    background-image: linear-gradient(
+      var(--states-background-hovered-transparent),
+      var(--states-background-hovered-transparent)
+    );
+  }
+
+  .tabbar__item:not(.active):hover {
+    color: var(--states-icon-tertiary-hover);
+  }
+
+  .segmented__option:not(.segmented__option--active):hover {
+    box-shadow: inset 0 0 0 1px var(--divider-primary);
+  }
+}
+
+/* Способы заполнения: три плитки над формой (с фото, голосом, текстом) — одним
+   рядом и на телефоне, и на широком экране, — и экраны самих способов. Плитка —
+   кнопка на фоне карточки формы; нажатие и наведение — тот же приём, что у
+   ячеек MAX UI (оттенок градиентом поверх фона). */
+.fill-methods {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-size-m);
+}
+
+.fill-method {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-size-s);
+  min-width: 0;
+  min-height: 88px;
+  padding: var(--spacing-size-xl) var(--spacing-size-s);
+  border: 0;
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--background-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-detail);
+  line-height: var(--line-height-detail);
+  font-weight: var(--font-weight-detail-strong);
+  text-align: center;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fill-method__icon {
+  flex: none;
+  color: var(--icon-themed);
+}
+
+.fill-method:active:not(:disabled) {
+  background-image: linear-gradient(
+    var(--states-background-pressed-transparent),
+    var(--states-background-pressed-transparent)
+  );
+}
+
+.fill-method:focus-visible {
+  outline: 2px solid var(--controls-active);
+  outline-offset: 2px;
+}
+
+.fill-method:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.fill-method:disabled .fill-method__icon {
+  color: var(--icon-tertiary);
+}
+
+/* Тестовые данные (только у администратора): серая кнопка с приглушённой
+   подписью — служебная, не спорит с плитками и главной кнопкой экрана. */
+.fill-test {
+  color: var(--text-secondary);
+}
+
+/* Запись голоса: круглая кнопка в карточке, под ней время и подсказка. Во время
+   записи кнопка — «Стоп» цвета ошибки с расходящимся кольцом; без кольца, если
+   в системе просили поменьше анимации. */
+.recorder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-size-l);
+  padding: var(--spacing-size4xl) var(--spacing-size2xl);
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--background-primary);
+  text-align: center;
+}
+
+.recorder__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+  border: 0;
+  border-radius: var(--border-radius-circle);
+  background: var(--button-primary);
+  color: var(--text-primary-inverse-static);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 0.1s ease,
+    background-color 0.15s ease;
+}
+
+.recorder__button:active:not(:disabled) {
+  background: var(--states-button-primary-pressed);
+  transform: scale(0.96);
+}
+
+.recorder__button:focus-visible {
+  outline: 2px solid var(--controls-active);
+  outline-offset: 3px;
+}
+
+.recorder__button:disabled {
+  background: var(--states-button-primary-disabled);
+  cursor: default;
+}
+
+.recorder__button--on {
+  background: var(--button-negative);
+  animation: recorder-pulse 1.6s ease-out infinite;
+}
+
+.recorder__button--on:active:not(:disabled) {
+  background: var(--states-button-negative-pressed);
+}
+
+@keyframes recorder-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--icon-negative) 40%, transparent);
+  }
+
+  to {
+    box-shadow: 0 0 0 20px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recorder__button--on {
+    animation: none;
+  }
+}
+
+.recorder__time {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .fill-method:not(:disabled):not(:active):hover {
+    background-image: linear-gradient(
+      var(--states-background-hovered-transparent),
+      var(--states-background-hovered-transparent)
+    );
+  }
+
+  .recorder__button:not(:disabled, :active, .recorder__button--on):hover {
+    background: var(--states-button-primary-hover);
+  }
+
+  .recorder__button--on:not(:disabled, :active):hover {
+    background: var(--states-button-negative-hover);
+  }
 }

@@ -103,6 +103,32 @@ export function IconCamera(props: IconProps) {
   );
 }
 
+export function IconMic(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6" />
+    </Icon>
+  );
+}
+
+// Квадрат «Стоп» на кнопке записи.
+export function IconStop(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor" />
+    </Icon>
+  );
+}
+
+export function IconText(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 6h16M4 10.5h16M4 15h11M4 19.5h7" />
+    </Icon>
+  );
+}
+
 export function IconChat(props: IconProps) {
   return (
     <Icon {...props}>

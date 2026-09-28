@@ -35,6 +35,7 @@ export type Counterparty = components['schemas']['CounterpartySchema'];
 export type CounterpartyRequest = components['schemas']['CounterpartyRequest'];
 export type RecognizedRequisites = components['schemas']['RecognizedRequisitesSchema'];
 export type AgentFillResponse = components['schemas']['AgentFillResponse'];
+export type VoiceFillResponse = components['schemas']['VoiceFillResponse'];
 export type SendDocumentResponse = components['schemas']['SendDocumentResponse'];
 export type FileFormat = 'pdf' | 'docx';
 
@@ -268,12 +269,28 @@ export class ApiClient {
     });
   }
 
+  // Три способа заполнить поля, как в чате с ботом: текст, фото или скан, голосовое.
+  fillFromMessage(documentId: number, message: string): Promise<AgentFillResponse> {
+    return this.request<AgentFillResponse>(`/api/v1/documents/${documentId}/agent/fill`, {
+      method: 'POST',
+      body: { message },
+    });
+  }
+
   recognizeIntoDocument(documentId: number, file: Blob, hint?: string): Promise<AgentFillResponse> {
     const query = hint ? `?hint=${encodeURIComponent(hint)}` : '';
     return this.request<AgentFillResponse>(
       `/api/v1/documents/${documentId}/agent/recognize${query}`,
       { method: 'POST', file },
     );
+  }
+
+  // Запись уходит как есть: формат (OGG, WEBM, M4A…) сервер определяет по содержимому.
+  voiceIntoDocument(documentId: number, audio: Blob): Promise<VoiceFillResponse> {
+    return this.request<VoiceFillResponse>(`/api/v1/documents/${documentId}/agent/voice`, {
+      method: 'POST',
+      file: audio,
+    });
   }
 
   coverLetter(documentId: number): Promise<{ text: string }> {

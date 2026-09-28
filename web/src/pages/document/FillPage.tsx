@@ -4,15 +4,20 @@
 // исправление идёт здесь же, без отдельных экранов «ошибка» и «исправлено».
 // Пустые необязательные поля свёрнуты в «Ещё N полей»: на экране сначала то,
 // без чего документ не собрать.
+//
+// Сверху — три способа заполнить форму за человека, как в чате с ботом: с фото,
+// голосом, текстом. У каждого свой экран (fillMethods.ts); несохранённые правки
+// уходят на сервер до перехода, а по возвращении форма перечитывает документ и
+// показывает плашку, оставленную экраном способа. Администратору под ними видна
+// кнопка тестовых данных: на время испытаний форму не набирают руками.
 import { Button, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import type { DocumentView } from '@/api/client';
 import { Banner } from '@/components/Banner';
 import { FieldInput } from '@/components/FieldInput';
-import { FilePick } from '@/components/FilePick';
-import { IconCamera, IconPlus } from '@/components/icons';
+import { IconCamera, IconMic, IconPlus, IconText } from '@/components/icons';
 import { Page, Section } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { Steps } from '@/components/Steps';
@@ -31,8 +36,20 @@ import {
   sourceOf,
   type Draft,
 } from './fields';
+import {
+  dropNotice,
+  fillMethodPath,
+  peekNotice,
+  type FillMethod,
+  type FillNotice,
+} from './fillMethods';
+import { mockValues } from './mock';
 
-type Notice = { tone: 'success' | 'error' | 'info'; title: string; text?: string } | null;
+const FILL_METHODS: Array<{ method: FillMethod; label: string; Icon: typeof IconCamera }> = [
+  { method: 'photo', label: 'С фото', Icon: IconCamera },
+  { method: 'voice', label: 'Голосом', Icon: IconMic },
+  { method: 'text', label: 'Текстом', Icon: IconText },
+];
 
 function filledKeys(draft: Draft): string[] {
   return Object.keys(draft).filter((key) => draft[key]?.trim());
@@ -55,15 +72,18 @@ export function FillPage() {
 }
 
 function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void }) {
-  const { api } = useAuth();
+  const { api, user } = useAuth();
   const navigate = useNavigate();
   const [doc, setDoc] = useState(loaded);
   const [draft, setDraft] = useState<Draft>(() => draftFromDocument(loaded));
   const [initial, setInitial] = useState<Draft>(() => draftFromDocument(loaded));
   const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [recognizing, setRecognizing] = useState(false);
-  const [notice, setNotice] = useState<Notice>(null);
+  // Сохраняем правки перед переходом к способу заполнения.
+  const [leaving, setLeaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  // Плашка, оставленная экраном способа заполнения, показывается один раз.
+  const [notice, setNotice] = useState<FillNotice | null>(() => peekNotice(loaded.id));
   const [sellerOpen, setSellerOpen] = useState(false);
   // Необязательное поле, раз показанное (есть значение или раскрыли группу),
   // не прячется обратно, даже если его стереть.
@@ -71,6 +91,10 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
     () => new Set(filledKeys(draftFromDocument(loaded))),
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    dropNotice(loaded.id);
+  }, [loaded.id]);
 
   // Отклонённое значение становится «исходным»: любая его правка, даже
   // стирание, уйдёт на повторную проверку, а без правки ошибка останется.
@@ -82,7 +106,7 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
     setRevealed((prev) => new Set([...prev, ...filledKeys(merged)]));
   };
 
-  // Несохранённые правки уходят на сервер до распознавания и перед проверкой.
+  // Несохранённые правки уходят на сервер до перехода к способу заполнения и перед проверкой.
   const save = async (): Promise<DocumentView> => {
     const changed = changedValues(draft, initial);
     if (Object.keys(changed).length === 0) return doc;
@@ -118,29 +142,54 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
     }
   };
 
-  const recognize = async (file: File) => {
-    setRecognizing(true);
+  // Отклонённую правку сервер не хранит: уйди форма к способу заполнения, она
+  // пропала бы молча. Поэтому с ошибкой в только что изменённом поле форма
+  // остаётся на месте, как при проверке.
+  const openMethod = async (method: FillMethod) => {
+    setLeaving(true);
     setNotice(null);
+    const changed = changedValues(draft, initial);
     try {
-      await save();
-      const result = await api.recognizeIntoDocument(doc.id, file);
-      apply(result.document, draftFromDocument(result.document));
-      const filled = result.filled.length;
-      setNotice(
-        filled > 0
-          ? {
-              tone: 'success',
-              title: `Заполнено ${filled} ${pluralize(filled, 'поле', 'поля', 'полей')} — сверьте с фото`,
-            }
-          : { tone: 'info', title: 'На файле нет данных для документа', text: result.reply },
-      );
+      const next = await save();
+      const lost = new Set(next.errors.filter((e) => e.key in changed).map((e) => e.key)).size;
+      if (lost > 0) {
+        hapticResult('error');
+        setNotice({
+          tone: 'error',
+          title: `Исправьте ${lost} ${pluralize(lost, 'поле', 'поля', 'полей')}`,
+        });
+        setLeaving(false);
+        return;
+      }
+      void navigate(fillMethodPath(doc.id, method));
     } catch (err) {
-      setNotice({ tone: 'error', title: errorText(err, 'Не удалось распознать файл') });
-    } finally {
-      setRecognizing(false);
+      setNotice({ tone: 'error', title: errorText(err, 'Не удалось сохранить') });
+      setLeaving(false);
     }
   };
 
+  // Тестовые данные заменяют все поля, поэтому раскрывается вся форма: видно,
+  // что подставилось, в том числе в свёрнутых группах и реквизитах продавца.
+  const fillWithMock = async () => {
+    setTesting(true);
+    setNotice(null);
+    try {
+      const values = mockValues(doc.template.fields);
+      const next = await api.setFields(doc.id, values);
+      apply(next, { ...draft, ...values });
+      setRevealed(new Set(next.template.fields.map((field) => field.key)));
+      setExpanded(new Set(next.template.fields.map((field) => field.group)));
+      setSellerOpen(true);
+      hapticResult('success');
+      setNotice({ tone: 'success', title: 'Тестовые данные подставлены' });
+    } catch (err) {
+      setNotice({ tone: 'error', title: errorText(err, 'Не удалось подставить данные') });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const busy = saving || leaving || testing;
   const errors = fieldErrors(doc, checked);
   const groups = groupFields(doc.template.fields);
   const sellerFields = doc.template.fields.filter((field) => field.group === 'Продавец');
@@ -168,14 +217,35 @@ function FillForm({ loaded, onBack }: { loaded: DocumentView; onBack: () => void
         </div>
       ) : null}
 
-      <CellList mode="island" filled>
-        <FilePick
-          icon={<IconCamera />}
-          busy={recognizing}
-          title="Заполнить с фото"
-          onPick={(file) => void recognize(file)}
-        />
-      </CellList>
+      <Section title="Заполнить с помощником">
+        <div className="fill-methods">
+          {FILL_METHODS.map(({ method, label, Icon }) => (
+            <button
+              key={method}
+              type="button"
+              className="fill-method"
+              disabled={busy}
+              onClick={() => void openMethod(method)}
+            >
+              <Icon className="fill-method__icon" size={28} />
+              <span className="fill-method__label">{label}</span>
+            </button>
+          ))}
+        </div>
+        {user?.is_admin ? (
+          <Button
+            className="fill-test"
+            variant="secondary"
+            size="medium"
+            stretched
+            loading={testing}
+            disabled={busy && !testing}
+            onClick={() => void fillWithMock()}
+          >
+            Тест — мок данных
+          </Button>
+        ) : null}
+      </Section>
 
       {groups.map(([group, fields]) => {
         const title = GROUP_TITLE[group] ?? group;
