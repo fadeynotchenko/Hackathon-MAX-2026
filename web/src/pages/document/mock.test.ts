@@ -388,8 +388,9 @@ describe('mockValues — тестовые данные для админа', () 
   });
 
   it('keeps VAT consistent with the total and amounts round', () => {
+    const grouped = (rubles: number) => String(rubles).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
     const format = (kopecks: number) =>
-      `${String(Math.floor(kopecks / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')},${String(kopecks % 100).padStart(2, '0')}`;
+      `${grouped(Math.floor(kopecks / 100))},${String(kopecks % 100).padStart(2, '0')}`;
     for (const seed of SEEDS) {
       const values = generate(INVOICE, seed);
       const total = Number((values['total'] ?? '').replace(/\s/g, ''));
@@ -419,7 +420,8 @@ describe('mockValues — тестовые данные для админа', () 
 
   it('works with the real clock and Math.random', () => {
     const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const pad = (value: number) => String(value).padStart(2, '0');
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     const values = mockValues(CONTRACT);
     expect(serverErrors(CONTRACT, values)).toEqual([]);
     expect(values['date']).toBe(today);
