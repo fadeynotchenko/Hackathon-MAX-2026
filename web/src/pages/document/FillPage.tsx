@@ -18,12 +18,13 @@
 // Действия формы (проверка, переход, тестовые данные) идут по одному: пока одно
 // ждёт сервер, остальные кнопки выключены, а ушла форма «Назад» — ответ уже
 // никуда её не ведёт.
-import { Button, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
+import { Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import type { DocumentView, Organization } from '@/api/client';
 import { Banner } from '@/components/Banner';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { FieldInput } from '@/components/FieldInput';
 import {
   IconBuilding,
@@ -120,6 +121,8 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
   // Сохраняем правки перед переходом к способу заполнения или выбору стороны.
   const [leaving, setLeaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  // Сколько полей пусто — пока открыт вопрос «оставить пустыми?».
+  const [emptyAsk, setEmptyAsk] = useState<number | null>(null);
   // Плашка, оставленная экраном способа или выбора стороны, показывается один раз.
   const [notice, setNotice] = useState<FillNotice | null>(() => peekNotice(loaded.id));
   const [sellerOpen, setSellerOpen] = useState(false);
@@ -173,9 +176,9 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
       const next = await save();
       if (!mounted.current) return;
       setChecked(true);
-      if (next.errors.length > 0 || next.missing.length > 0) {
+      if (next.errors.length > 0) {
         hapticResult('error');
-        const count = new Set([...next.errors.map((e) => e.key), ...next.missing]).size;
+        const count = new Set(next.errors.map((e) => e.key)).size;
         setNotice({
           tone: 'error',
           title: `Исправьте ${count} ${pluralize(count, 'поле', 'поля', 'полей')}`,
@@ -184,6 +187,13 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
           setSellerOpen(true);
         }
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      // Пустые поля не ошибка: их оставляют, чтобы вписать от руки. Но
+      // спросить стоит — чаще поле просто пропустили.
+      if (next.missing.length > 0) {
+        hapticResult('warning');
+        setEmptyAsk(next.missing.length);
         return;
       }
       void navigate(`/documents/${doc.id}/review`);
@@ -251,7 +261,7 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
       setExpanded(new Set(next.template.fields.map((field) => field.group)));
       setSellerOpen(true);
       hapticResult('success');
-      setNotice({ tone: 'success', title: 'Тестовые данные подставлены' });
+      setNotice({ tone: 'success', title: 'Демо-данные подставлены' });
     } catch (err) {
       setNotice({ tone: 'error', title: errorText(err, 'Не удалось подставить данные') });
     } finally {
@@ -369,17 +379,22 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
           ))}
         </div>
         {user?.is_admin ? (
-          <Button
-            className="fill-test"
-            variant="secondary"
-            size="medium"
-            stretched
-            loading={testing}
-            disabled={busy && !testing}
-            onClick={() => void fillWithMock()}
-          >
-            Тест — мок данных
-          </Button>
+          <div className="fill-test">
+            <Button
+              variant="secondary"
+              size="medium"
+              stretched
+              loading={testing}
+              disabled={busy && !testing}
+              onClick={() => void fillWithMock()}
+            >
+              Заполнить демо-данными
+            </Button>
+            <Typography.Text variant="description" color="secondary">
+              Только на время демонстрации: вымышленные реквизиты, которые проходят все проверки. В
+              рабочей версии этой кнопки не будет.
+            </Typography.Text>
+          </div>
         ) : null}
       </Section>
 
@@ -447,6 +462,21 @@ function FillForm({ loaded, organizations, onBack }: FillFormProps) {
           </Section>
         );
       })}
+
+      {emptyAsk !== null ? (
+        <ConfirmDialog
+          title={`Оставить ${pluralize(emptyAsk, 'пустым', 'пустыми', 'пустыми')} ${emptyAsk} ${pluralize(emptyAsk, 'поле', 'поля', 'полей')}?`}
+          confirmLabel="Да, оставить пустыми"
+          cancelLabel="Заполнить"
+          onConfirm={() => {
+            setEmptyAsk(null);
+            void navigate(`/documents/${doc.id}/review`);
+          }}
+          onCancel={() => setEmptyAsk(null)}
+        >
+          В файле на их месте будут линии — впишете от руки.
+        </ConfirmDialog>
+      ) : null}
     </Page>
   );
 }

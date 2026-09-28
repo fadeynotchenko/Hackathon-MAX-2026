@@ -99,25 +99,14 @@ export function AuthProvider({ children, api: injectedApi }: AuthProviderProps) 
     };
   }, [api, status]);
 
-  const logout = useCallback(async () => {
-    try {
-      await api.logout();
-    } finally {
-      api.setAccessToken(null);
-      setUser(null);
-      setError(null);
-      setStatus('signed_out');
-    }
-  }, [api]);
-
   const retry = useCallback(() => {
     setError(null);
     setStatus('loading');
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ status, mode, user, error, api, logout, retry }),
-    [status, mode, user, error, api, logout, retry],
+    () => ({ status, mode, user, error, api, retry }),
+    [status, mode, user, error, api, retry],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

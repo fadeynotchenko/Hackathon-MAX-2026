@@ -1,6 +1,6 @@
 // Вкладка «Профиль»: кто вошёл, свои организации и клиенты —
 // всё, что подставляется в документы. Каталог шаблонов — во вкладке «Создать».
-import { Avatar, Button, CellList, CellSimple, Typography } from '@maxhub/max-ui';
+import { Avatar, CellList, CellSimple, Typography } from '@maxhub/max-ui';
 import { useNavigate } from 'react-router-dom';
 
 import { IconBuilding, IconChart, IconUsers } from '@/components/icons';
@@ -10,7 +10,7 @@ import { initials } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 
 export function ProfilePage() {
-  const { api, user, logout } = useAuth();
+  const { api, user } = useAuth();
   const navigate = useNavigate();
   const state = useAsync(() => Promise.all([api.organizations(), api.counterparties()]), [api]);
   if (!user) return null;
@@ -84,12 +84,6 @@ export function ProfilePage() {
           />
         </CellList>
       ) : null}
-
-      <div className="section">
-        <Button variant="ghost" size="medium" stretched onClick={() => void logout()}>
-          Выйти
-        </Button>
-      </div>
     </Page>
   );
 }

@@ -15,7 +15,7 @@ describe('main keyboard', () => {
       web_app: 't409_hakaton_max_bot',
       payload: 'create',
     });
-    expect(rows[1]?.[0]).toMatchObject({ type: 'open_app', text: '🗂 Архив', payload: 'archive' });
+    expect(rows[1]?.[0]).toMatchObject({ type: 'open_app', text: '📄 Мои документы', payload: 'archive' });
     expect(rows[1]?.[1]).toMatchObject({ type: 'callback', payload: 'help' });
   });
 

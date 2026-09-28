@@ -80,6 +80,12 @@ class DocumentView:
     created_at: datetime
     updated_at: datetime
 
+    @property
+    def renderable(self) -> bool:
+        """Файл можно собрать и отправить: пустые поля не мешают, ошибки и
+        непроверенные значения — мешают (core.domain.documents.ValidatedFields)."""
+        return not self.errors and not self.unconfirmed
+
 
 @dataclass(frozen=True)
 class DocumentSummary:

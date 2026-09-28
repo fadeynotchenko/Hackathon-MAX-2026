@@ -185,9 +185,11 @@ function ogrnValid(value: string): boolean {
   return false;
 }
 
-function accountKeyValid(account: string, bic: string): boolean {
+// Копия core.domain.documents.account_key_valid: корреспондентский счёт
+// ключуется «0» и цифрами 5–6 БИК, расчётный — тремя последними.
+function accountKeyValid(account: string, bic: string, correspondent = false): boolean {
   if (account.length !== 20 || bic.length !== 9) return false;
-  const prefix = account.startsWith('0') ? `0${bic.slice(4, 6)}` : bic.slice(6, 9);
+  const prefix = correspondent || account.startsWith('0') ? `0${bic.slice(4, 6)}` : bic.slice(6, 9);
   const weights = [7, 1, 3];
   const sum = [...(prefix + account)].reduce(
     (total, digit, index) => total + Number(digit) * (weights[index % 3] ?? 0),
@@ -196,7 +198,12 @@ function accountKeyValid(account: string, bic: string): boolean {
   return sum % 10 === 0;
 }
 
-const sideOf = (key: string) => (key.includes('_') ? key.slice(0, key.lastIndexOf('_')) : '');
+// Копия core.domain.documents._side.
+const BANK_SUFFIX = /_?(?:corr_account|account|bic)$/;
+const sideOf = (key: string) => {
+  if (BANK_SUFFIX.test(key)) return key.replace(BANK_SUFFIX, '');
+  return key.includes('_') ? key.slice(0, key.lastIndexOf('_')) : '';
+};
 
 function bicFor(accountKey: string, bicKeys: string[]): string | undefined {
   const same = bicKeys.filter((key) => sideOf(key) === sideOf(accountKey));
@@ -278,7 +285,8 @@ function serverErrors(fields: FieldSpec[], values: Record<string, string>): stri
     const bicKey = bicFor(field.key, bicKeys);
     if (bicKey === undefined) continue;
     const account = digitsOf(values[field.key] ?? '');
-    if (!accountKeyValid(account, digitsOf(values[bicKey] ?? ''))) {
+    const correspondent = field.key.endsWith('corr_account');
+    if (!accountKeyValid(account, digitsOf(values[bicKey] ?? ''), correspondent)) {
       errors.push(`${field.key}: счёт не сходится с ${bicKey}`);
     }
   }
@@ -351,6 +359,8 @@ describe('mockValues — тестовые данные для админа', () 
       spec('seller_account', 'Счёт продавца', 'account'),
       spec('client_account', 'Счёт клиента', 'account'),
       spec('client_bic', 'БИК клиента', 'bic'),
+      spec('seller_corr_account', 'Корр. счёт продавца', 'account'),
+      spec('client_corr_account', 'Корр. счёт клиента', 'account'),
     ];
     // Один БИК на шаблон: сервер сверяет с ним любой счёт, даже чужой стороны.
     const singleBic = [
@@ -363,6 +373,7 @@ describe('mockValues — тестовые данные для админа', () 
       expect(accountKeyValid(two['seller_account'] ?? '', two['seller_bic'] ?? '')).toBe(true);
       expect(accountKeyValid(two['client_account'] ?? '', two['client_bic'] ?? '')).toBe(true);
       expect(two['seller_account']).toMatch(/^40[78]02810\d{12}$/);
+      expect(serverErrors(twoSides, two)).toEqual([]);
       const single = generate(singleBic, seed);
       expect(accountKeyValid(single['account'] ?? '', single['bic'] ?? '')).toBe(true);
       expect(accountKeyValid(single['client_account'] ?? '', single['bic'] ?? '')).toBe(true);

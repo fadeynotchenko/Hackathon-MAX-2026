@@ -122,7 +122,8 @@ describe('document flow', () => {
     fireEvent.change(screen.getByLabelText(/ИНН клиента/), { target: { value: '123' } });
     fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
 
-    expect(await screen.findByText('Исправьте 2 поля')).toBeInTheDocument();
+    // Ошибка держит на форме, пустое поле — только подсвечено.
+    expect(await screen.findByText('Исправьте 1 поле')).toBeInTheDocument();
     expect(screen.getByText('ИНН не проходит проверку')).toBeInTheDocument();
     expect(screen.getByText('Заполните поле')).toBeInTheDocument();
     // Реквизиты продавца из профиля не уходят повторно и не становятся «вручную».
@@ -140,6 +141,29 @@ describe('document flow', () => {
       expect(screen.getByTestId('location')).toHaveTextContent('/documents/7/review'),
     );
     expect(setFields).toHaveBeenLastCalledWith(7, { client_inn: '', total: '180 000' });
+  });
+
+  it('asks before leaving required fields empty and lets them stay empty', async () => {
+    const api = mockApi();
+    vi.spyOn(api, 'document').mockResolvedValue(makeDocument());
+    vi.spyOn(api, 'setFields').mockResolvedValue(makeDocument());
+    renderForm(api);
+
+    fireEvent.change(await screen.findByLabelText(/Название клиента/), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Оставить пустыми 2 поля?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Заполнить' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/documents/7/fill');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Да, оставить пустыми' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/documents/7/review'),
+    );
   });
 
   it('does not label a rejected value with the source of the kept one', async () => {
@@ -188,7 +212,9 @@ describe('document flow', () => {
     for (const name of ['С фото', 'Голосом', 'Текстом']) {
       expect(await screen.findByRole('button', { name })).toBeEnabled();
     }
-    expect(screen.queryByRole('button', { name: 'Тест — мок данных' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Заполнить демо-данными' }),
+    ).not.toBeInTheDocument();
   });
 
   it('saves unsaved edits before opening a fill method', async () => {
@@ -311,9 +337,9 @@ describe('document flow', () => {
     );
     renderForm(api, { admin: true });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Тест — мок данных' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Заполнить демо-данными' }));
 
-    expect(await screen.findByText('Тестовые данные подставлены')).toBeInTheDocument();
+    expect(await screen.findByText('Демо-данные подставлены')).toBeInTheDocument();
     const sent = setFields.mock.calls[0]![1];
     expect(Object.keys(sent).sort()).toEqual(doc.template.fields.map((f) => f.key).sort());
     for (const value of Object.values(sent)) expect(value.trim()).not.toBe('');
@@ -335,7 +361,7 @@ describe('document flow', () => {
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: 'Текстом' }));
       fireEvent.click(screen.getByRole('button', { name: 'Проверить документ' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Тест — мок данных' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Заполнить демо-данными' }));
     });
 
     expect(setFields).toHaveBeenCalledTimes(1);
@@ -349,7 +375,7 @@ describe('document flow', () => {
     vi.spyOn(api, 'setFields').mockReturnValue(new Promise(() => {}));
     renderForm(api, { admin: true });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Тест — мок данных' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Заполнить демо-данными' }));
 
     expect(screen.getByRole('button', { name: 'Проверить документ' })).toBeDisabled();
   });

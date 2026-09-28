@@ -52,8 +52,9 @@ export function ReviewPage() {
 
   const fieldsByKey = new Map(doc.template.fields.map((field) => [field.key, field]));
   const pending = doc.unconfirmed.length > 0;
-  const blocked = doc.errors.length > 0 || doc.missing.length > 0;
-  const canExport = doc.ready && !pending && !blocked;
+  // Пустые поля отправку не держат (в файле останутся линии), ошибки — держат.
+  const blocked = doc.errors.length > 0;
+  const canExport = !pending && !blocked;
 
   const footer = pending ? (
     <>
@@ -66,7 +67,7 @@ export function ReviewPage() {
     </>
   ) : blocked ? (
     <Button size="large" stretched onClick={toFill}>
-      Заполнить недостающее
+      Исправить ошибки
     </Button>
   ) : (
     // Вернуться к данным — «Назад»: вторая кнопка здесь только спорила бы с «Далее».
@@ -84,19 +85,19 @@ export function ReviewPage() {
     <Page title={documentTitle(doc)} onBack={back} footer={footer}>
       <Steps current={2} />
 
-      {error || blocked ? (
+      {error || blocked || doc.missing.length > 0 ? (
         <div className="section">
           {error ? (
             <Banner tone="error" title={error} />
+          ) : blocked ? (
+            <Banner tone="warning" title="Есть поля с ошибками" />
           ) : (
             <Banner
-              tone="warning"
-              title={
-                doc.missing.length > 0
-                  ? `Не заполнено: ${labelsOf(doc, doc.missing).join(', ')}`
-                  : 'Есть поля с ошибками'
-              }
-            />
+              tone="info"
+              title={`Пустыми останутся: ${labelsOf(doc, doc.missing).join(', ')}`}
+            >
+              В файле на их месте будут линии — впишете от руки.
+            </Banner>
           )}
         </div>
       ) : null}

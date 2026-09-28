@@ -1,5 +1,5 @@
-// Тестовые данные для формы документа: кнопка «Тест — мок данных», которую
-// видит только админ, пока продукт в испытаниях. Значение получает каждое поле,
+// Тестовые данные для формы документа: кнопка «Заполнить демо-данными», которую
+// видит только админ на время демонстрации жюри. Значение получает каждое поле,
 // обязательное и нет; оно полурандомное, но проходит проверку сервера
 // (core.domain.documents): ИНН, ОГРН и ключ расчётного счёта вычисляются по
 // контрольным суммам, а не подбираются попытками, а счёт ключуется БИК той же
@@ -326,10 +326,13 @@ function weighted(value: string): number {
 }
 
 // Счёт = 8 цифр начала + ключ + 11 цифр. Сервер складывает по весам 7-1-3 три
-// последние цифры БИК и 20 цифр счёта; ключ стоит на месте веса 3, а 3 обратимо
-// по модулю 10 (3 × 7 = 21), поэтому ключ вычисляется одной формулой.
-function accountOf(head: string, tail: string, bic: string): string {
-  const partial = weighted(bic.slice(6, 9) + head + '0' + tail);
+// цифры БИК и 20 цифр счёта; ключ стоит на месте веса 3, а 3 обратимо по
+// модулю 10 (3 × 7 = 21), поэтому ключ вычисляется одной формулой. Расчётный
+// счёт ключуется последними тремя цифрами БИК, корреспондентский — «0» и
+// цифрами 5–6 (core.domain.documents.account_key_valid).
+function accountOf(head: string, tail: string, bic: string, correspondent = false): string {
+  const prefix = correspondent ? '0' + bic.slice(4, 6) : bic.slice(6, 9);
+  const partial = weighted(prefix + head + '0' + tail);
   const key = ((10 - (partial % 10)) * 7) % 10;
   return `${head}${key}${tail}`;
 }
@@ -339,9 +342,14 @@ function settlementHead(party: Party): string {
   return party.sole ? '40802810' : '40702810';
 }
 
-// Пару счёт — БИК сервер ищет по ключу: всё до последнего «_». Это не
-// организация: у транслита inn_zakazchika «сторона» для сервера — inn.
+// Сторона реквизита для пары счёт — БИК, как у сервера (core.domain.documents._side):
+// банковский хвост ключа (corr_account, account, bic) отрезается целиком, так
+// seller_corr_account и seller_bic — одна сторона; у прочих ключей — всё до
+// последнего «_». Это не организация: у транслита inn_zakazchika «сторона» — inn.
+const BANK_SUFFIX = /_?(?:corr_account|account|bic)$/;
+
 function sideOf(key: string): string {
+  if (BANK_SUFFIX.test(key)) return key.replace(BANK_SUFFIX, '');
   const at = key.lastIndexOf('_');
   return at === -1 ? '' : key.slice(0, at);
 }
@@ -679,7 +687,12 @@ function generator(fields: readonly FieldSpec[], random: Random, today: Date) {
     const own = sideParty(field);
     const bicField = bicFor(field, bics);
     const bic = bicField === undefined ? own.bank.bic : sideParty(bicField).bank.bic;
-    if (matches(field, CORR)) return accountOf('30101810', `00000000${bic.slice(6, 9)}`, bic);
+    // Корреспондентским сервер считает только поле *_corr_account; «корр. счёт»
+    // своего шаблона он ключует как расчётный, и мок — так же.
+    if (matches(field, CORR)) {
+      const correspondent = field.key.endsWith('corr_account');
+      return accountOf('30101810', `00000000${bic.slice(6, 9)}`, bic, correspondent);
+    }
     return accountOf(settlementHead(own), digits(random, 11), bic);
   };
 

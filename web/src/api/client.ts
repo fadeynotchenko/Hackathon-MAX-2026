@@ -177,10 +177,6 @@ export class ApiClient {
     });
   }
 
-  logout(): Promise<void> {
-    return this.request<void>('/api/v1/auth/logout', { method: 'POST', retryOn401: false });
-  }
-
   me(): Promise<UserProfile> {
     return this.request<UserProfile>('/api/v1/me');
   }

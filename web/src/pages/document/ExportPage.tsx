@@ -37,8 +37,9 @@ export function ExportPage() {
       </Page>
     );
   }
-  // Неготовый документ собрать нельзя (сервер ответит 409) — назад к проверке.
-  if (!doc.ready || doc.unconfirmed.length > 0) {
+  // С ошибкой или непроверенным значением документ не собрать (сервер ответит
+  // 409) — назад к проверке. Пустые поля сборку не держат.
+  if (doc.errors.length > 0 || doc.unconfirmed.length > 0) {
     return <Navigate to={`/documents/${doc.id}/review`} replace />;
   }
   return <ExportForm key={doc.id} doc={doc} onBack={back} />;

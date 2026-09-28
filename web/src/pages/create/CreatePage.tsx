@@ -9,35 +9,41 @@ import { useNavigate } from 'react-router-dom';
 
 import type { Template } from '@/api/client';
 import { IconEdit, IconPlus, IconUpload } from '@/components/icons';
+import { FilterChips } from '@/components/FilterChips';
 import { Page, Section } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
 import { DocPreview } from '@/components/DocPreview';
 import { useAuth } from '@/auth/context';
-import { kindStyle } from '@/lib/format';
+import { asKind, kindStyle } from '@/lib/format';
 import { matchesQuery, needsSearch } from '@/lib/search';
 import { useScreenState } from '@/lib/screenMemory';
 import { useAsync } from '@/lib/useAsync';
 import { haptic } from '@/max/webapp';
 
-import { catalogSections } from './catalog';
+import { OWN_TAG, catalogSections, catalogTags } from './catalog';
 
 export function CreatePage() {
   const { api } = useAuth();
   const navigate = useNavigate();
   const templates = useAsync(() => api.templates(), [api]);
   const [query, setQuery] = useScreenState('query', '');
+  // Тег: вид документа или «own» — свои шаблоны.
+  const [tag, setTag] = useScreenState<string | null>('tag', null);
   const all = templates.data ?? [];
-  const visible = all.filter((template) =>
-    matchesQuery(
-      [
-        template.title,
-        template.description,
-        kindStyle(template.kind).short,
-        kindStyle(template.kind).section,
-      ],
-      query,
-    ),
+  const tags = catalogTags(all);
+  const visible = all.filter(
+    (template) =>
+      (tag === null || (tag === OWN_TAG ? !template.is_builtin : asKind(template.kind) === tag)) &&
+      matchesQuery(
+        [
+          template.title,
+          template.description,
+          kindStyle(template.kind).short,
+          kindStyle(template.kind).section,
+        ],
+        query,
+      ),
   );
 
   const open = (template: Template) => {
@@ -87,6 +93,9 @@ export function CreatePage() {
 
       {needsSearch(all.length) ? (
         <SearchField value={query} onChange={setQuery} hint="Счёт, договор, КП" />
+      ) : null}
+      {needsSearch(all.length) && tags.length > 1 ? (
+        <FilterChips label="Вид шаблона" options={tags} value={tag} onChange={setTag} />
       ) : null}
       {templates.loading ? <Loading /> : null}
       {templates.error ? <ErrorState message={templates.error} onRetry={templates.reload} /> : null}

@@ -1,4 +1,4 @@
-// Вкладка «Архив»: всё созданное — поиск, фильтр по виду и группы по клиентам.
+// Вкладка «Документы»: всё созданное — поиск, фильтр по виду и группы по клиентам.
 // Группа клиента — то, что в макете называлось «проект»: документы одной
 // сделки с одним контрагентом (отдельной сущности «проект» в API пока нет).
 import { Button, CellHeader, CellList, CellSimple } from '@maxhub/max-ui';
@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type { DocumentSummary } from '@/api/client';
+import { FilterChips } from '@/components/FilterChips';
 import { Page } from '@/components/Page';
 import { SearchField } from '@/components/SearchField';
 import { EmptyState, ErrorState, Loading } from '@/components/StateViews';
@@ -71,7 +72,7 @@ export function ArchivePage() {
   }, [documents, kind, kindByTitle, query]);
 
   return (
-    <Page title="Архив" tabs>
+    <Page title="Мои документы" tabs>
       {state.loading ? <Loading /> : null}
       {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : null}
       {state.data && documents.length === 0 ? (
@@ -87,25 +88,12 @@ export function ArchivePage() {
             <SearchField value={query} onChange={setQuery} hint="Название или клиент" />
           ) : null}
           {needsSearch(documents.length) && kinds.length > 1 ? (
-            <div className="chips" role="group" aria-label="Вид документа">
-              <Button
-                size="small"
-                variant={kind === null ? 'primary' : 'secondary'}
-                onClick={() => setKind(null)}
-              >
-                Все
-              </Button>
-              {kinds.map((item) => (
-                <Button
-                  key={item}
-                  size="small"
-                  variant={kind === item ? 'primary' : 'secondary'}
-                  onClick={() => setKind(kind === item ? null : item)}
-                >
-                  {kindStyle(item).plural}
-                </Button>
-              ))}
-            </div>
+            <FilterChips
+              label="Вид документа"
+              options={kinds.map((item) => ({ value: item, title: kindStyle(item).plural }))}
+              value={kind}
+              onChange={setKind}
+            />
           ) : null}
           {groups.length === 0 ? <EmptyState title="Ничего не нашлось" /> : null}
           {groups.map(([client, docs]) => (

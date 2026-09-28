@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { makeTemplate } from '@/test-utils';
 
-import { catalogSections } from './catalog';
+import { catalogSections, catalogTags } from './catalog';
 
 const invoice = makeTemplate({ id: 1, kind: 'invoice', title: 'Счёт на оплату' });
 const offer = makeTemplate({ id: 2, kind: 'offer', title: 'Коммерческое предложение' });
@@ -47,5 +47,15 @@ describe('catalog sections', () => {
       ['Коммерческие предложения', [offer]],
       ['Договоры', [contract, selfEmployed]],
     ]);
+  });
+
+  it('offers «Мои» and the kinds present, in section order', () => {
+    expect(catalogTags([contract, offer, invoice, ownOffer]).map((tag) => tag.title)).toEqual([
+      'Мои',
+      'Счета',
+      'КП',
+      'Договоры',
+    ]);
+    expect(catalogTags([contract]).map((tag) => tag.value)).toEqual(['contract']);
   });
 });

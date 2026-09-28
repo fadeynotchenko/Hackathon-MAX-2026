@@ -31,3 +31,18 @@ export function catalogSections(
   }
   return sections.filter(([, list]) => list.length > 0);
 }
+
+export const OWN_TAG = 'own';
+
+// Теги каталога: «Мои», если свои шаблоны есть, и виды в порядке разделов —
+// только те, что в каталоге встречаются.
+export function catalogTags(templates: Template[]): Array<{ value: string; title: string }> {
+  const kinds = new Set(templates.map((template) => asKind(template.kind)));
+  const tags = KIND_ORDER.filter((kind) => kinds.has(kind)).map((kind) => ({
+    value: kind,
+    title: KIND_STYLE[kind].plural,
+  }));
+  return templates.some((template) => !template.is_builtin)
+    ? [{ value: OWN_TAG, title: 'Мои' }, ...tags]
+    : tags;
+}

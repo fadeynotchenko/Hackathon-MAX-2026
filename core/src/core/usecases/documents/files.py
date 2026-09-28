@@ -129,9 +129,10 @@ async def render_document(
     if fmt not in MEDIA_TYPES:
         raise NotFoundError(f"Формат {fmt} не поддерживается", code="document.format_unknown")
     document = await get_document(session, user_id=user_id, document_id=document_id)
-    if not document.ready:
+    # Пустые поля сборку не держат: в файле они останутся линиями.
+    if not document.renderable:
         raise ConflictError(
-            "Документ ещё не готов: остались пустые или непроверенные поля",
+            "Документ ещё не готов: есть ошибки или непроверенные значения",
             code="document.not_ready",
         )
 
@@ -210,11 +211,11 @@ async def send_document_to_chat(
     из бэкапа, в который файлы не входят).
     """
     document = await get_document(session, user_id=user_id, document_id=document_id)
-    if not document.ready:
-        # Собранный раньше файл мог пережить правку, вернувшую документ в черновик
-        # (значение от помощника ждёт «Всё верно»): такой документ не отправляется.
+    if not document.renderable:
+        # Собранный раньше файл мог пережить правку с ошибкой или значение от
+        # помощника, ждущее «Всё верно»: такой документ не отправляется.
         raise ConflictError(
-            "Документ ещё не готов: остались пустые или непроверенные поля",
+            "Документ ещё не готов: есть ошибки или непроверенные значения",
             code="document.not_ready",
         )
     current = source_hash(document)

@@ -89,7 +89,7 @@ async def test_changed_builtin_keeps_old_edition_for_its_documents(
     kept = await get_document(session, user_id=user_id, document_id=document.id)
     assert kept.template.id != invoice.id and kept.template.body.startswith("Счёт прошлой")
     (live,) = await list_templates(session, user_id=user_id, slug="invoice")
-    assert live.id == invoice.id and "Счёт на оплату №" in live.body
+    assert live.id == invoice.id and "Счет на оплату №" in live.body
     await ensure_builtin_templates(session)
     archived = await session.execute(select(Template).where(Template.origin_id == invoice.id))
     assert len(archived.scalars().all()) == 1, "неизменный бланк новую редакцию не плодит"
@@ -152,7 +152,7 @@ async def test_filling_fields_makes_document_ready(session: AsyncSession) -> Non
     assert filled.ready and filled.status == STATUS_READY
     assert filled.title == "КП для «Клиента»"
     assert "450 000,00" in filled.preview
-    assert "«23»  сентября  2026" in filled.preview, "дата бланка — по клеткам «__» ____ 20__"
+    assert "от «23» сентября 2026 г." in filled.preview, "дата письма — одной строкой"
     assert "Четыреста пятьдесят тысяч рублей 00 копеек" in filled.preview, "сумма прописью"
     assert BLANK in filled.preview, "необязательные поля остаются прочерками"
 

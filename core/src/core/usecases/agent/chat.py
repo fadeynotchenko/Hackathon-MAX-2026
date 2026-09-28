@@ -118,6 +118,9 @@ HOW_TO_FILL_TEXT = (
     "🎙 надиктуйте голосовым\n"
     "📷 пришлите фото карточки клиента"
 )
+# Пустое обязательное поле сборку не держит: документ можно прислать как есть,
+# пустые места в файле останутся линиями — вписать от руки.
+GAPS_TEXT = "Можно прислать и так — пустые места останутся линиями, впишете от руки."
 
 CONFIRM_BUTTON = "👍 Всё верно"
 SEND_DOCX_BUTTON = "📘 Прислать DOCX"
@@ -255,7 +258,7 @@ def _document_buttons(document: DocumentView) -> tuple[tuple[ChatButton, ...], .
     rows: list[tuple[ChatButton, ...]] = []
     if document.unconfirmed:
         rows.append((ChatButton(CONFIRM_BUTTON, f"doc:confirm:{document.id}"),))
-    elif document.ready:
+    elif document.renderable:
         rows.append(
             (
                 ChatButton(SEND_DOCX_BUTTON, f"doc:send:{document.id}:docx"),
@@ -331,19 +334,19 @@ def _fill_text(
         blocks.append(_missing_block(document))
     if document.unconfirmed:
         blocks.append("👉 Проверьте значения и нажмите «Всё верно».")
-    elif document.ready:
-        blocks.append(READY_TEXT)
+    elif document.renderable:
+        blocks.append(GAPS_TEXT if document.missing else READY_TEXT)
     return "\n\n".join(blocks)
 
 
 def _confirm_text(document: DocumentView) -> str:
-    if document.ready:
-        return READY_TEXT
-    if document.missing:
+    if document.missing and not document.errors:
         return (
             f"👍 Подтвердил.\n\n{_missing_block(document)}\n\n"
-            "Напишите недостающее сообщением или надиктуйте голосовым."
+            "Напишите недостающее сообщением или надиктуйте голосовым. " + GAPS_TEXT
         )
+    if document.ready:
+        return READY_TEXT
     if not document.errors:
         return "👍 Подтвердил."
     problems = _bullets(_esc(error.message) for error in document.errors)
@@ -739,8 +742,8 @@ def _file_text(imported: DocumentFromFile, fill: AgentFillResult | None = None) 
     if document.missing:
         blocks.append(_missing_block(document))
     blocks.append(EDIT_FILE_HOW_TEXT)
-    if document.ready:
-        blocks.append(READY_TEXT)
+    if document.renderable:
+        blocks.append(GAPS_TEXT if document.missing else READY_TEXT)
     return "\n\n".join(blocks)
 
 

@@ -100,11 +100,11 @@ export function TemplatePage() {
             tone="info"
             title={
               template.is_builtin
-                ? 'Соберётся в бланке DOCX'
-                : `Соберётся в файле «${template.file.filename}»`
+                ? 'Выше — только текст документа'
+                : `Выше — только текст «${template.file.filename}»`
             }
           >
-            Таблицы, линейки и шрифты — как в образце; выше — только текст.
+            Готовый PDF и DOCX будут оформлены как настоящий бланк: с таблицами, линиями и шрифтами.
           </Banner>
         </div>
       ) : null}

@@ -300,10 +300,10 @@ CONTRACT_IP = BuiltinTemplate(
         seller("ogrn", "ОГРНИП", FieldType.OGRN),
         seller(
             "director",
-            "В лице",
+            "Подписант",
             FieldType.NAME,
             required=False,
-            hint="Петрова Петра Васильевича",
+            hint="Петров Пётр Васильевич",
         ),
         *requisites(
             "seller", "address", "bank", "bic", "account", "corr_account", "phone", "email"

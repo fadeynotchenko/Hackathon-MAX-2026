@@ -5,8 +5,9 @@ from __future__ import annotations
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.domain.documents import FieldValue, ValueSource
 from core.events import DocumentReady
-from core.usecases.documents import ensure_builtin_templates
+from core.usecases.documents import ensure_builtin_templates, set_fields
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 
 
@@ -42,7 +43,7 @@ async def test_template_library_lists_builtin(
     field = next(f for f in invoice["fields"] if f["key"] == "seller_inn")
     assert field["type"] == "inn" and field["required"] is True and field["group"]
     # Предпросмотр шаблона — тот же текст, что уйдёт в файл, только с пустыми местами.
-    assert "Счёт на оплату № __________" in invoice["preview"]
+    assert "Счет на оплату № __________" in invoice["preview"]
     assert "{{" not in invoice["preview"] and "__________" in invoice["preview"]
 
 
@@ -210,12 +211,6 @@ async def test_render_and_download_over_http(
         await client.post("/api/v1/documents", headers=headers, json={"template_id": offer_id})
     ).json()
 
-    not_ready = await client.post(
-        f"/api/v1/documents/{document['id']}/render", headers=headers, json={"format": "docx"}
-    )
-    assert not_ready.status_code == 409
-    assert not_ready.json()["code"] == "document.not_ready"
-
     await client.patch(
         f"/api/v1/documents/{document['id']}/fields",
         headers=headers,
@@ -325,6 +320,7 @@ async def test_send_publishes_event_and_token_works_once(
 async def test_send_refuses_unfinished_document(
     client: AsyncClient, session: AsyncSession, redis, make_init_data
 ) -> None:
+    """Пустые поля отправку не держат, а значение помощника без «Всё верно» — держит."""
     await _seed(session)
     headers = await _auth(client, make_init_data)
     templates = (await client.get("/api/v1/templates", headers=headers)).json()
@@ -332,6 +328,14 @@ async def test_send_refuses_unfinished_document(
     document = (
         await client.post("/api/v1/documents", headers=headers, json={"template_id": offer_id})
     ).json()
+    user_id = (await client.get("/api/v1/me", headers=headers)).json()["id"]
+    await set_fields(
+        session,
+        user_id=user_id,
+        document_id=document["id"],
+        values={"total": FieldValue("450 000", ValueSource.AGENT, confirmed=False)},
+    )
+    await session.commit()
 
     response = await client.post(
         f"/api/v1/documents/{document['id']}/send", headers=headers, json={"format": "docx"}

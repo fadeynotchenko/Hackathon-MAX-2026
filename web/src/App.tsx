@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, Route, Routes, useLocation, useNavigate, type Location } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Navigate, Route, Routes, useLocation, type Location } from 'react-router-dom';
 
 import { useAuth } from '@/auth/context';
 import { TAB_PATHS } from '@/components/tabs';
@@ -29,18 +29,6 @@ import { OrganizationsPage } from '@/pages/profile/OrganizationsPage';
 import { ProfilePage } from '@/pages/profile/ProfilePage';
 import { TemplateEditorPage } from '@/pages/templates/TemplateEditorPage';
 import { TemplateSamplePage } from '@/pages/templates/TemplateSamplePage';
-
-function StartRedirect() {
-  const navigate = useNavigate();
-  const done = useRef(false);
-  useEffect(() => {
-    if (done.current) return;
-    done.current = true;
-    const route = startRoute(getStartParam());
-    if (route) void navigate(route, { replace: true });
-  }, [navigate]);
-  return null;
-}
 
 // Экран стека: скрыт, пока поверх него открыт другой, и помнит, сколько раз
 // на него возвращались.
@@ -77,7 +65,6 @@ export function App() {
   if (status !== 'ready' || !user) return <GatePage />;
   return (
     <>
-      <StartRedirect />
       {stack.map((entry) => (
         <StackedScreen
           key={entry.key}
@@ -93,7 +80,13 @@ export function App() {
 function AppRoutes({ location, isAdmin }: { location: Location; isAdmin: boolean }) {
   return (
     <Routes location={location}>
-      <Route path="/" element={<Navigate to="/create" replace />} />
+      {/* Мини-апп открывается на корне; кнопка бота или ссылка ?startapp= ведут
+          сразу на свой экран. Отдельный редирект после старта проигрывал гонку
+          этому же маршруту: его переход на каталог срабатывал следом. */}
+      <Route
+        path="/"
+        element={<Navigate to={startRoute(getStartParam()) ?? '/create'} replace />}
+      />
       <Route path="/create" element={<CreatePage />} />
       <Route path="/create/:templateId" element={<TemplatePage />} />
       {/* Экрана «Для кого документ?» больше нет: «Заполнить» сразу открывает форму. */}

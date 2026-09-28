@@ -140,7 +140,7 @@ body {
   -webkit-line-clamp: 3;
 }
 
-/* Таб-бар: «Создать · Архив · Профиль» на корневых экранах. */
+/* Таб-бар: «Создать · Документы · Профиль» на корневых экранах. */
 .tabbar {
   position: sticky;
   bottom: 0;
@@ -1233,10 +1233,13 @@ input[type='search']::-webkit-search-cancel-button {
   color: var(--icon-tertiary);
 }
 
-/* Тестовые данные (только у администратора): серая кнопка с приглушённой
-   подписью — служебная, не спорит с плитками и главной кнопкой экрана. */
+/* Демо-данные (только у администратора): серая кнопка с подписью, что она
+   на время демонстрации, — служебная, не спорит с плитками и главной кнопкой. */
 .fill-test {
-  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-s);
+  text-align: center;
 }
 
 /* Запись голоса: круглая кнопка в карточке, под ней время и подсказка. Во время
@@ -1329,4 +1332,39 @@ input[type='search']::-webkit-search-cancel-button {
   .recorder__button--on:not(:disabled, :active):hover {
     background: var(--states-button-negative-hover);
   }
+}
+
+/* Диалог подтверждения: поверх экрана и таб-бара, карточка по центру. */
+.dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-size3xl);
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-m);
+  width: 100%;
+  max-width: 340px;
+  padding: var(--spacing-size3xl) var(--spacing-size2xl) var(--spacing-size2xl);
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--background-primary);
+  text-align: center;
+}
+
+.dialog__title {
+  margin: 0;
+}
+
+.dialog__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-size-s);
+  margin-top: var(--spacing-size-m);
 }

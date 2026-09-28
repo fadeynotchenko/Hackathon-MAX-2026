@@ -146,7 +146,6 @@ export function renderScreen(
     },
     error: null,
     api,
-    logout: vi.fn(),
     retry: vi.fn(),
   };
   return render(

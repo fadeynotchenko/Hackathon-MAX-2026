@@ -14,7 +14,6 @@ export interface AuthState {
   user: UserProfile | null;
   error: string | null;
   api: ApiClient;
-  logout: () => Promise<void>;
   retry: () => void;
 }
 

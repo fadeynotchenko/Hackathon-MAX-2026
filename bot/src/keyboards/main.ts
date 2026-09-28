@@ -39,7 +39,7 @@ export function mainKeyboard(options: MainKeyboardOptions = {}) {
       },
     ]);
     rows.push([
-      { type: 'open_app', text: '🗂 Архив', web_app: app, payload: APP_SCREENS.archive },
+      { type: 'open_app', text: '📄 Мои документы', web_app: app, payload: APP_SCREENS.archive },
       help,
     ]);
   } else {

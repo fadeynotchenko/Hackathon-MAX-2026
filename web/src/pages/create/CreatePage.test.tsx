@@ -29,8 +29,16 @@ function setup(templates: Template[]) {
   renderScreen(<CreatePage />, { api, path: '/create', route: '/create' });
 }
 
+// Заголовок раздела, а не одноимённый тег-фильтр над каталогом.
+function sectionOrNull(title: string): HTMLElement | null {
+  const heading = screen
+    .queryAllByText(title)
+    .find((element) => element.closest('section') && !element.closest('button'));
+  return heading?.closest('section') ?? null;
+}
+
 function section(title: string): HTMLElement {
-  const found = screen.getByText(title).closest('section');
+  const found = sectionOrNull(title);
   if (!found) throw new Error(`Нет раздела «${title}»`);
   return found;
 }
@@ -83,8 +91,17 @@ describe('CreatePage', () => {
     expect(screen.queryByText('Фирменный КП')).toBeNull();
 
     fireEvent.change(search, { target: { value: 'фирменный' } });
-    expect(screen.queryByText('Счета')).toBeNull();
+    expect(sectionOrNull('Счета')).toBeNull();
     expect(screen.getByText('Фирменный КП')).toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Мои' }));
+    expect(screen.getByText('Счёт для своих')).toBeInTheDocument();
+    expect(screen.queryByText('Счёт-оферта')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Счета' }));
+    expect(screen.getByText('Счёт-оферта')).toBeInTheDocument();
+    expect(screen.queryByText('Фирменный КП')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Все' }));
 
     fireEvent.change(search, { target: { value: 'накладная' } });
     expect(screen.getByText('Ничего не нашлось')).toBeInTheDocument();

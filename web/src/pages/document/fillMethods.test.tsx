@@ -63,7 +63,6 @@ function renderTextOverForm(api: ApiClient) {
     },
     error: null,
     api,
-    logout: vi.fn(),
     retry: vi.fn(),
   };
   return render(

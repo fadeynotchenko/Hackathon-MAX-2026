@@ -9,7 +9,7 @@ import pytest
 from docx import Document as DocxDocument
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.domain.documents import FieldValue, ValueSource
+from core.domain.documents import BLANK, FieldValue, ValueSource
 from core.domain.exceptions import AppError, ConflictError, NotFoundError
 from core.files import DocumentStorage, FilesConfig, docx_lines
 from core.usecases.documents import (
@@ -107,16 +107,44 @@ async def test_invoice_file_is_named_by_number_and_has_one_heading(
         session, user_id=user_id, document_id=draft.id, fmt=DOCX, cfg=files_config
     )
     paragraphs = [p for p in DocxDocument(BytesIO(data)).paragraphs if p.text.strip()]
-    assert paragraphs[0].text.startswith("Счёт на оплату № 17 от "), "заголовок — первая строка"
+    assert paragraphs[0].text.startswith("Счет на оплату № 17 от "), "заголовок — первая строка"
     assert paragraphs[0].runs[0].bold
-    assert not any(p.text == "Счёт на оплату" for p in paragraphs), "название не повторяется"
+    assert not any(p.text == "Счет на оплату" for p in paragraphs), "название не повторяется"
 
 
-async def test_draft_cannot_be_rendered(session: AsyncSession, files_config: FilesConfig) -> None:
+async def test_empty_fields_do_not_block_rendering(
+    session: AsyncSession, files_config: FilesConfig
+) -> None:
+    """Пустое обязательное поле человек вправе оставить: файл собирается, а на
+    месте значения остаётся линия — вписать от руки."""
     user_id = await make_user(session)
     await ensure_builtin_templates(session)
     offer = next(t for t in await list_templates(session, user_id=user_id) if t.slug == "offer")
     draft = await create_draft(session, user_id=user_id, template_id=offer.id)
+    assert draft.missing and not draft.ready and draft.renderable
+
+    await render_document(
+        session, user_id=user_id, document_id=draft.id, fmt=DOCX, cfg=files_config
+    )
+    _, data = await load_document_file(
+        session, user_id=user_id, document_id=draft.id, fmt=DOCX, cfg=files_config
+    )
+    assert BLANK in "\n".join(docx_lines(data))
+
+
+async def test_unconfirmed_value_blocks_rendering(
+    session: AsyncSession, files_config: FilesConfig
+) -> None:
+    user_id = await make_user(session)
+    await ensure_builtin_templates(session)
+    offer = next(t for t in await list_templates(session, user_id=user_id) if t.slug == "offer")
+    draft = await create_draft(session, user_id=user_id, template_id=offer.id)
+    await set_fields(
+        session,
+        user_id=user_id,
+        document_id=draft.id,
+        values={"total": FieldValue("450 000", ValueSource.AGENT, confirmed=False)},
+    )
 
     with pytest.raises(ConflictError) as exc:
         await render_document(
