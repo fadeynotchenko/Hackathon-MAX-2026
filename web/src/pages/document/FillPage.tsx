@@ -127,7 +127,7 @@ interface FillFormProps {
 }
 
 function FillForm({ loaded, organizations, returned, onBack }: FillFormProps) {
-  const { api, user } = useAuth();
+  const { api } = useAuth();
   const navigate = useNavigate();
   const [doc, setDoc] = useState(loaded);
   const [draft, setDraft] = useState<Draft>(() => draftFromDocument(loaded));
@@ -402,24 +402,24 @@ function FillForm({ loaded, organizations, returned, onBack }: FillFormProps) {
             </button>
           ))}
         </div>
-        {user?.is_admin ? (
-          <div className="fill-test">
-            <Button
-              variant="secondary"
-              size="medium"
-              stretched
-              loading={testing}
-              disabled={busy && !testing}
-              onClick={() => void fillWithMock()}
-            >
-              Заполнить демо-данными
-            </Button>
-            <Typography.Text variant="description" color="secondary">
-              Только на время демонстрации: вымышленные реквизиты, которые проходят все проверки. В
-              рабочей версии этой кнопки не будет.
-            </Typography.Text>
-          </div>
-        ) : null}
+        {/* Демо-данные — всем, кто пробует приложение на демонстрации: жюри
+            без них пришлось бы выдумывать ИНН и счета с верными ключами. */}
+        <div className="fill-test">
+          <Button
+            variant="secondary"
+            size="medium"
+            stretched
+            loading={testing}
+            disabled={busy && !testing}
+            onClick={() => void fillWithMock()}
+          >
+            Заполнить демо-данными
+          </Button>
+          <Typography.Text variant="description" color="secondary">
+            Только на время демонстрации: вымышленные реквизиты, которые проходят все проверки. В
+            рабочей версии этой кнопки не будет.
+          </Typography.Text>
+        </div>
       </Section>
 
       {groups.map(([group, fields]) => {
