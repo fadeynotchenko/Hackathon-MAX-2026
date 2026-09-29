@@ -5,10 +5,11 @@
 растеризует ``pdftoppm`` (poppler-utils) — он стоит в образе рядом с
 LibreOffice, отдельной Python-библиотеки с нативным кодом не нужно.
 
-Конвертация стоит секунды, поэтому результат кешируется на диске по хешу
-DOCX: та же редакция документа или пустой бланк шаблона конвертируется один
-раз, правка поля даёт новый ключ. Одновременных LibreOffice не больше двух —
-на двух ядрах прод-сервера больше только мешают друг другу и API.
+Конвертация стоит секунды, поэтому результат кешируется на диске по ключу
+редакции: та же редакция документа или пустой бланк шаблона конвертируется один
+раз, правка поля даёт новый ключ. Ключ даёт вызывающий: байты одной и той
+же сборки DOCX различаются временем внутри zip. Одновременных LibreOffice не
+больше двух — на двух ядрах прод-сервера больше только мешают друг другу и API.
 """
 
 from __future__ import annotations
@@ -85,15 +86,20 @@ def _read_pages(work: Path) -> list[bytes]:
 
 
 class PreviewCache:
-    """Картинки страниц по хешу DOCX в ``<documents_dir>/previews/<ключ>/``."""
+    """Картинки страниц по ключу редакции в ``<documents_dir>/previews/<ключ>/``."""
 
     def __init__(self, root: Path, *, timeout_seconds: int) -> None:
         self.root = root / "previews"
         self.timeout_seconds = timeout_seconds
 
-    async def page(self, docx: bytes, *, size: str, page: int, to_pdf: ToPdf) -> PreviewPage | None:
-        """Страница ``page`` (с единицы); ``None`` — такой страницы в документе нет."""
-        key = hashlib.sha256(docx).hexdigest()[:32]
+    async def page(
+        self, docx: bytes, *, size: str, page: int, to_pdf: ToPdf, key: str | None = None
+    ) -> PreviewPage | None:
+        """Страница ``page`` (с единицы); ``None`` — такой страницы в документе нет.
+
+        ``key`` — ключ редакции от вызывающего: байты DOCX для одной редакции
+        разные (время в zip), поэтому хеш байтов — только запасной ключ."""
+        key = key or hashlib.sha256(docx).hexdigest()[:32]
         folder = self.root / key
         count = self._count(folder, size)
         if count is None:

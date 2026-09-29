@@ -23,7 +23,7 @@ from core.files import (
     convert_to_pdf,
 )
 from core.usecases.documents.drafts import get_document
-from core.usecases.documents.files import template_source
+from core.usecases.documents.files import SourceFile, template_source
 from core.usecases.documents.templates import get_template, list_templates
 
 
@@ -31,21 +31,22 @@ async def _same(pdf: bytes) -> bytes:
     return pdf
 
 
-async def _page(
-    source: tuple[bytes, bool], *, page: int, size: str, cfg: FilesConfig
+async def preview_page(
+    source: SourceFile, *, page: int, size: str, cfg: FilesConfig
 ) -> PreviewPage:
-    data, is_pdf = source
+    """Страница листа по уже собранному файлу. Без сессии с базой: LibreOffice
+    рисует секунды, и держать соединение всё это время незачем."""
     cache = PreviewCache(cfg.documents_dir, timeout_seconds=cfg.pdf_timeout_seconds)
     # Документ по PDF-образцу — уже PDF: LibreOffice ему не нужен.
     to_pdf = (
         _same
-        if is_pdf
+        if source.is_pdf
         else partial(
             convert_to_pdf, soffice_bin=cfg.soffice_bin, timeout_seconds=cfg.pdf_timeout_seconds
         )
     )
     try:
-        found = await cache.page(data, size=size, page=page, to_pdf=to_pdf)
+        found = await cache.page(source.data, key=source.key, size=size, page=page, to_pdf=to_pdf)
     except PdfUnavailableError as exc:
         raise AppError(
             "Предпросмотр листом сейчас недоступен",
@@ -65,7 +66,7 @@ async def template_preview(
     source = await template_source(
         session, template, {}, title=template.title, text=template.preview
     )
-    return await _page(source, page=page, size=size, cfg=cfg)
+    return await preview_page(source, page=page, size=size, cfg=cfg)
 
 
 async def document_preview(
@@ -75,7 +76,7 @@ async def document_preview(
     source = await template_source(
         session, document.template, document.values, title=document.title, text=document.preview
     )
-    return await _page(source, page=page, size=size, cfg=cfg)
+    return await preview_page(source, page=page, size=size, cfg=cfg)
 
 
 async def warm_builtin_previews(session: AsyncSession, *, cfg: FilesConfig) -> int:
@@ -90,7 +91,19 @@ async def warm_builtin_previews(session: AsyncSession, *, cfg: FilesConfig) -> i
         )
         try:
             for size in PREVIEW_WIDTHS:
-                await _page(source, page=1, size=size, cfg=cfg)
+                await preview_page(source, page=1, size=size, cfg=cfg)
         except AppError:
             return number
     return len(templates)
+
+
+async def document_source(session: AsyncSession, *, user_id: int, document_id: int) -> SourceFile:
+    document = await get_document(session, user_id=user_id, document_id=document_id)
+    return await template_source(
+        session, document.template, document.values, title=document.title, text=document.preview
+    )
+
+
+async def blank_source(session: AsyncSession, *, user_id: int, template_id: int) -> SourceFile:
+    template = await get_template(session, user_id=user_id, template_id=template_id)
+    return await template_source(session, template, {}, title=template.title, text=template.preview)

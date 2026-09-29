@@ -174,10 +174,10 @@ def _fill_paragraph(
     for begin, end, key in reversed(place_spans(_text(paragraph), places)):
         _replace(paragraph, begin, end, "{{" + key + "}}")
     dropped = False
-    for start, end, keep in reversed(conditional_spans(_text(paragraph), context)):
+    for start, end, keep, opening in reversed(conditional_spans(_text(paragraph), context)):
         if keep:
             _replace(paragraph, end - 2, end, "")
-            _replace(paragraph, start, start + 2, "")
+            _replace(paragraph, start, start + opening, "")
         else:
             _replace(paragraph, start, end, "")
             dropped = True
@@ -188,6 +188,11 @@ def _fill_paragraph(
     if dropped and (separator := LEADING_SEPARATOR.match(text)) is not None:
         _replace(paragraph, separator.end(1), separator.end(), "")
         text = _text(paragraph)
+        # «, тел. …» без первого куска — начало фразы: «Тел. …».
+        first = separator.end(1)
+        if first < len(text) and text[first].islower():
+            _replace(paragraph, first, first + 1, text[first].upper())
+            text = _text(paragraph)
         markers = list(MARKER.finditer(text))
     # Маркер — всё содержимое ячейки или линейки: пустое значение оставляет её
     # пустой, как в бланке. Прочерк поверх нарисованной линии задвоил бы её.

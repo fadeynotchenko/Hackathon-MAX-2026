@@ -181,19 +181,25 @@ async def test_pdf_document_keeps_its_sheet(session: AsyncSession, tmp_path: Pat
     places = {
         "title": "Счёт",
         "kind": "invoice",
-        "places": [{"text": "ACME Corp", "before": "", "label": "Покупатель", "type": "text"}],
+        "places": [
+            {"text": "ACME Corp", "before": "", "label": "Покупатель", "type": "text"},
+            {"text": "7707083893", "before": "INN ", "label": "ИНН", "type": "text"},
+        ],
     }
     imported = await document_from_file(
         session,
         user_id=user_id,
-        data=text_pdf(["Invoice 17", "Buyer:", "ACME Corp", "Total: 100"]),
+        data=text_pdf(["Invoice 17", "Buyer:", "ACME Corp", "INN 7707083893", "Total: 100"]),
         filename="bill.pdf",
         llm=FakeLLM(json_reply=places),
         max_bytes=LIMIT,
     )
-    key = imported.document.template.fields[0].key
+    buyer, inn = (field.key for field in imported.document.template.fields)
     await set_fields(
-        session, user_id=user_id, document_id=imported.document.id, values={key: FieldValue("Бета")}
+        session,
+        user_id=user_id,
+        document_id=imported.document.id,
+        values={buyer: FieldValue("Бета"), inn: FieldValue("5003102144")},
     )
     cfg = FilesConfig(documents_dir=tmp_path, soffice_bin="нет-такого", pdf_timeout_seconds=5)
 
@@ -209,4 +215,6 @@ async def test_pdf_document_keeps_its_sheet(session: AsyncSession, tmp_path: Pat
         width = sheet.pages[0].width
     assert "Бета" in text and "Invoice 17" in text and "Total: 100" in text
     assert "ACME" not in text, "прежнее значение не остаётся под плашкой"
+    # Значение, слитое с подписью в одну строку PDF, вырезается, подпись остаётся.
+    assert "INN" in text and "5003102144" in text and "7707083893" not in text
     assert width == 612, "лист исходного PDF, а не новый"

@@ -7,9 +7,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Query, Request
 
 from core.api.dependencies import CurrentUserDep, SessionDep, StateDep
+from core.api.previews import warm_document
 from core.api.schemas.common import ErrorResponse, IdPath
 from core.api.schemas.documents import (
     AgentAskRequest,
@@ -74,6 +75,7 @@ async def fill(
     current: CurrentUserDep,
     session: SessionDep,
     state: StateDep,
+    background: BackgroundTasks,
 ) -> AgentFillResponse:
     result = await fill_from_message(
         session,
@@ -82,6 +84,7 @@ async def fill(
         message=payload.message,
         llm=state.llm,
     )
+    warm_document(background, user_id=current.id, document_id=document_id, cfg=state.files_config)
     return _fill_response(result)
 
 
@@ -101,6 +104,7 @@ async def recognize(
     current: CurrentUserDep,
     session: SessionDep,
     state: StateDep,
+    background: BackgroundTasks,
     hint: str = _HINT,
 ) -> AgentFillResponse:
     limit = state.files_config.media_max_bytes
@@ -113,6 +117,7 @@ async def recognize(
         max_bytes=limit,
         request=hint,
     )
+    warm_document(background, user_id=current.id, document_id=document_id, cfg=state.files_config)
     return _fill_response(result)
 
 
@@ -130,6 +135,7 @@ async def voice(
     current: CurrentUserDep,
     session: SessionDep,
     state: StateDep,
+    background: BackgroundTasks,
 ) -> VoiceFillResponse:
     limit = state.files_config.media_max_bytes
     result = await fill_from_voice(
@@ -140,6 +146,7 @@ async def voice(
         llm=state.llm,
         max_bytes=limit,
     )
+    warm_document(background, user_id=current.id, document_id=document_id, cfg=state.files_config)
     return VoiceFillResponse(
         transcript=result.transcript, **_fill_response(result.fill).model_dump()
     )

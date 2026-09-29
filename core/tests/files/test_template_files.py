@@ -206,7 +206,9 @@ def test_conditional_pieces_vanish_with_labels_and_rows() -> None:
     assert [(run.text, run.bold) for run in paragraphs[0].runs if run.text][1] == ("КПП", True), (
         "скобки убраны, оформление кусков осталось"
     )
-    assert paragraphs[1].text == "почта a@b.example", "запятая в начале не остаётся"
+    assert paragraphs[1].text == "Почта a@b.example", (
+        "запятая в начале не остаётся, фраза — с заглавной"
+    )
 
 
 def test_items_row_is_repeated_and_shared_cell_is_merged() -> None:

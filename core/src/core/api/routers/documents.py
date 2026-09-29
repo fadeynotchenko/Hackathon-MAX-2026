@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Query, Request, Response, status
 
 from core.api.dependencies import CurrentUserDep, RedisDep, SessionDep, StateDep
 from core.api.previews import (
@@ -12,6 +12,7 @@ from core.api.previews import (
     PreviewSize,
     SizeQuery,
     preview_response,
+    warm_document,
 )
 from core.api.schemas.common import ErrorResponse, IdPath, OkResponse
 from core.api.schemas.documents import (
@@ -66,7 +67,11 @@ _ERRORS = {401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}}
     summary="Создать документ из шаблона",
 )
 async def create(
-    payload: CreateDocumentRequest, current: CurrentUserDep, session: SessionDep
+    payload: CreateDocumentRequest,
+    current: CurrentUserDep,
+    session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
 ) -> DocumentSchema:
     document = await create_draft(
         session,
@@ -76,6 +81,7 @@ async def create(
         organization_id=payload.organization_id,
         title=payload.title,
     )
+    warm_document(background, user_id=current.id, document_id=document.id, cfg=state.files_config)
     return DocumentSchema.model_validate(document)
 
 
@@ -100,6 +106,7 @@ async def import_file(
     current: CurrentUserDep,
     session: SessionDep,
     state: StateDep,
+    background: BackgroundTasks,
     filename: str = Query(default="", max_length=255, description="Имя файла у пользователя"),
 ) -> DocumentImportSchema:
     limit = state.files_config.media_max_bytes
@@ -110,6 +117,9 @@ async def import_file(
         filename=filename,
         llm=state.llm,
         max_bytes=limit,
+    )
+    warm_document(
+        background, user_id=current.id, document_id=result.document.id, cfg=state.files_config
     )
     return DocumentImportSchema.model_validate(result)
 
@@ -166,6 +176,8 @@ async def copy(
     document_id: IdPath,
     current: CurrentUserDep,
     session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
     payload: CopyDocumentRequest | None = None,
 ) -> DocumentSchema:
     document = await copy_document(
@@ -174,6 +186,7 @@ async def copy(
         document_id=document_id,
         title=payload.title if payload else None,
     )
+    warm_document(background, user_id=current.id, document_id=document.id, cfg=state.files_config)
     return DocumentSchema.model_validate(document)
 
 
@@ -189,6 +202,8 @@ async def patch_fields(
     payload: SetFieldsRequest,
     current: CurrentUserDep,
     session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
 ) -> DocumentSchema:
     values = {
         key: FieldValue(
@@ -207,6 +222,7 @@ async def patch_fields(
         values=values,
         title=payload.title,
     )
+    warm_document(background, user_id=current.id, document_id=document.id, cfg=state.files_config)
     return DocumentSchema.model_validate(document)
 
 
@@ -222,6 +238,8 @@ async def patch_parties(
     payload: DocumentPartiesRequest,
     current: CurrentUserDep,
     session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
 ) -> DocumentSchema:
     # Нет поля в теле — сторону не трогаем; null — отвязать карточку.
     given = payload.model_fields_set
@@ -232,6 +250,7 @@ async def patch_parties(
         organization_id=payload.organization_id if "organization_id" in given else UNSET,
         counterparty_id=payload.counterparty_id if "counterparty_id" in given else UNSET,
     )
+    warm_document(background, user_id=current.id, document_id=document.id, cfg=state.files_config)
     return DocumentSchema.model_validate(document)
 
 
@@ -414,8 +433,11 @@ async def confirm(
     payload: ConfirmFieldsRequest,
     current: CurrentUserDep,
     session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
 ) -> DocumentSchema:
     document = await confirm_fields(
         session, user_id=current.id, document_id=document_id, keys=payload.keys
     )
+    warm_document(background, user_id=current.id, document_id=document.id, cfg=state.files_config)
     return DocumentSchema.model_validate(document)

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import time
 from collections.abc import Mapping
@@ -112,8 +113,31 @@ async def template_docx(
 ) -> bytes:
     """DOCX по шаблону. У образца-PDF DOCX в его оформлении не собрать —
     тогда DOCX текстовый, а оформление остаётся за PDF."""
-    source, is_pdf = await template_source(session, template, values, title=title, text=text)
-    return build_docx(title, text) if is_pdf else source
+    source = await template_source(session, template, values, title=title, text=text)
+    return build_docx(title, text) if source.is_pdf else source.data
+
+
+@dataclass(frozen=True)
+class SourceFile:
+    """Файл документа в оформлении образца: DOCX или уже PDF.
+
+    ``key`` — смысл файла, а не его байты: сборка DOCX пишет в zip текущее
+    время, и хеш байтов менялся на каждый вызов — кеш листов не попадал ни
+    разу, и LibreOffice рисовал лист при каждом показе."""
+
+    data: bytes
+    is_pdf: bool
+    key: str
+
+
+def _source_key(*parts: object) -> str:
+    raw = json.dumps(parts, ensure_ascii=False, sort_keys=True, default=repr)
+    return hashlib.sha256(f"{SOURCE_KEY_VERSION}|{raw}".encode()).hexdigest()[:32]
+
+
+# Меняется, когда меняется сама сборка (шрифты, разметка): старые листы в кеше
+# тогда не годятся, хотя данные те же.
+SOURCE_KEY_VERSION = "1"
 
 
 async def template_source(
@@ -123,16 +147,17 @@ async def template_source(
     *,
     title: str,
     text: str,
-) -> tuple[bytes, bool]:
-    """Файл документа в оформлении образца и признак «это уже PDF»: из текста
-    шаблона или копии DOCX-образца — DOCX, из PDF-образца — сам PDF с новыми
-    значениями на листе. Без значений — пустой бланк, как в каталоге."""
+) -> SourceFile:
+    """Файл документа в оформлении образца: из текста шаблона или копии
+    DOCX-образца — DOCX, из PDF-образца — сам PDF с новыми значениями на листе.
+    Без значений — пустой бланк, как в каталоге."""
     if template.file is None:
-        return build_docx(title, text), False
+        return SourceFile(build_docx(title, text), False, _source_key("text", title, text))
     source = await TemplateFileRepository(session).data(template.file.id)
     if source is None:
         raise NotFoundError("Файл-образец шаблона не найден", code="template.file_not_found")
     context = fill_context(template.fields, values)
+    sample = hashlib.sha256(source).hexdigest()
     try:
         if source.startswith(b"%PDF"):
             # Пустое обязательное — линия, как в DOCX; пустое необязательное
@@ -141,13 +166,16 @@ async def template_source(
                 spec.key: context.get(spec.key) or (BLANK if spec.required else "")
                 for spec in template.fields
             }
-            return fill_pdf(source, places=template.places, values=filled), True
-        return fill_docx(
-            source,
-            places=template.places,
-            context=context,
-            blank=BLANK,
-        ), False
+            return SourceFile(
+                fill_pdf(source, places=template.places, values=filled),
+                True,
+                _source_key("pdf", sample, template.places, filled),
+            )
+        return SourceFile(
+            fill_docx(source, places=template.places, context=context, blank=BLANK),
+            False,
+            _source_key("docx", sample, template.places, context),
+        )
     except TemplateFileError as exc:
         raise AppError(
             "Файл-образец шаблона не открылся — загрузите его заново",
@@ -171,19 +199,19 @@ async def render_document(
         )
 
     started = time.monotonic()
-    source, is_pdf = await template_source(
+    source = await template_source(
         session,
         document.template,
         document.values,
         title=document.title,
         text=document.preview,
     )
-    if is_pdf:
-        data = source if fmt == PDF else build_docx(document.title, document.preview)
+    if source.is_pdf:
+        data = source.data if fmt == PDF else build_docx(document.title, document.preview)
     elif fmt == PDF:
         try:
             data = await convert_to_pdf(
-                source,
+                source.data,
                 soffice_bin=cfg.soffice_bin,
                 timeout_seconds=cfg.pdf_timeout_seconds,
             )
@@ -195,7 +223,7 @@ async def render_document(
                 log_message=str(exc),
             ) from exc
     else:
-        data = source
+        data = source.data
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     stored = DocumentStorage(cfg.documents_dir).save(

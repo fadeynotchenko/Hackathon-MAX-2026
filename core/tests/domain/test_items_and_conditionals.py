@@ -120,7 +120,7 @@ def test_conditional_piece_disappears_with_its_label() -> None:
     context = {"name": "ООО «Ромашка»", "inn": "7728417603", "email": "a@b.example"}
     assert fill_text_template(body, context).split("\n") == [
         "Поставщик: ООО «Ромашка», ИНН 7728417603",
-        "e-mail: a@b.example",
+        "E-mail: a@b.example",
         f"Номер: {BLANK}",
     ], "строка из одной подписи уходит, запятая в начале — тоже, пустое вне куска — линия"
     full = context | {
@@ -154,3 +154,20 @@ def test_old_single_item_invoice_becomes_one_position() -> None:
     ]
     assert legacy_items({"item": FieldValue("Без суммы")}) is None
     assert legacy_items({"total": FieldValue("1.00")}) is None
+
+
+def test_section_heading_follows_its_lines_and_else_wording_replaces_a_blank() -> None:
+    """[[?…]] держится, пока заполнено хоть одно поле раздела, {{key|hide}} в
+    нём не печатается; [[!…]] — формулировка на случай, когда поле пусто."""
+    body = (
+        "[[?Условия{{pay|hide}}{{term|hide}}]]\n"
+        "[[Оплата: {{pay}}]]\n"
+        "[[Срок: {{term}}]]\n"
+        "Отказ: [[выплата {{fee}} руб.]][[!{{fee|hide}}возмещение расходов.]]"
+    )
+    assert fill_text_template(body, {}).split("\n") == ["Отказ: возмещение расходов."]
+    assert fill_text_template(body, {"term": "5 дней", "fee": "1 000,00"}).split("\n") == [
+        "Условия",
+        "Срок: 5 дней",
+        "Отказ: выплата 1 000,00 руб.",
+    ]

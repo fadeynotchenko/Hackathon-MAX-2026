@@ -106,14 +106,18 @@ export class ApiClient {
 
   // Картинка страницы (предпросмотр листом): запрос с Bearer, поэтому <img src>
   // напрямую не годится — отдаём Blob, а число страниц берём из заголовка.
+  // version — редакция листа в адресе: сервер отдаёт картинку «навсегда», и
+  // повторный показ той же редакции берётся из кеша без запроса.
   async previewPage(
     source: PreviewSource,
     page: number,
     size: PreviewSize,
+    version = '',
   ): Promise<{ image: Blob; pages: number }> {
     const base = source.kind === 'template' ? 'templates' : 'documents';
+    const v = version ? `&v=${encodeURIComponent(version)}` : '';
     const response = await this.send(
-      `/api/v1/${base}/${source.id}/preview?page=${page}&size=${size}`,
+      `/api/v1/${base}/${source.id}/preview?page=${page}&size=${size}${v}`,
       {},
       'image/jpeg',
     );

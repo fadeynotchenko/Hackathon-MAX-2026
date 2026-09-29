@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Query, Request, Response, status
 
 from core.api.dependencies import CurrentUserDep, SessionDep, StateDep
 from core.api.previews import (
@@ -9,6 +9,7 @@ from core.api.previews import (
     PreviewSize,
     SizeQuery,
     preview_response,
+    warm_template,
 )
 from core.api.schemas.common import ErrorResponse, IdPath, OkResponse
 from core.api.schemas.documents import TemplateImportSchema, TemplateRequest, TemplateSchema
@@ -87,9 +88,14 @@ async def get_templates(
     summary="Сохранить свой шаблон",
 )
 async def create(
-    payload: TemplateRequest, current: CurrentUserDep, session: SessionDep
+    payload: TemplateRequest,
+    current: CurrentUserDep,
+    session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
 ) -> TemplateSchema:
     created = await create_template(session, user_id=current.id, data=_input(payload))
+    warm_template(background, user_id=current.id, template_id=created.id, cfg=state.files_config)
     return TemplateSchema.model_validate(created)
 
 
@@ -174,11 +180,17 @@ async def preview(
     description="Документы, созданные раньше, сохраняют прежний текст шаблона.",
 )
 async def update(
-    template_id: IdPath, payload: TemplateRequest, current: CurrentUserDep, session: SessionDep
+    template_id: IdPath,
+    payload: TemplateRequest,
+    current: CurrentUserDep,
+    session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
 ) -> TemplateSchema:
     updated = await update_template(
         session, user_id=current.id, template_id=template_id, data=_input(payload)
     )
+    warm_template(background, user_id=current.id, template_id=updated.id, cfg=state.files_config)
     return TemplateSchema.model_validate(updated)
 
 
@@ -190,8 +202,15 @@ async def update(
     summary="Сохранить в каталог шаблон документа, сделанного по файлу",
     description="Следующий такой же документ начнётся с этого шаблона.",
 )
-async def keep(template_id: IdPath, current: CurrentUserDep, session: SessionDep) -> TemplateSchema:
+async def keep(
+    template_id: IdPath,
+    current: CurrentUserDep,
+    session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
+) -> TemplateSchema:
     kept = await keep_template(session, user_id=current.id, template_id=template_id)
+    warm_template(background, user_id=current.id, template_id=kept.id, cfg=state.files_config)
     return TemplateSchema.model_validate(kept)
 
 

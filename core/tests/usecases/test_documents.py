@@ -372,7 +372,11 @@ def test_optional_fields_only_inside_conditional_pieces_are_never_required() -> 
         for line in docx_lines(template.blank_bytes()):
             assert line.count("[[") == line.count("]]"), (template.slug, line)
             for piece in CONDITIONAL.finditer(line):
-                for marker in MARKER.finditer(piece.group(1)):
+                for marker in MARKER.finditer(piece.group(2)):
+                    # {{key|hide}} в заголовке раздела ничего не печатает — линии
+                    # для обязательного поля он не отнимает.
+                    if marker.group(3) == "hide":
+                        continue
                     # «НДС в том числе» по необязательной ставке: кусок держится
                     # на ставке, итог по позициям тут ни при чём.
                     argument = (marker.group(3) or "").partition(":")[2]

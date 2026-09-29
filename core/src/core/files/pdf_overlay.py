@@ -3,12 +3,11 @@
 PDF не редактируется как DOCX: текста-абзаца в нём нет, только глифы по
 координатам. Перевод PDF в DOCX (LibreOffice) разваливал вёрстку — текст
 наезжал, подписи пропадали, — поэтому лист остаётся исходным, а поверх места
-значения кладётся белая плашка и новое значение тем же кеглем. Текст образца
-под плашкой не должен остаться в файле — иначе прежний клиент читался бы при
-копировании и поиске, — поэтому текстовые объекты, почти целиком лежащие на
-месте значения, сначала удаляются из страницы (pdfium). Объект, где значение
-слито в одну строку с подписью, удалить нельзя, не потеряв подпись: он
-остаётся под плашкой. Место на листе
+значения кладётся белая плашка и новое значение тем же кеглем. Прежний текст
+места не должен остаться в файле — иначе прежний клиент читался бы при
+копировании и поиске, — поэтому до плашки он вырезается из страницы (pdfium):
+объект, который весь — значение, удаляется, а из объекта, где значение слито с
+подписью («ИНН 7707083893»), вырезается только значение. Место на листе
 ищется по тому же ``Place`` (текст перед значением и само значение), что и в
 DOCX; пробелы в тексте PDF расставлены как попало, поэтому сравнение идёт по
 символам без пробелов.
@@ -21,6 +20,7 @@ TTF с кириллицей — ``PdfUnavailableError``: подставить н
 
 from __future__ import annotations
 
+import ctypes
 import io
 import re
 from collections.abc import Mapping, Sequence
@@ -65,7 +65,8 @@ FONT_FILES: dict[str, tuple[str, ...]] = {
 _SERIF = re.compile(r"times|serif|georgia|cambria|garamond|roman", re.IGNORECASE)
 _BOLD = re.compile(r"bold|black|heavy|semibold", re.IGNORECASE)
 _SPACE = re.compile(r"\s+")
-# Доля текстового объекта на месте значения, при которой он удаляется целиком.
+# Доля объекта на месте значения, при которой он удаляется целиком, если его
+# текст не прочитать.
 _INSIDE = 0.6
 # Поля страницы, за которые значение не выходит: длинное сжимается по кеглю.
 _MARGIN = 20.0
@@ -82,6 +83,9 @@ class _Spot:
     size: float
     role: str
     text: str
+    # Прежний текст места на этой строке, без пробелов: по нему он вырезается
+    # из объекта, где стоит вместе с подписью.
+    original: str = ""
 
 
 def available() -> bool:
@@ -162,6 +166,7 @@ def _line_spots(page: int, chars: list[dict[str, object]], text: str) -> list[_S
                 size=float(first["size"]),  # type: ignore[arg-type]
                 role=_role(str(first.get("fontname", ""))),
                 text=text if index == 0 else "",
+                original="".join(str(c["text"]) for c in line),
             )
         )
     return spots
@@ -206,17 +211,76 @@ def _strip_page(document: pdfium.PdfDocument, number: int, spots: list[_Spot]) -
     # pdfium следит за деревом объектов: удалённый объект и страницу закрываем
     # сами и по порядку, иначе сборщик мусора закрывает их после документа.
     page = document[number]
+    textpage = page.get_textpage()
     try:
         height = page.get_height()
         texts = list(page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_TEXT], max_depth=1))
-        doomed = [obj for obj in texts if _covered(obj.get_bounds(), spots, height)]
+        doomed = []
+        changed = False
+        for obj in texts:
+            touched = [spot for spot in spots if _overlaps(obj.get_bounds(), spot, height)]
+            if not touched:
+                continue
+            text = _object_text(obj, textpage)
+            cut = text
+            for spot in touched:
+                cut = _without(cut, spot.original)
+            if cut != text and cut.strip():
+                # Значение слито с подписью в один объект («ИНН 7707083893»):
+                # вырезается только значение, подпись остаётся на месте.
+                changed = _set_text(obj, cut.rstrip()) or changed
+            elif cut != text or _covered(obj.get_bounds(), touched, height):
+                # Объект — само значение (или его текст не прочитать, но он
+                # почти целиком на месте значения): удаляется целиком.
+                doomed.append(obj)
         for obj in doomed:
             page.remove_obj(obj)
             obj.close()
-        if doomed:
+        changed = changed or bool(doomed)
+        if changed:
             page.gen_content()
     finally:
+        textpage.close()
         page.close()
+
+
+def _overlaps(bounds: tuple[float, float, float, float], spot: _Spot, height: float) -> bool:
+    left, bottom, right, top = bounds
+    y0, y1 = height - spot.bottom, height - spot.top
+    return right > spot.x0 and left < spot.x1 and top > y0 and bottom < y1
+
+
+def _object_text(obj: pdfium.PdfObject, textpage: pdfium.PdfTextPage) -> str:
+    size = pdfium_c.FPDFTextObj_GetText(obj.raw, textpage.raw, None, 0)
+    if size <= 2:
+        return ""
+    buffer = ctypes.create_string_buffer(size)
+    pdfium_c.FPDFTextObj_GetText(
+        obj.raw, textpage.raw, ctypes.cast(buffer, ctypes.POINTER(pdfium_c.FPDF_WCHAR)), size
+    )
+    return buffer.raw[: size - 2].decode("utf-16-le", errors="ignore")
+
+
+def _set_text(obj: pdfium.PdfObject, text: str) -> bool:
+    encoded = (text + "\x00").encode("utf-16-le")
+    buffer = ctypes.create_string_buffer(encoded, len(encoded))
+    return bool(
+        pdfium_c.FPDFText_SetText(obj.raw, ctypes.cast(buffer, ctypes.POINTER(pdfium_c.FPDF_WCHAR)))
+    )
+
+
+def _without(text: str, needle: str) -> str:
+    """Вырезать ``needle`` из ``text``, не считая пробелов: в PDF они стоят не
+    так, как в тексте, по которому нашлось место."""
+    if not needle:
+        return text
+    positions = [index for index, char in enumerate(text) if not char.isspace()]
+    flat = "".join(text[index] for index in positions)
+    start = flat.find(needle)
+    if start == -1:
+        return text
+    begin, end = positions[start], positions[start + len(needle) - 1] + 1
+    return text[:begin] + text[end:]
 
 
 def _covered(bounds: tuple[float, float, float, float], spots: list[_Spot], height: float) -> bool:

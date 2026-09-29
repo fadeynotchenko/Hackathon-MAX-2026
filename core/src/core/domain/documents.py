@@ -640,7 +640,13 @@ MARKER = re.compile(r"{{\s*(\w+)((?:\.\w+){0,2})(?:\s*\|\s*([\w:]+))?\s*}}")
 # все поля внутри, иначе исчезает целиком вместе с подписью и запятой. Так
 # необязательный реквизит пропадает из фразы, а не оставляет в ней «КПП ______».
 # Кусок живёт в одной строке (абзаце) и не вкладывается в другой.
-CONDITIONAL = re.compile(r"\[\[([^\n]*?)\]\]")
+# [[?…]] — наоборот, остаётся, если заполнено хоть одно поле внутри: так
+# заголовок раздела («Условия сотрудничества») пропадает вместе с разделом,
+# когда пусты все его строки. Поле в таком заголовке пишется {{key|hide}} —
+# участвует в условии, но само не печатается. [[!…]] — остаётся, когда пусты
+# все поля внутри: другая формулировка пункта вместо линии посреди договора.
+CONDITIONAL = re.compile(r"\[\[([?!]?)([^\n]*?)\]\]")
+HIDE = "hide"
 # Разделитель, с которого после выпавшего куска начинается строка: «[[Тел.
 # {{phone}}]][[, почта {{email}}]]» без телефона — «почта …», а не «, почта …».
 LEADING_SEPARATOR = re.compile(r"^(\s*)[,;]\s*")
@@ -696,23 +702,38 @@ def marker_value(match: re.Match[str], context: Mapping[str, str], blank: str) -
     """Что встанет на место маркера. Пустое поле — ``blank``, линия для записи
     от руки. Пустой столбец позиции (у «Доставки» нет единицы) — пусто: это
     не пропущенное поле, а ячейка строки, которой нечего показать."""
+    if match.group(3) == HIDE:
+        return ""
     value = context.get(marker_name(match))
     if value is None or (not value and match.group(2).count(".") < 2):
         return blank
     return value
 
 
-def conditional_spans(text: str, context: Mapping[str, str]) -> list[tuple[int, int, bool]]:
-    """Условные куски строки: начало, конец и остаётся ли кусок — все маркеры
-    внутри заполнены. Кусок без маркеров остаётся всегда."""
-    return [
-        (
-            match.start(),
-            match.end(),
-            all(context.get(marker_name(inner)) for inner in MARKER.finditer(match.group(1))),
-        )
-        for match in CONDITIONAL.finditer(text)
-    ]
+def _filled(match: re.Match[str], context: Mapping[str, str]) -> bool:
+    name = match.group(1) + match.group(2) if match.group(3) == HIDE else marker_name(match)
+    return bool(context.get(name))
+
+
+def conditional_spans(text: str, context: Mapping[str, str]) -> list[tuple[int, int, bool, int]]:
+    """Условные куски строки: начало, конец, остаётся ли кусок и длина его
+    открывающей скобки (``[[``, ``[[?``, ``[[!``). ``[[…]]`` остаётся, когда
+    заполнены все маркеры внутри, ``[[?…]]`` — когда хоть один, ``[[!…]]`` —
+    когда ни одного. Кусок без маркеров остаётся всегда."""
+    spans = []
+    for match in CONDITIONAL.finditer(text):
+        inner = [_filled(marker, context) for marker in MARKER.finditer(match.group(2))]
+        mode = match.group(1)
+        if not inner:
+            keep = True
+        elif mode == "?":
+            keep = any(inner)
+        elif mode == "!":
+            keep = not any(inner)
+        else:
+            keep = all(inner)
+        spans.append((match.start(), match.end(), keep, 2 + len(match.group(1))))
+    return spans
 
 
 def _money_variants(key: str, amount: Decimal) -> dict[str, str]:
@@ -821,14 +842,16 @@ def _fill_line(line: str, context: Mapping[str, str], blank: str) -> str | None:
     выпал условный кусок, и в строке не осталось ни одного значения — только
     подпись («Адрес: »), которой нечего подписывать."""
     dropped = False
-    for start, end, keep in reversed(conditional_spans(line, context)):
-        inner = line[start + 2 : end - 2] if keep else ""
+    for start, end, keep, opening in reversed(conditional_spans(line, context)):
+        inner = line[start + opening : end - 2] if keep else ""
         dropped = dropped or not keep
         line = line[:start] + inner + line[end:]
     if dropped and not MARKER.search(line):
         return None
     if dropped and (separator := LEADING_SEPARATOR.match(line)) is not None:
-        line = separator.group(1) + line[separator.end() :]
+        rest = line[separator.end() :]
+        # «, тел. …» без первого куска — начало фразы: «Тел. …».
+        line = separator.group(1) + rest[:1].upper() + rest[1:]
     return MARKER.sub(lambda m: marker_value(m, context, blank), line)
 
 

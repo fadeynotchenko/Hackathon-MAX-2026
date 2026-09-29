@@ -33,7 +33,7 @@ function loadPage(
   const key = `${source.kind}:${source.id}:${version}:${size}:${page}`;
   const cached = cache.get(key);
   if (cached) return cached;
-  const loading = api.previewPage(source, page, size).then(({ image, pages }) => ({
+  const loading = api.previewPage(source, page, size, version).then(({ image, pages }) => ({
     url: URL.createObjectURL(image),
     pages,
   }));
