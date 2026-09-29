@@ -26,7 +26,12 @@ async def db_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-SessionDep = Annotated[AsyncSession, Depends(db_session)]
+# scope="function": commit до отправки ответа. По умолчанию FastAPI закрывает
+# yield-зависимость после ответа и фоновых задач, и транзакция висела, пока
+# рисовался лист предпросмотра (секунды LibreOffice): клиент уже получил 200,
+# а следующий запрос читал документ без только что сохранённых полей, прогрев
+# после создания не находил документ, а удаление ждало на блокировке строки.
+SessionDep = Annotated[AsyncSession, Depends(db_session, scope="function")]
 
 
 def redis_client() -> Redis:
