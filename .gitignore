@@ -15,7 +15,7 @@ bot/dist/
 .vite/
 
 # Окружение: настоящие секреты живут только в .env, в истории им не место.
-# .env.example генерируется из реестра shared/config/env_spec.py и коммитится.
+# .env.example генерируется из реестра core/src/core/config/env_spec.py и коммитится.
 .env
 .env.*
 !.env.example

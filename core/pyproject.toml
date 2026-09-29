@@ -36,6 +36,8 @@ dev = [
     "ruff>=0.9",
     "import-linter>=2.1",
     "pre-commit>=4.0",
+    # Чтение DATA-API.yaml в tests/api/test_data_api.py.
+    "pyyaml>=6.0",
 ]
 
 [build-system]

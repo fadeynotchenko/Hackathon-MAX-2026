@@ -35,7 +35,10 @@ _HEADER = """\
 
 def _value_for(var: EnvVar) -> str:
     if var.secret:
-        return var.example or "change-me"
+        # Необязательный секрет пустой: пустота и значит «выключено», а
+        # «change-me» после cp .env.example .env включил бы, например, помощника
+        # с ключом, на котором GigaChat отвечает ошибкой авторизации.
+        return var.example or ("change-me" if var.required_for else "")
     if var.example is not None:
         return var.example
     return var.default or ""

@@ -1,6 +1,7 @@
 """Сгенерированные артефакты совпадают с источником правды.
 
 .env.example ← core.config.env_spec, contracts/openapi.json ← core.api,
+test-data.json ← core.usecases.documents.demo,
 contracts/events.schema.json ← core.events.contracts. Дрейф ловится здесь,
 а не «когда заметят».
 """
@@ -9,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.scripts import export_event_schemas, export_openapi, gen_env_example
+from core.scripts import export_event_schemas, export_openapi, export_test_data, gen_env_example
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -29,6 +30,12 @@ def test_event_schema_current() -> None:
         export_event_schemas.SCHEMA_PATH.read_text(encoding="utf-8")
         == export_event_schemas.render()
     ), "bot/src/events/schema.json устарел: uv run python -m scripts.export_event_schemas"
+
+
+def test_test_data_current() -> None:
+    assert (
+        export_test_data.TEST_DATA_PATH.read_text(encoding="utf-8") == export_test_data.render()
+    ), "test-data.json устарел: uv run python -m core.scripts.export_test_data"
 
 
 def test_ts_api_types_not_older_than_openapi() -> None:
