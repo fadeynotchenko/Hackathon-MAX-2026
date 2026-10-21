@@ -41,6 +41,7 @@ from .journal import (
     last_sends,
     record_delivery,
 )
+from .lookup import RequisiteSuggestion, SuggestKind, suggest_requisites
 from .organizations import (
     OrganizationView,
     create_organization,
@@ -88,7 +89,9 @@ __all__ = [
     "DocumentView",
     "Fact",
     "OrganizationView",
+    "RequisiteSuggestion",
     "SendState",
+    "SuggestKind",
     "TemplateField",
     "TemplateInput",
     "TemplateView",
@@ -129,6 +132,7 @@ __all__ = [
     "send_document_to_chat",
     "set_fields",
     "set_parties",
+    "suggest_requisites",
     "template_preview",
     "update_counterparty",
     "update_organization",

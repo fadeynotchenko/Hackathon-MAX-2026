@@ -2,10 +2,13 @@
 // карточки предприятия — распознанное подставляется в поля и помечается,
 // а сохраняет человек, проверив значения. Пример значения — плейсхолдером
 // в пустом поле, а не строкой под ним.
+//
+// Название и ИНН ищут организацию в реестре и заполняют юрданные целиком,
+// банк и БИК — банк с корр. счётом, адрес — сам себя (lib/suggest.ts).
 import { CellList, CellSimple } from '@maxhub/max-ui';
 import { useState } from 'react';
 
-import { ApiError } from '@/api/client';
+import { ApiError, type FieldType, type RequisiteSuggestion } from '@/api/client';
 import { Banner } from '@/components/Banner';
 import { FieldInput } from '@/components/FieldInput';
 import { FilePick } from '@/components/FilePick';
@@ -13,6 +16,13 @@ import { IconCamera, IconSparkle } from '@/components/icons';
 import { Section } from '@/components/Page';
 import { useAuth } from '@/auth/context';
 import { pluralize } from '@/lib/format';
+import {
+  REGISTRY_SOURCE,
+  SUGGEST_TITLE,
+  suggestTarget,
+  suggestUnavailable,
+  suggestionValues,
+} from '@/lib/suggest';
 import { errorText } from '@/lib/useAsync';
 
 import { REQUISITE_GROUPS, type Requisites } from './requisites';
@@ -27,7 +37,8 @@ export interface RequisitesFormProps {
 
 export function RequisitesForm({ values, onChange, errors, side }: RequisitesFormProps) {
   const { api, mode } = useAuth();
-  const [recognized, setRecognized] = useState<Set<string>>(new Set());
+  // Ключ → откуда значение: «С фото» ждёт сверки, «Из реестра» — нет.
+  const [filledFrom, setFilledFrom] = useState<Map<string, 'photo' | 'registry'>>(new Map());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{
     tone: 'success' | 'error';
@@ -45,7 +56,7 @@ export function RequisitesForm({ values, onChange, errors, side }: RequisitesFor
       );
       const keys = Object.keys(found);
       onChange({ ...values, ...found });
-      setRecognized(new Set(keys));
+      setFilledFrom(new Map(keys.map((key) => [key, 'photo'])));
       const skipped = result.errors.map((error) => `Не подставлено: ${error.message}`).join(' ');
       setNotice(
         keys.length > 0
@@ -75,7 +86,7 @@ export function RequisitesForm({ values, onChange, errors, side }: RequisitesFor
     try {
       const demo = await api.devRequisites();
       onChange({ ...values, ...demo[side] });
-      setRecognized(new Set());
+      setFilledFrom(new Map());
       setNotice({
         tone: 'success',
         title: 'Подставлены тестовые реквизиты — они проходят проверку',
@@ -83,6 +94,24 @@ export function RequisitesForm({ values, onChange, errors, side }: RequisitesFor
     } catch (err) {
       setNotice({ tone: 'error', title: errorText(err, 'Тестовые реквизиты недоступны') });
     }
+  };
+
+  const suggestFor = (key: string, type: FieldType) => {
+    const target = suggestTarget(key, type, ['']);
+    if (!target) return undefined;
+    return {
+      title: SUGGEST_TITLE[target.kind],
+      fetch: (query: string) => api.suggest(target.kind, query),
+      onPick: (suggestion: RequisiteSuggestion) => {
+        const found = suggestionValues(target, key, suggestion, null);
+        onChange({ ...values, ...found });
+        setFilledFrom((prev) => {
+          const next = new Map(prev);
+          for (const filled of Object.keys(found)) next.set(filled, 'registry');
+          return next;
+        });
+      },
+    };
   };
 
   return (
@@ -119,14 +148,17 @@ export function RequisitesForm({ values, onChange, errors, side }: RequisitesFor
                 key={field.key}
                 label={field.label}
                 type={field.type}
-                placeholder={field.example}
+                placeholder={
+                  (suggestUnavailable() ? undefined : field.suggestHint) ?? field.example
+                }
                 value={values[field.key] ?? ''}
                 maxLength={field.maxLength}
                 error={errors[field.key]}
-                source={recognized.has(field.key) ? { label: 'С фото', draft: true } : null}
+                source={FILLED_FROM[filledFrom.get(field.key) ?? 'none']}
+                suggest={suggestFor(field.key, field.type)}
                 onChange={(value) => {
-                  setRecognized((prev) => {
-                    const next = new Set(prev);
+                  setFilledFrom((prev) => {
+                    const next = new Map(prev);
                     next.delete(field.key);
                     return next;
                   });
@@ -140,3 +172,9 @@ export function RequisitesForm({ values, onChange, errors, side }: RequisitesFor
     </>
   );
 }
+
+const FILLED_FROM = {
+  photo: { label: 'С фото', draft: true },
+  registry: REGISTRY_SOURCE,
+  none: null,
+} as const;

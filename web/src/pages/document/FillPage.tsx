@@ -13,7 +13,9 @@
 //
 // Стороны выбираются здесь же: в разделе клиента — карточка из клиентов, в
 // «Вашей организации» — от какой своей организации документ. Выбор — свой экран
-// (parties.ts), путь к нему тот же, что к способу заполнения.
+// (parties.ts), путь к нему тот же, что к способу заполнения. А можно и не
+// заводить карточку: название или ИНН стороны ищут организацию в реестре и
+// заполняют все её поля в документе, банк и БИК — банк, адрес — сам себя.
 //
 // Действия формы (проверка, переход, тестовые данные) идут по одному: пока одно
 // ждёт сервер, остальные кнопки выключены, а ушла форма «Назад» — ответ уже
@@ -22,7 +24,7 @@ import { Button, CellHeader, CellList, CellSimple, Typography } from '@maxhub/ma
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import type { DocumentView, Organization } from '@/api/client';
+import type { DocumentView, FieldSpec, Organization, RequisiteSuggestion } from '@/api/client';
 import { Banner } from '@/components/Banner';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { FieldInput } from '@/components/FieldInput';
@@ -40,6 +42,13 @@ import { ErrorState, Loading } from '@/components/StateViews';
 import { Steps } from '@/components/Steps';
 import { useAuth } from '@/auth/context';
 import { GROUP_TITLE, groupFields, pluralize } from '@/lib/format';
+import {
+  REGISTRY_SOURCE,
+  SIDE_PREFIXES,
+  SUGGEST_TITLE,
+  suggestTarget,
+  suggestionValues,
+} from '@/lib/suggest';
 import { useScreenActivity } from '@/lib/screenMemory';
 import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
@@ -148,6 +157,8 @@ function FillForm({ loaded, organizations, returned, onBack }: FillFormProps) {
     () => new Set(filledKeys(draftFromDocument(loaded))),
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Поля, заполненные подсказкой из реестра и ещё не тронутые руками.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   // Второй тап может прийти раньше перерисовки с busy.
   const running = useRef(false);
   const mounted = useRef(false);
@@ -179,6 +190,23 @@ function FillForm({ loaded, organizations, returned, onBack }: FillFormProps) {
     setDraft(merged);
     setInitial(merged);
     setRevealed((prev) => new Set([...prev, ...filledKeys(merged)]));
+  };
+
+  const suggestFor = (field: FieldSpec) => {
+    const target = suggestTarget(field.key, field.type, SIDE_PREFIXES);
+    if (!target) return undefined;
+    return {
+      title: SUGGEST_TITLE[target.kind],
+      fetch: (query: string) => api.suggest(target.kind, query),
+      onPick: (suggestion: RequisiteSuggestion) => {
+        const keys = new Set(doc.template.fields.map((item) => item.key));
+        const values = suggestionValues(target, field.key, suggestion, keys);
+        const found = Object.keys(values);
+        setDraft((prev) => ({ ...prev, ...values }));
+        setRevealed((prev) => new Set([...prev, ...found]));
+        setPicked((prev) => new Set([...prev, ...found]));
+      },
+    };
   };
 
   // Несохранённые правки уходят на сервер до перехода с формы и перед проверкой.
@@ -464,11 +492,22 @@ function FillForm({ loaded, organizations, returned, onBack }: FillFormProps) {
                     // Отклонённое значение в поле — то, что ввёл человек, а сервер
                     // хранит прежнее: метка «Из карточки» рядом с ним соврала бы.
                     source={
-                      !errors[field.key] && draft[field.key] === initial[field.key]
-                        ? sourceOf(doc, field)
-                        : null
+                      picked.has(field.key) && !errors[field.key]
+                        ? REGISTRY_SOURCE
+                        : !errors[field.key] && draft[field.key] === initial[field.key]
+                          ? sourceOf(doc, field)
+                          : null
                     }
-                    onChange={(value) => setDraft((prev) => ({ ...prev, [field.key]: value }))}
+                    suggest={suggestFor(field)}
+                    onChange={(value) => {
+                      setPicked((prev) => {
+                        if (!prev.has(field.key)) return prev;
+                        const next = new Set(prev);
+                        next.delete(field.key);
+                        return next;
+                      });
+                      setDraft((prev) => ({ ...prev, [field.key]: value }));
+                    }}
                   />
                 </div>
               ))}

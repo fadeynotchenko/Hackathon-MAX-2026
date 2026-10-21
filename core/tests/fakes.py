@@ -1,4 +1,5 @@
-"""Подставные внешние сервисы для тестов: модель с заранее заданными ответами.
+"""Подставные внешние сервисы для тестов: модель и реестр подсказок с заранее
+заданными ответами.
 
 Модель помнит, что у неё спрашивали, — тесты проверяют и ответ сценария, и то,
 какой контекст ушёл провайдеру.
@@ -10,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from core.llm.client import ChatMessage, LLMError, LLMUnavailableError
+from core.suggest import AddressRecord, BankRecord, CompanyRecord, SuggestUnavailableError
 
 
 class FakeLLM:
@@ -45,6 +47,40 @@ class FakeLLM:
         if self.json_replies:
             return self.json_replies.pop(0)
         return dict(self.json_reply)
+
+    async def aclose(self) -> None:
+        return None
+
+
+class FakeSuggest:
+    def __init__(
+        self,
+        *,
+        companies: Sequence[CompanyRecord] = (),
+        banks: Sequence[BankRecord] = (),
+        addresses: Sequence[AddressRecord] = (),
+        unavailable: bool = False,
+    ) -> None:
+        self._companies = list(companies)
+        self._banks = list(banks)
+        self._addresses = list(addresses)
+        self.unavailable = unavailable
+        self.queries: list[tuple[str, str]] = []
+
+    def _answer[T](self, kind: str, query: str, records: list[T]) -> list[T]:
+        self.queries.append((kind, query))
+        if self.unavailable:
+            raise SuggestUnavailableError("fake: недоступен")
+        return records
+
+    async def companies(self, query: str, *, count: int) -> list[CompanyRecord]:
+        return self._answer("company", query, self._companies)[:count]
+
+    async def banks(self, query: str, *, count: int) -> list[BankRecord]:
+        return self._answer("bank", query, self._banks)[:count]
+
+    async def addresses(self, query: str, *, count: int) -> list[AddressRecord]:
+        return self._answer("address", query, self._addresses)[:count]
 
     async def aclose(self) -> None:
         return None

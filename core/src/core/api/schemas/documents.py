@@ -369,6 +369,17 @@ class RecognizedRequisitesSchema(BaseModel):
     )
 
 
+class RequisiteSuggestionSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    title: str = Field(description="Строка списка: название, банк или адрес")
+    subtitle: str = Field(description="Уточнение под строкой: ИНН и адрес, БИК, полный адрес")
+    values: dict[str, str] = Field(
+        description="Реквизит → значение из реестра (name, inn, kpp, ogrn, address, director, "
+        "bank, bic, corr_account); ничего не сохранено"
+    )
+
+
 class AgentAskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
 

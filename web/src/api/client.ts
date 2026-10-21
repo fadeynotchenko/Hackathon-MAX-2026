@@ -37,6 +37,7 @@ export type OrganizationRequest = components['schemas']['OrganizationRequest'];
 export type Counterparty = components['schemas']['CounterpartySchema'];
 export type CounterpartyRequest = components['schemas']['CounterpartyRequest'];
 export type RecognizedRequisites = components['schemas']['RecognizedRequisitesSchema'];
+export type RequisiteSuggestion = components['schemas']['RequisiteSuggestionSchema'];
 export type AgentFillResponse = components['schemas']['AgentFillResponse'];
 export type VoiceFillResponse = components['schemas']['VoiceFillResponse'];
 export type SendDocumentResponse = components['schemas']['SendDocumentResponse'];
@@ -434,5 +435,11 @@ export class ApiClient {
       method: 'POST',
       file,
     });
+  }
+
+  suggest(kind: 'company' | 'bank' | 'address', query: string): Promise<RequisiteSuggestion[]> {
+    return this.request<RequisiteSuggestion[]>(
+      `/api/v1/suggest/${kind}?query=${encodeURIComponent(query)}`,
+    );
   }
 }

@@ -50,7 +50,9 @@ Python в core импортирует только пакет `core` (`import-li
 ┌─────────┐┌─────────┐┌─────────┐┌─────────┐  events — шов с ботом (Redis Streams);
 │ events/ ││   db/   ││ files/  ││  llm/   │  db — модели, репозитории, движок, Redis;
 └────┬────┘└────┬────┘└────┬────┘└────┬────┘  files — DOCX, PDF, хранение, вложения;
-     └──────────┴────┬─────┴──────────┘       llm — порт модели (с вложениями) и GigaChat
+     └──────────┴────┬─────┴──────────┘       llm — порт модели (с вложениями) и GigaChat;
+                     │                        suggest/ — порт подсказок реестров и DaData,
+                     │                        стоит рядом с llm на том же уровне;
                      ▼                        друг о друге не знают
                ┌─────────────┐                 структурированные логи
                │    logs/    │
@@ -67,7 +69,7 @@ Python в core импортирует только пакет `core` (`import-li
 инструменты разработчика, вне контракта. Проверка: `cd core && uv run lint-imports`,
 тот же вызов в pre-commit, Stop-хуке Claude Code и `core/tests/repo/test_import_contracts.py`.
 
-Слои по именам: `api`, `usecases`, `events`, `db`, `files`, `llm`, `logs`, `config`, `domain`.
+Слои по именам: `api`, `usecases`, `events`, `db`, `files`, `llm`, `suggest`, `logs`, `config`, `domain`.
 
 ## Где живут модели
 

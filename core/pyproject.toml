@@ -57,12 +57,12 @@ packages = ["src/core"]
 root_package = "core"
 
 [[tool.importlinter.contracts]]
-name = "layers: api -> usecases -> events/db/files/llm -> logs -> config/domain"
+name = "layers: api -> usecases -> events/db/files/llm/suggest -> logs -> config/domain"
 type = "layers"
 layers = [
     "core.api",
     "core.usecases",
-    "core.events | core.db | core.files | core.llm",
+    "core.events | core.db | core.files | core.llm | core.suggest",
     "core.logs",
     "core.config | core.domain",
 ]

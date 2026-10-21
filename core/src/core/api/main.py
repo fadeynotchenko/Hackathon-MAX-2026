@@ -29,6 +29,7 @@ from core.api.routers import (
     health,
     me,
     organizations,
+    suggest,
     templates,
 )
 from core.api.state import ApiState
@@ -43,6 +44,7 @@ from core.events import EventBus, get_events_config
 from core.files import FilesConfig
 from core.llm import GigaChatConfig, build_llm_client
 from core.logs import biz_error, biz_info, biz_warn, setup_logging
+from core.suggest import DadataConfig, build_suggest_client
 from core.usecases.auth.config import get_auth_config
 from core.usecases.documents import ensure_builtin_templates, warm_builtin_previews
 
@@ -104,11 +106,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if llm is None:
         # Без ключа приложение работает, но про выключенного агента должно быть видно в логе старта.
         biz_warn(logger, "agent.disabled", reason="GIGACHAT_AUTH_KEY is empty")
+    suggest_client = build_suggest_client(DadataConfig.from_env())
+    if suggest_client is None:
+        biz_warn(logger, "suggest.disabled", reason="DADATA_API_KEY is empty")
     app.state.api = ApiState(
         app_config=app_config,
         auth_config=get_auth_config(),
         files_config=FilesConfig.from_env(),
         llm=llm,
+        suggest=suggest_client,
         event_bus=EventBus(
             redis, stream_to_bot=events.stream_to_bot, source="api", maxlen=events.maxlen
         ),
@@ -154,6 +160,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await worker_redis.aclose()
         if llm is not None:
             await llm.aclose()
+        if suggest_client is not None:
+            await suggest_client.aclose()
         await close_redis()
         await close_db()
         biz_info(logger, "api.stopped")
@@ -215,6 +223,7 @@ def create_app(
         agent.requisites_router,
         counterparties.router,
         organizations.router,
+        suggest.router,
     ):
         app.include_router(router, prefix=API_V1_PREFIX)
     # Dev-вход — явный opt-in (DEV_LOGIN_ENABLED) и никогда в production: в проде

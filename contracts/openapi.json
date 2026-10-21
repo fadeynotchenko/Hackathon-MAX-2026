@@ -1518,6 +1518,35 @@
         "title": "RenderRequest",
         "type": "object"
       },
+      "RequisiteSuggestionSchema": {
+        "properties": {
+          "subtitle": {
+            "description": "Уточнение под строкой: ИНН и адрес, БИК, полный адрес",
+            "title": "Subtitle",
+            "type": "string"
+          },
+          "title": {
+            "description": "Строка списка: название, банк или адрес",
+            "title": "Title",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Реквизит → значение из реестра (name, inn, kpp, ogrn, address, director, bank, bic, corr_account); ничего не сохранено",
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "title",
+          "subtitle",
+          "values"
+        ],
+        "title": "RequisiteSuggestionSchema",
+        "type": "object"
+      },
       "SendDocumentRequest": {
         "properties": {
           "format": {
@@ -1665,6 +1694,15 @@
         ],
         "title": "SetFieldsRequest",
         "type": "object"
+      },
+      "SuggestKind": {
+        "enum": [
+          "company",
+          "bank",
+          "address"
+        ],
+        "title": "SuggestKind",
+        "type": "string"
       },
       "TemplateFieldRequest": {
         "properties": {
@@ -5067,6 +5105,83 @@
         "summary": "Реквизиты организации с фото для карточки контрагента или своей компании",
         "tags": [
           "agent"
+        ]
+      }
+    },
+    "/api/v1/suggest/{kind}": {
+      "get": {
+        "operationId": "suggest_requisites",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SuggestKind"
+            }
+          },
+          {
+            "description": "Что набрал человек",
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "description": "Что набрал человек",
+              "maxLength": 300,
+              "title": "Query",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RequisiteSuggestionSchema"
+                  },
+                  "title": "Response Suggest Requisites",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Подсказки из реестров: организация по названию или ИНН, банк, адрес",
+        "tags": [
+          "documents"
         ]
       }
     },

@@ -9,6 +9,9 @@ export interface RequisiteSpec {
   type: FieldType;
   // Пример значения — подсказкой под полем.
   example?: string;
+  // Плейсхолдер поля с поиском по реестру: говорит, что сюда можно не только
+  // вписать значение, но и найти его.
+  suggestHint?: string;
   maxLength?: number;
 }
 
@@ -17,8 +20,15 @@ export const REQUISITE_GROUPS: Array<{ title: string; fields: RequisiteSpec[] }>
     title: 'Юрданные',
     fields: [
       // Столько же хранит база: длиннее сервер отвечал «Некорректные данные запроса».
-      { key: 'name', label: 'Название', type: 'text', example: 'ООО «Ромашка»', maxLength: 255 },
-      { key: 'inn', label: 'ИНН', type: 'inn' },
+      {
+        key: 'name',
+        label: 'Название',
+        type: 'text',
+        example: 'ООО «Ромашка»',
+        suggestHint: 'Название или ИНН — найдём в реестре',
+        maxLength: 255,
+      },
+      { key: 'inn', label: 'ИНН', type: 'inn', suggestHint: 'Найдём организацию по ИНН' },
       { key: 'kpp', label: 'КПП', type: 'kpp' },
       { key: 'ogrn', label: 'ОГРН или ОГРНИП', type: 'ogrn' },
       { key: 'address', label: 'Юридический адрес', type: 'address' },
@@ -27,8 +37,14 @@ export const REQUISITE_GROUPS: Array<{ title: string; fields: RequisiteSpec[] }>
   {
     title: 'Банк и подписант',
     fields: [
-      { key: 'bank', label: 'Банк', type: 'text', example: 'ПАО Сбербанк' },
-      { key: 'bic', label: 'БИК', type: 'bic' },
+      {
+        key: 'bank',
+        label: 'Банк',
+        type: 'text',
+        example: 'ПАО Сбербанк',
+        suggestHint: 'Название банка или БИК',
+      },
+      { key: 'bic', label: 'БИК', type: 'bic', suggestHint: 'Найдём банк по БИК' },
       { key: 'account', label: 'Расчётный счёт', type: 'account' },
       { key: 'corr_account', label: 'Корр. счёт', type: 'account' },
       { key: 'director', label: 'Подписант', type: 'name', example: 'Иванов Иван Иванович' },

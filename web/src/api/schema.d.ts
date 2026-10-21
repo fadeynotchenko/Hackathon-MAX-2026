@@ -594,6 +594,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/suggest/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Подсказки из реестров: организация по названию или ИНН, банк, адрес */
+        get: operations["suggest_requisites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/templates": {
         parameters: {
             query?: never;
@@ -1405,6 +1422,26 @@ export interface components {
              */
             format: "docx" | "pdf";
         };
+        /** RequisiteSuggestionSchema */
+        RequisiteSuggestionSchema: {
+            /**
+             * Subtitle
+             * @description Уточнение под строкой: ИНН и адрес, БИК, полный адрес
+             */
+            subtitle: string;
+            /**
+             * Title
+             * @description Строка списка: название, банк или адрес
+             */
+            title: string;
+            /**
+             * Values
+             * @description Реквизит → значение из реестра (name, inn, kpp, ogrn, address, director, bank, bic, corr_account); ничего не сохранено
+             */
+            values: {
+                [key: string]: string;
+            };
+        };
         /** SendDocumentRequest */
         SendDocumentRequest: {
             /**
@@ -1477,6 +1514,11 @@ export interface components {
                 [key: string]: components["schemas"]["FieldValueSchema"];
             };
         };
+        /**
+         * SuggestKind
+         * @enum {string}
+         */
+        SuggestKind: "company" | "bank" | "address";
         /** TemplateFieldRequest */
         TemplateFieldRequest: {
             /**
@@ -3806,6 +3848,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    suggest_requisites: {
+        parameters: {
+            query: {
+                /** @description Что набрал человек */
+                query: string;
+            };
+            header?: never;
+            path: {
+                kind: components["schemas"]["SuggestKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequisiteSuggestionSchema"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
             /** @description Service Unavailable */

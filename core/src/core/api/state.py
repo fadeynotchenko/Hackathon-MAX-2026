@@ -14,6 +14,7 @@ from core.config.app_config import AppConfig
 from core.events import EventBus
 from core.files import FilesConfig
 from core.llm import LLMClient
+from core.suggest import SuggestClient
 from core.usecases.auth.config import AuthConfig
 
 
@@ -24,6 +25,7 @@ class ApiState:
     event_bus: EventBus
     files_config: FilesConfig
     llm: LLMClient | None = None
+    suggest: SuggestClient | None = None
 
 
 def api_state(request: Request) -> ApiState:

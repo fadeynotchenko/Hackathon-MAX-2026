@@ -5,6 +5,8 @@
 // Модификатор однострочное/многострочное — для широкого экрана: там однострочные
 // поля встают по два в ряд, а адрес и длинный текст занимают всю строку.
 // Позиции счёта — своя таблица строк (ItemsInput) с тем же видом подписи и ошибки.
+// Поле с подсказками (название, ИНН, банк, адрес) открывает под собой список из
+// реестра (Suggestions).
 import { Input, Textarea, Typography } from '@maxhub/max-ui';
 import { useId } from 'react';
 
@@ -12,6 +14,7 @@ import type { FieldType } from '@/api/client';
 import { inputKind } from '@/lib/format';
 
 import { ItemsInput } from './ItemsInput';
+import { useSuggestions, type SuggestSource } from './Suggestions';
 
 export interface FieldInputProps {
   label: string;
@@ -26,6 +29,7 @@ export interface FieldInputProps {
   maxLength?: number | null | undefined;
   // Откуда значение: «Из организации», «С фото — проверьте».
   source?: { label: string; draft: boolean } | null | undefined;
+  suggest?: SuggestSource | undefined;
 }
 
 export function FieldInput({
@@ -39,9 +43,11 @@ export function FieldInput({
   error,
   source,
   maxLength,
+  suggest,
 }: FieldInputProps) {
   const id = useId();
   const kind = inputKind(type);
+  const suggestions = useSuggestions(type === 'items' ? undefined : suggest);
   if (type === 'items') {
     return (
       <ItemsInput
@@ -66,6 +72,11 @@ export function FieldInput({
     'aria-describedby': describedBy,
     ...(shownPlaceholder ? { placeholder: shownPlaceholder } : {}),
     ...(maxLength ? { maxLength } : {}),
+    ...suggestions.inputProps,
+  };
+  const change = (next: string) => {
+    onChange(next);
+    suggestions.onType(next);
   };
 
   return (
@@ -88,14 +99,14 @@ export function FieldInput({
           </Typography.Text>
         ) : null}
       </div>
-      <div className="field__control">
+      <div className={`field__control${suggest ? ' field__control--suggest' : ''}`}>
         {kind.multiline ? (
           <Textarea
             {...common}
             mode="secondary"
             className="field__box"
             rows={3}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => change(event.target.value)}
           />
         ) : (
           <Input
@@ -110,9 +121,10 @@ export function FieldInput({
                 </Typography.Text>
               ) : undefined
             }
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => change(event.target.value)}
           />
         )}
+        {suggestions.list}
       </div>
       {error ? (
         <Typography.Text

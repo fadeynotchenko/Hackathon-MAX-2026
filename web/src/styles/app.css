@@ -333,6 +333,64 @@ body {
   color: var(--text-themed);
 }
 
+/* Подсказки из реестра — карточкой поверх формы под полем, а не строками в
+   потоке: список то появляется, то исчезает на каждое слово, и форма под ним
+   не должна прыгать. */
+.field__control--suggest {
+  position: relative;
+}
+
+.suggest {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--spacing-size-xs));
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border-radius: var(--size-border-radius-semantic-border-radius-card);
+  background: var(--background-primary);
+  box-shadow:
+    0 0 0 1px var(--divider-primary),
+    0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+.suggest__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-size-m);
+  padding: var(--spacing-size-m) var(--spacing-size-xl) var(--spacing-size-xs);
+}
+
+.suggest__list {
+  max-height: 280px;
+  margin: 0;
+  padding: 0 0 var(--spacing-size-xs);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.suggest__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-size-m) var(--spacing-size-xl);
+  cursor: pointer;
+}
+
+.suggest__item + .suggest__item {
+  border-top: 1px solid var(--divider-secondary);
+}
+
+.suggest__item--active,
+.suggest__item:active {
+  background: var(--states-background-pressed-transparent);
+}
+
+.suggest__title {
+  overflow-wrap: anywhere;
+}
+
 .fields {
   display: flex;
   flex-direction: column;
@@ -1199,6 +1257,7 @@ input[type='search']::-webkit-search-cancel-button {
 /* Мышь: отклик на наведение там, где его не дают компоненты MAX UI. Оттенок —
    тот же токен и тот же приём (градиент поверх фона), что у ячеек MAX UI. */
 @media (hover: hover) and (pointer: fine) {
+  .suggest__item:hover,
   .template-card:hover {
     background-image: linear-gradient(
       var(--states-background-hovered-transparent),
