@@ -52,7 +52,7 @@ async def test_revoke_kills_the_token_at_once(
         await authenticate(session, access.access_token, cfg=auth_config, admin_ids=frozenset())
 
 
-@pytest.mark.parametrize("days", [0, 31])
+@pytest.mark.parametrize("days", [0, 366])
 async def test_term_is_bounded(session: AsyncSession, auth_config: AuthConfig, days: int) -> None:
     with pytest.raises(ValueError):
         await issue_reviewer_access(session, cfg=auth_config, days=days)

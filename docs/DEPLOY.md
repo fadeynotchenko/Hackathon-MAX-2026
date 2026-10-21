@@ -82,7 +82,7 @@ docker compose -f docker-compose.prod.yml exec api python -m core.scripts.issue_
 docker compose -f docker-compose.prod.yml exec api python -m core.scripts.issue_reviewer_token --revoke
 ```
 
-Срок — до 30 дней. Отзыв удаляет учётку с её документами. Чтобы проверяющим
+Срок — до 365 дней. Отзыв удаляет учётку с её документами. Чтобы проверяющим
 доставлялись файлы в чат, выпускайте токен на настоящий MAX-id: `--max-user-id`.
 
 Сценарий DATA-API создаёт организацию и клиента с ИНН из `test-data.json`, а
