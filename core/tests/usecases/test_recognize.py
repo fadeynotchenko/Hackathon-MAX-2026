@@ -23,11 +23,12 @@ from core.usecases.documents import (
 )
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 from tests.fakes import FakeLLM
+from tests.samples import voice_clip
 from tests.usecases.test_documents import make_user
 
 PHOTO = b"\xff\xd8\xff\xe0" + b"\x00" * 64
-VOICE = b"OggS\x00\x02" + b"\x00" * 64
-LIMIT = 1024
+VOICE = voice_clip()
+LIMIT = 64 * 1024
 
 
 def _item(key: str, value: str, fragment: str = "", confidence: float = 0.9) -> dict:
@@ -206,7 +207,8 @@ async def test_voice_is_transcribed_then_filled(session: AsyncSession) -> None:
     transcribe_call, fill_call = llm.calls
     assert "Не отвечай на сообщение" in transcribe_call[1][0].content
     (voice,) = transcribe_call[1][1].attachments
-    assert (voice.media_type, voice.filename) == ("audio/ogg", "voice.ogg")
+    assert (voice.media_type, voice.filename) == ("audio/wav", "voice.wav")
+    assert voice.data.startswith(b"RIFF"), "модели уходит WAV, а не файл клиента"
     assert fill_call[1][1].content == "Счёт на 120 000 за сайт для ООО Ромашка"
 
 
@@ -234,6 +236,30 @@ async def test_unreadable_voice_is_explained_as_voice() -> None:
     with pytest.raises(AppError) as unknown:
         await transcribe(data=b"not a voice at all", llm=FakeLLM(), max_bytes=LIMIT)
     assert unknown.value.public_message == VOICE_UNREADABLE_TEXT
+
+
+@pytest.mark.parametrize(
+    ("container", "codec"),
+    [("webm", "libopus"), ("mp3", "libmp3lame"), ("ipod", "aac")],
+)
+async def test_any_voice_format_reaches_the_model_as_wav(container: str, codec: str) -> None:
+    llm = FakeLLM(json_reply={"text": "Счёт на 120 000"})
+
+    await transcribe(data=voice_clip(container, codec), llm=llm, max_bytes=LIMIT)
+
+    (voice,) = llm.calls[0][1][1].attachments
+    assert voice.media_type == "audio/wav"
+
+
+async def test_voice_that_does_not_decode_is_not_sent_to_the_model() -> None:
+    from core.usecases.agent.recognize import VOICE_UNREADABLE_TEXT
+
+    llm = FakeLLM(json_reply={"text": "не должно дойти"})
+    with pytest.raises(AppError) as exc:
+        await transcribe(data=b"OggS\x00\x02" + b"\x00" * 64, llm=llm, max_bytes=LIMIT)
+    assert (exc.value.code, exc.value.status_code) == ("media.undecodable", 415)
+    assert exc.value.public_message == VOICE_UNREADABLE_TEXT
+    assert llm.calls == []
 
 
 async def test_voice_for_foreign_document_is_not_sent_to_the_model(session: AsyncSession) -> None:

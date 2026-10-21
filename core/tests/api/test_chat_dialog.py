@@ -37,6 +37,7 @@ from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 from core.usecases.documents.templates import OWN_TEMPLATES_MAX
 from tests.api.test_events_worker import _handlers
 from tests.fakes import FakeLLM
+from tests.samples import voice_clip
 
 USER = 9001
 
@@ -243,7 +244,7 @@ def test_reply_payload_round_trips_through_contract() -> None:
 
 
 PHOTO = b"\xff\xd8\xff\xe0" + b"\x00" * 64
-VOICE = b"OggS\x00\x02" + b"\x00" * 64
+VOICE = voice_clip()
 RECOGNIZED = {
     "kind": "карточка предприятия",
     "values": [

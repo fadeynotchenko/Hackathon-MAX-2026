@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.events import DocumentReady
 from tests.api.test_documents_api import _auth, _seed
 from tests.fakes import FakeLLM
+from tests.samples import voice_clip
 
 
 async def _invoice(client: AsyncClient, headers: dict[str, str]) -> dict:
@@ -132,7 +133,7 @@ async def test_send_uses_text_approved_by_user(
 
 
 PHOTO = b"\xff\xd8\xff\xe0" + b"\x00" * 64
-VOICE = b"OggS\x00\x02" + b"\x00" * 64
+VOICE = voice_clip()
 
 
 async def test_photo_is_recognized_into_document(

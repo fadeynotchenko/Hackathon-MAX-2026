@@ -1,9 +1,12 @@
-"""Файлы-образцы для тестов шаблонов: DOCX с оформлением и PDF с текстом."""
+"""Файлы-образцы для тестов: DOCX с оформлением, PDF с текстом и голосовые."""
 
 from __future__ import annotations
 
+import math
+import struct
 from io import BytesIO
 
+import av
 from docx import Document
 
 
@@ -71,3 +74,28 @@ def text_pdf(lines: list[str]) -> bytes:
         f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"
     ).encode()
     return out
+
+
+def voice_clip(container: str = "ogg", codec: str = "libopus", *, seconds: float = 0.5) -> bytes:
+    """Настоящее голосовое заданного формата: тон 440 Гц. Байты с одной сигнатурой
+    не годятся — голосовое перед моделью декодируется."""
+    rate = 48_000
+    buffer = BytesIO()
+    with av.open(buffer, "w", format=container) as output:
+        stream = output.add_stream(codec, rate=rate, layout="mono")
+        chunk = stream.codec_context.frame_size or 1024
+        total = int(rate * seconds)
+        for start in range(0, total, chunk):
+            count = min(chunk, total - start)
+            samples = [
+                int(8000 * math.sin(2 * math.pi * 440 * (start + i) / rate)) for i in range(count)
+            ]
+            frame = av.AudioFrame(format="s16", layout="mono", samples=count)
+            frame.planes[0].update(struct.pack(f"<{count}h", *samples))
+            frame.rate = rate
+            frame.pts = start
+            for packet in stream.encode(frame):
+                output.mux(packet)
+        for packet in stream.encode(None):
+            output.mux(packet)
+    return buffer.getvalue()

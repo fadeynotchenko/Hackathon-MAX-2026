@@ -30,7 +30,8 @@ from core.domain.documents import (
     validate_fields,
 )
 from core.domain.exceptions import AppError
-from core.domain.media import AUDIBLE, READABLE, MediaType, require_media
+from core.domain.media import AUDIBLE, READABLE, WAV, MediaType, require_media
+from core.files.audio import AudioDecodeError, to_speech_wav
 from core.llm import Attachment, ChatMessage, LLMClient, LLMError, LLMInputError
 from core.usecases.agent.prompts import (
     RECOGNIZE_INSTRUCTIONS,
@@ -238,7 +239,9 @@ async def recognize_requisites(
 
 
 async def transcribe(*, data: bytes, llm: LLMClient | None, max_bytes: int) -> str:
-    """Голосовое → текст. Пустая расшифровка — ошибка, а не пустое сообщение помощнику."""
+    """Голосовое → текст. Пустая расшифровка — ошибка, а не пустое сообщение помощнику.
+    Модель получает не файл клиента, а WAV из ``core.files.audio``: часть форматов
+    она читает нестабильно, подробности там."""
     model = require_llm(llm)
     try:
         media = require_media(data, kinds=AUDIBLE, max_bytes=max_bytes)
@@ -247,11 +250,20 @@ async def transcribe(*, data: bytes, llm: LLMClient | None, max_bytes: int) -> s
             raise
         raise AppError(VOICE_UNREADABLE_TEXT, code=exc.code, status_code=exc.status_code) from exc
     try:
+        speech = await to_speech_wav(data)
+    except AudioDecodeError as exc:
+        raise AppError(
+            VOICE_UNREADABLE_TEXT,
+            code="media.undecodable",
+            status_code=415,
+            log_message=f"{media.title}: {exc}",
+        ) from exc
+    try:
         raw = await model.complete_json(
             [
                 ChatMessage("system", TRANSCRIBE_INSTRUCTIONS),
                 ChatMessage(
-                    "user", "Голосовое сообщение во вложении.", (_attachment(data, media, "voice"),)
+                    "user", "Голосовое сообщение во вложении.", (_attachment(speech, WAV, "voice"),)
                 ),
             ],
             schema=TRANSCRIPT_SCHEMA,

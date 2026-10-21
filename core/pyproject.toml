@@ -25,6 +25,7 @@ dependencies = [
     "pypdf>=6.0",
     "pdfplumber>=0.11",
     "reportlab>=4.2",
+    "av>=16",
 ]
 
 [dependency-groups]
