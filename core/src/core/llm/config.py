@@ -22,6 +22,10 @@ class GigaChatConfig:
     # Сколько запросов к модели идёт одновременно: на тарифе физлиц GigaChat
     # держит один поток и на второй параллельный отвечает 429.
     max_concurrency: int = 1
+    # Ответ по фото или голосовому: GigaChat-3-Ultra читал карточку предприятия
+    # 13 с на чистом скане, а снимок с iPhone на проде не уложился в 20 с
+    # общего таймаута (2026-10-21) — у ответа по вложению свой срок.
+    media_timeout_seconds: int = 45
 
     @property
     def enabled(self) -> bool:
@@ -41,4 +45,5 @@ class GigaChatConfig:
             / get_env_or_default("GIGACHAT_CA_BUNDLE", "certs/russian_trusted_root_ca.pem"),
             timeout_seconds=get_env_int("GIGACHAT_TIMEOUT_SECONDS", 20),
             max_concurrency=max(1, get_env_int("GIGACHAT_MAX_CONCURRENCY", 1)),
+            media_timeout_seconds=get_env_int("GIGACHAT_MEDIA_TIMEOUT_SECONDS", 45),
         )

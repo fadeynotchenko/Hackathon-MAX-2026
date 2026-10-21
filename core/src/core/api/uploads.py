@@ -7,11 +7,20 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import Request
 
 from core.domain.exceptions import AppError
+
+# Ручки, принимающие файл: у них свой срок запроса (API_UPLOAD_TIMEOUT_SECONDS)
+# и у gateway — свой лимит тела и ожидания ответа. Тест сверяет список с
+# ручками, у которых в OpenAPI бинарное тело.
+UPLOAD_PATHS = re.compile(
+    r"^/api/v1/(documents/[0-9]+/agent/(recognize|voice)|documents/import"
+    r"|requisites/recognize|templates/import)$"
+)
 
 IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff")
 DOCUMENT_TYPES = (

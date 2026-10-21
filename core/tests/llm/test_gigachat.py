@@ -222,6 +222,28 @@ async def test_rejected_file_is_an_input_error() -> None:
     assert api.chat_calls == [] and api.deleted == []
 
 
+async def test_answer_about_attachment_gets_its_own_timeout() -> None:
+    api = FakeGigaChat()
+    client = api.client()
+    await client.complete([ChatMessage("user", "Фото", (PHOTO,))])
+    await client.complete(MESSAGES)
+
+    photo, text = (call.extensions["timeout"]["read"] for call in api.chat_calls)
+    assert photo == CFG.media_timeout_seconds > CFG.timeout_seconds
+    assert text == CFG.timeout_seconds
+
+
+async def test_timeout_is_named_in_the_error() -> None:
+    def hang(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/oauth":
+            return httpx.Response(200, json={"access_token": "t", "expires_at": 9e15})
+        raise httpx.ReadTimeout("", request=request)
+
+    client = GigaChatClient(CFG, transport=httpx.MockTransport(hang))
+    with pytest.raises(LLMUnavailableError, match="ReadTimeout"):
+        await client.complete(MESSAGES)
+
+
 async def test_failed_cleanup_does_not_break_the_answer() -> None:
     api = FakeGigaChat(delete_status=500)
     answer = await api.client().complete([ChatMessage("user", "Фото", (PHOTO,))])

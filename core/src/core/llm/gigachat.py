@@ -134,13 +134,19 @@ class GigaChatClient:
                     **kwargs,
                 )
             except httpx.HTTPError as exc:
-                raise LLMUnavailableError(f"GigaChat недоступен: {exc}") from exc
+                # У таймаутов httpx пустой текст: без имени класса в логе было
+                # «GigaChat недоступен: » и не понять, что именно случилось.
+                raise LLMUnavailableError(
+                    f"GigaChat недоступен: {type(exc).__name__} {exc}".rstrip()
+                ) from exc
             if response.status_code != 401:
                 return response
         raise LLMUnavailableError("GigaChat не принял обновлённый токен")
 
-    async def _chat(self, payload: dict[str, Any]) -> dict[str, Any]:
-        response = await self._send("POST", "/chat/completions", json=payload)
+    async def _chat(self, payload: dict[str, Any], *, timeout_seconds: float) -> dict[str, Any]:
+        response = await self._send(
+            "POST", "/chat/completions", json=payload, timeout=timeout_seconds
+        )
         if response.status_code != 200:
             raise LLMError(f"GigaChat ответил {response.status_code}: {response.text[:300]}")
         try:
@@ -212,7 +218,10 @@ class GigaChatClient:
                         "model": self._cfg.model,
                         "messages": wire,
                         **{k: v for k, v in extra.items() if v is not None},
-                    }
+                    },
+                    timeout_seconds=self._cfg.media_timeout_seconds
+                    if uploaded
+                    else self._cfg.timeout_seconds,
                 )
             finally:
                 await self._forget(uploaded)

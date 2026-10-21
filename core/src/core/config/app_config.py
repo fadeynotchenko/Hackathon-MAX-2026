@@ -23,6 +23,7 @@ class AppConfig:
     cors_allow_origins: tuple[str, ...]
     request_timeout_seconds: float
     dev_login_enabled: bool
+    upload_timeout_seconds: float = 85.0
 
     @property
     def is_production(self) -> bool:
@@ -46,6 +47,7 @@ class AppConfig:
             cors_allow_origins=origins,
             request_timeout_seconds=float(get_env_int("API_REQUEST_TIMEOUT_SECONDS", 30)),
             dev_login_enabled=get_env_bool("DEV_LOGIN_ENABLED", False),
+            upload_timeout_seconds=float(get_env_int("API_UPLOAD_TIMEOUT_SECONDS", 85)),
         )
 
 

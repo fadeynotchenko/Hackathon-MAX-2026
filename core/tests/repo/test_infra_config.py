@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 
+from core.api.uploads import UPLOAD_PATHS
+from core.config.app_config import AppConfig
+
 CORE_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = CORE_ROOT.parent
 
@@ -108,6 +111,23 @@ def test_nginx_limits_heavy_and_upload_routes(nginx_template: str) -> None:
     assert sizes and int(sizes[0]) * 1024 * 1024 > 10485760, (
         "gateway не должен резать файл раньше MEDIA_MAX_BYTES"
     )
+    waits = re.findall(r"proxy_read_timeout (\d+)s;", upload)
+    assert waits and int(waits[0]) > AppConfig.upload_timeout_seconds, (
+        "срок запроса с файлом истекает в API с понятным ответом, а не обрывом на gateway"
+    )
+
+
+def test_nginx_takes_files_on_every_upload_route(nginx_template: str) -> None:
+    pattern = nginx_template.split("templates/import)$ {", 1)[0].rsplit("location ~ ", 1)[1]
+    heavy = re.compile(pattern + "templates/import)$")
+    for path in (
+        "/api/v1/documents/7/agent/recognize",
+        "/api/v1/documents/7/agent/voice",
+        "/api/v1/documents/import",
+        "/api/v1/requisites/recognize",
+        "/api/v1/templates/import",
+    ):
+        assert UPLOAD_PATHS.match(path) and heavy.match(path), path
 
 
 def test_nginx_routes_webhook_and_api(nginx_template: str) -> None:

@@ -404,6 +404,14 @@ ENV_SPEC: list[EnvVar] = [
             owner="api/middlewares/timeout.py",
         ),
         EnvVar(
+            "API_UPLOAD_TIMEOUT_SECONDS",
+            "Таймаут запроса с файлом: распознавание фото и голосовых, импорт образца и документа.",
+            type=T_INT,
+            default="85",
+            notes="Больше GIGACHAT_MEDIA_TIMEOUT_SECONDS с запасом на расшифровку и разбор голосового; меньше proxy_read_timeout gateway для этих ручек (90 с).",
+            owner="api/middlewares/timeout.py",
+        ),
+        EnvVar(
             "API_WORKERS",
             "Число uvicorn-воркеров в проде.",
             type=T_INT,
@@ -527,6 +535,14 @@ ENV_SPEC: list[EnvVar] = [
             type=T_INT,
             default="20",
             notes="Меньше API_REQUEST_TIMEOUT_SECONDS: иначе зависший ответ модели обрывается общим 504, а не ответом «помощник не отвечает».",
+            owner="core.llm.config",
+        ),
+        EnvVar(
+            "GIGACHAT_MEDIA_TIMEOUT_SECONDS",
+            "Таймаут ответа GigaChat по фото, скану или голосовому.",
+            type=T_INT,
+            default="45",
+            notes="Чистый скан карточки модель читает 13 с, снимок с телефона — дольше 20 с общего GIGACHAT_TIMEOUT_SECONDS. Меньше API_UPLOAD_TIMEOUT_SECONDS.",
             owner="core.llm.config",
         ),
         EnvVar(

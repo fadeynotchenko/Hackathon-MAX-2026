@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from core.config import env_spec
+from core.config.app_config import AppConfig
 from core.config.env_spec import (
     ALL_LAYERS,
     ENV_SPEC,
@@ -215,3 +216,11 @@ def test_model_gives_up_before_the_request_does() -> None:
     model = int(by_name["GIGACHAT_TIMEOUT_SECONDS"].default or 0)
     request = int(by_name["API_REQUEST_TIMEOUT_SECONDS"].default or 0)
     assert 0 < model < request, "зависшая модель должна давать 503 помощника, а не общий 504"
+
+
+def test_model_reading_a_file_gives_up_before_the_upload_request() -> None:
+    by_name = {var.name: var for var in ENV_SPEC}
+    model = int(by_name["GIGACHAT_MEDIA_TIMEOUT_SECONDS"].default or 0)
+    request = int(by_name["API_UPLOAD_TIMEOUT_SECONDS"].default or 0)
+    assert 0 < model < request, "по фото модель должна сдаться раньше запроса: 503, а не 504"
+    assert request == AppConfig.upload_timeout_seconds

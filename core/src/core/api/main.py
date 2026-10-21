@@ -32,6 +32,7 @@ from core.api.routers import (
     templates,
 )
 from core.api.state import ApiState
+from core.api.uploads import UPLOAD_PATHS
 from core.config.app_config import AppConfig, get_app_config
 from core.config.env_spec import validate_env_or_raise
 from core.db import close_db, close_redis, get_session, init_db, init_redis, new_client
@@ -186,7 +187,10 @@ def create_app(
     )
 
     app.add_middleware(
-        TimeoutMiddleware, timeout_seconds=request_timeout_seconds or config.request_timeout_seconds
+        TimeoutMiddleware,
+        timeout_seconds=request_timeout_seconds or config.request_timeout_seconds,
+        upload_paths=UPLOAD_PATHS,
+        upload_timeout_seconds=request_timeout_seconds or config.upload_timeout_seconds,
     )
     app.add_middleware(RequestContextMiddleware)
     origins = cors_origins(config)

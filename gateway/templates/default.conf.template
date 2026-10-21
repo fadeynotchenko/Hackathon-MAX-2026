@@ -70,6 +70,8 @@ server {
     # nginx поднимается и переживает пересоздание контейнеров api/bot без рестарта.
     set $api_upstream http://api:8000;
     set $bot_upstream http://bot:8080;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
 
     # Мусорные запросы: не светим наличие файлов, отвечаем сразу.
     location ~* \.(php|phtml|phar)(/|$) { return 404; }
@@ -95,16 +97,20 @@ server {
         proxy_pass $api_upstream;
         include /etc/nginx/snippets/proxy_common.conf;
 
-        # Помощник, распознавание фото и голосовых, файл-образец шаблона, сборка и
-        # отправка файла: своя зона частоты, а тело — до 11 МБ (фото с телефона и
-        # DOCX с логотипом больше 5 МБ). Предел приложения MEDIA_MAX_BYTES (10 МБ)
-        # ниже, поэтому 413 отвечает API с понятным текстом, а nginx отсекает
-        # только совсем лишнее.
-        location ~ ^/api/v1/(documents/[0-9]+/(agent/[a-z-]+|render|send)|requisites/recognize|templates/import)$ {
+        # Помощник, распознавание фото и голосовых, файл-образец шаблона, импорт
+        # своего документа, сборка и отправка файла: своя зона частоты, а тело —
+        # до 11 МБ (фото с телефона и DOCX с логотипом больше 5 МБ). Предел
+        # приложения MEDIA_MAX_BYTES (10 МБ) ниже, поэтому 413 отвечает API с
+        # понятным текстом, а nginx отсекает только совсем лишнее. Ответ ждём
+        # дольше API_UPLOAD_TIMEOUT_SECONDS (85 с): по фото и голосовому модель
+        # думает дольше, и срок должен истечь у API — с ответом «помощник не
+        # отвечает», а не обрывом соединения на gateway.
+        location ~ ^/api/v1/(documents/([0-9]+/(agent/[a-z-]+|render|send)|import)|requisites/recognize|templates/import)$ {
             limit_req zone=api_heavy burst=30 nodelay;
             limit_conn conn_per_ip 50;
             include /etc/nginx/snippets/security_headers.conf;
             client_max_body_size 11m;
+            proxy_read_timeout 90s;
             proxy_pass $api_upstream;
             include /etc/nginx/snippets/proxy_common.conf;
         }
