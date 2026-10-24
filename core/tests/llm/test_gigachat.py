@@ -31,6 +31,7 @@ CFG = GigaChatConfig(
     timeout_seconds=5,
 )
 MESSAGES = [ChatMessage("user", "Привет")]
+PHOTO = Attachment(b"\xff\xd8\xff\xe0 jpeg", "image/jpeg", "photo.jpg")
 
 
 class FakeGigaChat:
@@ -179,15 +180,29 @@ async def test_json_mode_forces_a_function_call_and_returns_its_arguments() -> N
     assert payload["temperature"] == 0.0
 
 
-@pytest.mark.parametrize("arguments", [None, "не объект"])
+@pytest.mark.parametrize("arguments", [None, "не объект", "[1, 2]"])
 async def test_answer_without_function_arguments_is_a_bad_response(arguments: object) -> None:
     api = FakeGigaChat(content="Конечно, вот поля: сумма 120 000", arguments=arguments)
     with pytest.raises(LLMError) as exc:
         await api.client().complete_json(MESSAGES, schema={"type": "object"})
     assert not isinstance(exc.value, LLMUnavailableError)
+    assert len(api.chat_calls) == 2, "без вызова функции модель переспрашивают один раз"
 
 
-PHOTO = Attachment(b"\xff\xd8\xff\xe0 jpeg", "image/jpeg", "photo.jpg")
+async def test_arguments_as_json_string_are_accepted() -> None:
+    api = FakeGigaChat(arguments='{"total": "120 000"}')
+    assert await api.client().complete_json(MESSAGES, schema={"type": "object"}) == {
+        "total": "120 000"
+    }
+
+
+async def test_answer_about_attachment_is_not_asked_twice() -> None:
+    api = FakeGigaChat(content="Не вижу файла")
+    with pytest.raises(LLMError):
+        await api.client().complete_json(
+            [ChatMessage("user", "Фото", (PHOTO,))], schema={"type": "object"}
+        )
+    assert len(api.chat_calls) == 1, "повтор с файлом не уложился бы в срок запроса"
 
 
 async def test_attachment_is_uploaded_referenced_and_deleted() -> None:

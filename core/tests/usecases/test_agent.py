@@ -234,6 +234,7 @@ def test_values_must_come_from_the_message() -> None:
         "за сочнейшую бебру",
     )
     assert grounded(inn, "7736207543", message) and not grounded(inn, "7707083893", message)
+    assert not grounded(inn, "не указан", message), "реквизит без цифр — не значение"
     assert grounded(total, "200000", message), "суммы пишутся иначе, их не сверяем"
 
 

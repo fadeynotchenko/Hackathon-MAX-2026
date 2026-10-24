@@ -51,20 +51,24 @@ async def pdf_to_jpeg(pdf: bytes, *, width: int, timeout_seconds: int) -> list[b
         work = Path(tmp)
         source = work / "document.pdf"
         source.write_bytes(pdf)
-        process = await asyncio.create_subprocess_exec(
-            PDFTOPPM_BIN,
-            "-jpeg",
-            "-jpegopt",
-            "quality=85",
-            "-scale-to-x",
-            str(width),
-            "-scale-to-y",
-            "-1",
-            str(source),
-            str(work / "page"),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                PDFTOPPM_BIN,
+                "-jpeg",
+                "-jpegopt",
+                "quality=85",
+                "-scale-to-x",
+                str(width),
+                "-scale-to-y",
+                "-1",
+                str(source),
+                str(work / "page"),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as exc:
+            # Нет свободного процесса (лимит pids контейнера): лист нарисуется позже.
+            raise PdfUnavailableError(f"pdftoppm не запустился: {exc}") from exc
         try:
             _, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
         except TimeoutError as exc:

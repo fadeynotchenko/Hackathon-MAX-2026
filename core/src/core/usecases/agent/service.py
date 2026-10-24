@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from core.domain.documents import (
 )
 from core.domain.exceptions import AppError
 from core.llm import ChatMessage, LLMClient, LLMError, LLMInputError, LLMUnavailableError
+from core.logs import biz_info
 from core.usecases.agent.prompts import (
     ASK_INSTRUCTIONS,
     COVER_INSTRUCTIONS,
@@ -41,6 +43,8 @@ from core.usecases.agent.prompts import (
 from core.usecases.documents import DocumentView, get_document, set_fields
 
 MAX_ANSWER_TOKENS = 600
+
+logger = logging.getLogger(__name__)
 
 _WORD = re.compile(r"[0-9a-zа-яё]+")
 # Слова короче — «ооо», «ип», «г», «ул»: по ним опору в сообщении не проверить.
@@ -98,7 +102,10 @@ def grounded(spec: FieldSpec, value: str, message: str) -> bool:
     бы одно слово (по первым буквам — падежи меняют окончание), реквизит — цифры.
     Даты, суммы и сроки не проверяются: «сегодня» и «200к» законно пишутся иначе."""
     if spec.type in _DIGITS_ONLY:
-        return re.sub(r"\D", "", value) in re.sub(r"\D", "", message)
+        # Без цифр («нет», «не указан») реквизита нет вовсе: пустая строка нашлась
+        # бы в любом сообщении, и человек увидел бы «Не записал: ИНН …» ни о чём.
+        digits = re.sub(r"\D", "", value)
+        return bool(digits) and digits in re.sub(r"\D", "", message)
     if spec.type is FieldType.ITEMS:
         # Список опирается на сообщение, если в нём названа хоть одна позиция:
         # прежние позиции модель возвращает вместе с новой, так и задумано.
@@ -215,6 +222,7 @@ async def fill_from_message(
     specs = {spec.key: spec for spec in fields}
     proposals: dict[str, FieldValue] = {}
     unchanged: list[str] = []
+    ungrounded: list[str] = []
     for key, value in raw.items():
         text = _as_text(value)
         if key not in specs or not text:
@@ -222,6 +230,7 @@ async def fill_from_message(
         # Модель повторяет значения из «Уже заполнено»: без этой проверки реквизиты
         # из профиля переписывались бы с источником «помощник» и снова ждали подтверждения.
         if not grounded(specs[key], text, message):
+            ungrounded.append(key)
             continue
         previous = document.values.get(key)
         if previous is not None and normalize(specs[key], text)[0] == previous.value:
@@ -231,6 +240,17 @@ async def fill_from_message(
     updated = await set_fields(session, user_id=user_id, document_id=document_id, values=proposals)
     rejected = tuple(error for error in updated.errors if error.key in proposals)
     filled = written_keys(proposals, updated, rejected)
+    # Только ключи, без значений: в значениях реквизиты и имена. По логу видно,
+    # что модель додумывает или что проверка опоры режет законное значение.
+    biz_info(
+        logger,
+        "agent.fill.done",
+        document_id=document_id,
+        filled=list(filled),
+        rejected=[error.key for error in rejected],
+        ungrounded=ungrounded,
+        unchanged=unchanged,
+    )
     return AgentFillResult(
         document=updated,
         filled=filled,

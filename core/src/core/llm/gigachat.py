@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import ssl
 import time
@@ -60,6 +61,8 @@ RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_BACKOFF_SECONDS = 0.5
 # Единственная функция, которую модель обязана вызвать: её аргументы и есть ответ.
 ANSWER_FUNCTION = "submit_answer"
+# Столько раз переспрашиваем, если вызова функции в ответе нет.
+STRUCTURED_RETRIES = 1
 
 
 def _ssl_context(ca_bundle: Any) -> ssl.SSLContext:
@@ -238,20 +241,38 @@ class GigaChatClient:
     async def complete_json(
         self, messages: Sequence[ChatMessage], *, schema: Mapping[str, Any]
     ) -> dict[str, Any]:
-        message = await self._complete(
-            messages,
-            functions=[
-                {
-                    "name": ANSWER_FUNCTION,
-                    "description": "Передать ответ в заданной структуре",
-                    "parameters": dict(schema),
-                }
-            ],
-            function_call={"name": ANSWER_FUNCTION},
-            temperature=0.0,
-        )
-        call = message.get("function_call")
-        arguments = call.get("arguments") if isinstance(call, dict) else None
-        if not isinstance(arguments, dict):
-            raise LLMError("GigaChat не вызвал функцию ответа")
-        return arguments
+        """Ответ по схеме. Без вызова функции модель изредка отвечает текстом —
+        тогда переспрашиваем, но только без вложений: повтор с файлом снова
+        грузил бы его и не уложился бы в срок запроса с файлом."""
+        retries = 0 if any(message.attachments for message in messages) else STRUCTURED_RETRIES
+        for attempt in range(retries + 1):
+            message = await self._complete(
+                messages,
+                functions=[
+                    {
+                        "name": ANSWER_FUNCTION,
+                        "description": "Передать ответ в заданной структуре",
+                        "parameters": dict(schema),
+                    }
+                ],
+                function_call={"name": ANSWER_FUNCTION},
+                temperature=0.0,
+            )
+            arguments = _arguments(message)
+            if arguments is not None:
+                return arguments
+            biz_warn(logger, "llm.function_call.missing", attempt=attempt + 1)
+        raise LLMError("GigaChat не вызвал функцию ответа")
+
+
+def _arguments(message: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Аргументы вызова функции. Обычно приходят объектом, но API OpenAI-формата
+    отдаёт их строкой JSON — принимаем и так."""
+    call = message.get("function_call")
+    arguments = call.get("arguments") if isinstance(call, dict) else None
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except ValueError:
+            return None
+    return arguments if isinstance(arguments, dict) else None

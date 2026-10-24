@@ -64,3 +64,45 @@ def apply_places(text: str, places: Sequence[tuple[str, Place]]) -> str:
 
 def found(lines: Sequence[str], place: Place) -> bool:
     return any(place.before + place.text in line for line in lines)
+
+
+# Типографика, которую модель переписывает по-своему: неразрывный пробел и
+# табуляция — пробелом, «ёлочки» и „лапки“ — прямыми кавычками, тире — дефисом.
+_TYPOGRAPHY = str.maketrans(
+    {"«": '"', "»": '"', "„": '"', "“": '"', "”": '"', "–": "-", "—": "-", "−": "-", "ё": "е"}
+)
+
+
+def _loose(text: str) -> tuple[str, list[int]]:
+    """Строка без различий типографики и позиция каждого её символа в исходной."""
+    out: list[str] = []
+    origin: list[int] = []
+    for index, char in enumerate(text):
+        if char.isspace():
+            if out and out[-1] == " ":
+                continue
+            char = " "
+        out.append(char.translate(_TYPOGRAPHY))
+        origin.append(index)
+    return "".join(out), origin
+
+
+def anchor(lines: Sequence[str], fragment: str) -> str | None:
+    """Фрагмент так, как он написан в файле.
+
+    Модель возвращает «символ в символ» не всегда: «ООО "Альфа"» вместо
+    «ООО «Альфа»», обычный пробел вместо неразрывного из DOCX. Такое место
+    не находилось точным поиском и молча пропадало из шаблона. Здесь оно
+    ищется без различий типографики, а возвращается исходный отрезок строки —
+    сборщик файла и дальше ищет точное совпадение."""
+    if not fragment.strip():
+        return None
+    if any(fragment in line for line in lines):
+        return fragment
+    needle, _ = _loose(fragment.strip())
+    for line in lines:
+        loose, origin = _loose(line)
+        start = loose.find(needle)
+        if start != -1:
+            return line[origin[start] : origin[start + len(needle) - 1] + 1]
+    return None

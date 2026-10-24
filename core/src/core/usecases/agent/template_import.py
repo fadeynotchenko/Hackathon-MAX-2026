@@ -30,7 +30,7 @@ from core.db.repositories import TemplateFileRepository
 from core.domain.documents import FieldType
 from core.domain.exceptions import AppError
 from core.domain.media import DOCX, MediaKind, require_media
-from core.domain.places import LABEL_MARKER, Place, found, label_of
+from core.domain.places import LABEL_MARKER, Place, anchor, found, label_of
 from core.domain.sample_rules import rule_fields
 from core.files import (
     TemplateFileError,
@@ -40,7 +40,7 @@ from core.files import (
     pdf_lines,
 )
 from core.llm import ChatMessage, LLMClient, LLMError
-from core.logs import biz_warn
+from core.logs import biz_info, biz_warn
 from core.usecases.agent.prompts import TEMPLATE_PLACES_INSTRUCTIONS
 from core.usecases.documents.templates import (
     CATALOG_KEYS,
@@ -174,10 +174,17 @@ def _place(item: dict[str, Any], lines: Sequence[str]) -> Place | None:
     text, before = str(item.get("text") or ""), str(item.get("before") or "")
     if not text.strip() or "\n" in text or len(text) > PLACE_MAX:
         return None
+    exact = anchor(lines, text)
+    if exact is None:
+        return None
     if "\n" in before or len(before) > PLACE_BEFORE_MAX:
         before = ""
-    if before and not found(lines, Place(text, before)):
-        before = ""
+    if before:
+        # Подпись перед местом сверяется вместе с ним: отдельно она могла бы
+        # найтись в другой строке и уточнять не то место.
+        joined = anchor(lines, before + text)
+        before = joined[: -len(exact)] if joined and joined.endswith(exact) else ""
+    text = exact
     # Линия без подписи перед ней совпала бы со всеми линиями бланка сразу.
     if not before and _BLANK_LINE.match(text):
         return None
@@ -278,6 +285,18 @@ async def import_template_file(
             assistant_down = True
         else:
             fields = suggested_fields(raw, lines)
+            # Сколько мест модель назвала и сколько из них правда есть в файле:
+            # по этой разнице видно, что помощник промахивается мимо текста.
+            proposed = raw.get("places")
+            biz_info(
+                logger,
+                "agent.template_import.places",
+                proposed=len(proposed) if isinstance(proposed, list) else 0,
+                kept=sum(len(field.places) for field in fields),
+                fields=len(fields),
+                lines=len(lines),
+                truncated=len(text) > MAX_PROMPT_CHARS,
+            )
             title = str(raw.get("title") or "").strip()
             kind = str(raw.get("kind") or "")
             found_by = FOUND_BY_ASSISTANT if fields else FOUND_NONE

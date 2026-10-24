@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from core.files import PdfUnavailableError, convert_to_pdf
+from core.files.pdf import MAX_PARALLEL_CONVERSIONS
 
 
 def _fake_soffice(tmp_path: Path) -> tuple[str, Path]:
@@ -50,3 +51,27 @@ async def test_timed_out_conversion_is_reaped(tmp_path: Path) -> None:
     with pytest.raises(PdfUnavailableError):
         await convert_to_pdf(b"docx", soffice_bin=soffice, timeout_seconds=1)
     assert not _alive(await _pid(pid_file))
+
+
+async def test_conversions_wait_in_a_queue(tmp_path: Path) -> None:
+    """Дюжина листов разом не запускает дюжину LibreOffice: на проде это «Cannot fork»."""
+    running = tmp_path / "running"
+    running.mkdir()
+    peak = tmp_path / "peak"
+    script = tmp_path / "soffice"
+    script.write_text(
+        "#!/bin/sh\n"
+        f"touch {running}/$$\n"
+        f"ls {running} | wc -l >> {peak}\n"
+        "sleep 0.3\n"
+        f"rm {running}/$$\n"
+        "exit 1\n"
+    )
+    script.chmod(0o755)
+    results = await asyncio.gather(
+        *(convert_to_pdf(b"docx", soffice_bin=str(script), timeout_seconds=10) for _ in range(6)),
+        return_exceptions=True,
+    )
+    assert all(isinstance(result, PdfUnavailableError) for result in results)
+    counts = [int(line) for line in peak.read_text().split()]
+    assert len(counts) == 6 and max(counts) <= MAX_PARALLEL_CONVERSIONS
