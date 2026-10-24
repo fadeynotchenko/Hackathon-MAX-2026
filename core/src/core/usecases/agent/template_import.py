@@ -16,8 +16,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -41,7 +43,14 @@ from core.files import (
 )
 from core.llm import ChatMessage, LLMClient, LLMError
 from core.logs import biz_info, biz_warn
-from core.usecases.agent.prompts import TEMPLATE_PLACES_INSTRUCTIONS
+from core.usecases.agent.prompts import TEMPLATE_PLACES_INSTRUCTIONS, TEMPLATE_REPAIR_INSTRUCTIONS
+from core.usecases.documents.journal import (
+    AGENT_FAILED,
+    AGENT_FILLED,
+    AGENT_NOTHING,
+    AGENT_PARTIAL,
+    record_agent_run,
+)
 from core.usecases.documents.templates import (
     CATALOG_KEYS,
     FIELDS_MAX,
@@ -58,8 +67,13 @@ from core.usecases.documents.templates import (
 
 logger = logging.getLogger(__name__)
 
-# Столько текста образца уходит модели: деловой документ целиком, но не книга.
+# Столько текста образца уходит модели за раз. Длиннее — частями: в договоре на
+# десяток страниц реквизиты сторон стоят в конце, и одним куском они терялись.
 MAX_PROMPT_CHARS = 15_000
+MAX_CHUNKS = 3
+# Сколько секунд из срока запроса с файлом (API_UPLOAD_TIMEOUT_SECONDS) отдаём
+# помощнику: следующая часть или второй проход начинаются, только пока он не вышел.
+ASSISTANT_BUDGET_SECONDS = 50
 # Загруженный и брошенный образец живёт сутки: вдруг человек вернётся к экрану.
 UNUSED_FILE_TTL = timedelta(days=1)
 # Место в файле — один фрагмент строки: список позиций на его месте не
@@ -192,6 +206,96 @@ def _place(item: dict[str, Any], lines: Sequence[str]) -> Place | None:
     return place if found(lines, place) else None
 
 
+def chunks(lines: Sequence[str], limit: int = MAX_PROMPT_CHARS) -> list[str]:
+    """Текст образца частями не длиннее ``limit``, по границам строк."""
+    out: list[str] = []
+    current: list[str] = []
+    size = 0
+    for line in (line[:limit] for line in lines):
+        if current and size + len(line) + 1 > limit:
+            out.append("\n".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += len(line) + 1
+    out.append("\n".join(current))
+    return [part for part in out if part.strip()]
+
+
+@dataclass(frozen=True)
+class _Suggestion:
+    title: str
+    kind: str
+    places: list[dict[str, Any]]
+    proposed: int
+    repaired: int
+    parts: int
+    truncated: bool
+
+
+def _items(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    items = raw.get("places")
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+async def _repair(
+    llm: LLMClient, part: str, missed: list[dict[str, Any]], lines: Sequence[str]
+) -> list[dict[str, Any]]:
+    """Второй проход по фрагментам, которых нет в файле: модели показывают её же
+    промах, и она переписывает фрагмент так, как он стоит в образце."""
+    listed = json.dumps(missed, ensure_ascii=False)
+    try:
+        raw = await llm.complete_json(
+            [
+                ChatMessage("system", TEMPLATE_REPAIR_INSTRUCTIONS),
+                ChatMessage("user", f"Текст образца:\n{part}\n\nФрагменты:\n{listed}"),
+            ],
+            schema=_PLACES_SCHEMA,
+        )
+    except LLMError as exc:
+        biz_warn(logger, "agent.template_import.repair_failed", error=str(exc))
+        return []
+    return [item for item in _items(raw) if _place(item, lines) is not None]
+
+
+async def suggest_places(llm: LLMClient, lines: Sequence[str]) -> _Suggestion:
+    """Места от помощника по частям образца, со вторым проходом по промахам.
+
+    Сбой на первой части — сбой помощника; на следующих — оставляем найденное."""
+    deadline = time.monotonic() + ASSISTANT_BUDGET_SECONDS
+    parts = chunks(lines)
+    title, kind = "", ""
+    places: list[dict[str, Any]] = []
+    proposed = repaired = asked = 0
+    for index, part in enumerate(parts[:MAX_CHUNKS]):
+        if index and time.monotonic() > deadline:
+            break
+        try:
+            raw = await llm.complete_json(
+                [
+                    ChatMessage("system", TEMPLATE_PLACES_INSTRUCTIONS),
+                    ChatMessage("user", part),
+                ],
+                schema=_PLACES_SCHEMA,
+            )
+        except LLMError as exc:
+            if not index:
+                raise
+            biz_warn(logger, "agent.template_import.part_failed", part=index + 1, error=str(exc))
+            break
+        asked += 1
+        items = _items(raw)
+        proposed += len(items)
+        title = title or str(raw.get("title") or "").strip()
+        kind = kind or str(raw.get("kind") or "")
+        missed = [item for item in items if _place(item, lines) is None]
+        places += [item for item in items if item not in missed]
+        if missed and time.monotonic() < deadline:
+            fixed = await _repair(llm, part, missed, lines)
+            repaired += len(fixed)
+            places += fixed
+    return _Suggestion(title, kind, places, proposed, repaired, asked, truncated=asked < len(parts))
+
+
 def suggested_fields(raw: dict[str, Any], lines: Sequence[str]) -> list[ImportedField]:
     """Ответ модели → поля: одно название или ключ каталога — одно поле с
     несколькими местами; тип реквизита — по ключу, а не по словам модели."""
@@ -272,33 +376,50 @@ async def import_template_file(
     found_by = FOUND_BY_MARKERS if fields else FOUND_NONE
     assistant_down = llm is None
     if not fields and llm is not None:
+        started = time.monotonic()
         try:
-            raw = await llm.complete_json(
-                [
-                    ChatMessage("system", TEMPLATE_PLACES_INSTRUCTIONS),
-                    ChatMessage("user", text[:MAX_PROMPT_CHARS]),
-                ],
-                schema=_PLACES_SCHEMA,
-            )
+            suggestion = await suggest_places(llm, lines)
         except LLMError as exc:
             biz_warn(logger, "agent.template_import.llm_failed", error=str(exc))
             assistant_down = True
+            await record_agent_run(
+                session,
+                user_id=user_id,
+                channel="template",
+                outcome=AGENT_FAILED,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
         else:
-            fields = suggested_fields(raw, lines)
-            # Сколько мест модель назвала и сколько из них правда есть в файле:
-            # по этой разнице видно, что помощник промахивается мимо текста.
-            proposed = raw.get("places")
+            fields = suggested_fields({"places": suggestion.places}, lines)
+            # Сколько мест модель назвала, сколько исправила вторым проходом и сколько
+            # правда есть в файле: по этой разнице видно, что помощник промахивается.
             biz_info(
                 logger,
                 "agent.template_import.places",
-                proposed=len(proposed) if isinstance(proposed, list) else 0,
+                proposed=suggestion.proposed,
+                repaired=suggestion.repaired,
                 kept=sum(len(field.places) for field in fields),
                 fields=len(fields),
                 lines=len(lines),
-                truncated=len(text) > MAX_PROMPT_CHARS,
+                parts=suggestion.parts,
+                truncated=suggestion.truncated,
             )
-            title = str(raw.get("title") or "").strip()
-            kind = str(raw.get("kind") or "")
+            title = suggestion.title
+            kind = suggestion.kind
+            kept_places = sum(len(field.places) for field in fields)
+            if not kept_places:
+                outcome = AGENT_NOTHING
+            elif kept_places < suggestion.proposed or suggestion.truncated:
+                outcome = AGENT_PARTIAL
+            else:
+                outcome = AGENT_FILLED
+            await record_agent_run(
+                session,
+                user_id=user_id,
+                channel="template",
+                outcome=outcome,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
             found_by = FOUND_BY_ASSISTANT if fields else FOUND_NONE
     if not fields:
         # Бланк с пустыми ячейками-линейками: метки по подписям вписываются в

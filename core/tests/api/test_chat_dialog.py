@@ -32,7 +32,12 @@ from core.usecases.agent.chat import (
     UNKNOWN_BUTTON_TEXT,
     UNSUPPORTED_FILE_TEXT,
 )
-from core.usecases.documents import TemplateInput, create_template, ensure_builtin_templates
+from core.usecases.documents import (
+    TemplateInput,
+    create_template,
+    ensure_builtin_templates,
+    get_document,
+)
 from core.usecases.documents.builtin import BUILTIN_TEMPLATES
 from core.usecases.documents.templates import OWN_TEMPLATES_MAX
 from tests.api.test_events_worker import _handlers
@@ -310,6 +315,35 @@ async def test_photo_goes_into_the_active_document(db: None, session: AsyncSessi
     assert llm.calls[-1][1][1].content == "Это покупатель"
 
 
+async def test_doubtful_reading_is_marked_for_checking(
+    db: None, session: AsyncSession, redis
+) -> None:
+    await ensure_builtin_templates(session)
+    await session.commit()
+    smudged = {
+        "kind": "карточка предприятия",
+        "values": [
+            {**RECOGNIZED["values"][0]},
+            {**RECOGNIZED["values"][1], "confidence": 0.5},
+        ],
+    }
+    llm = FakeLLM(
+        json_replies=[
+            {"intent": "new", "template": "invoice"},
+            {"total": "120 000"},
+            smudged,
+        ]
+    )
+    handlers = _handlers(redis, llm=llm, fetch=FakeStorage())
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт на 120 000"), "evt-m"))
+    await handlers[BOT_ATTACHMENT](_event(BOT_ATTACHMENT, _attachment(), "evt-p"))
+
+    reply = (await _replies(redis))[-1]
+    assert "• ИНН клиента: <b>7707083893</b> 🔍 <i>прочитано неуверенно</i>" in reply.text
+    assert "Название клиента: <b>ООО «Ромашка»</b>\n" in reply.text, "уверенное — без пометки"
+    assert "сначала помеченные 🔍" in reply.text
+
+
 async def test_photo_without_document_waits_for_the_template_button(
     db: None, session: AsyncSession, redis, tmp_path
 ) -> None:
@@ -498,3 +532,55 @@ async def test_sent_document_can_be_taken_as_a_base(
         "📋 <b>Осталось заполнить:</b>\n• Дата предложения\n• Предложение действует до"
         in copied.text
     )
+
+
+def _tap(payload: str, event_id: str) -> Event:
+    return _event(
+        BOT_CALLBACK,
+        BotCallback(max_user_id=USER, chat_id=1, payload=payload).model_dump(),
+        event_id,
+    )
+
+
+async def test_last_change_is_undone_by_button_and_by_words(
+    db: None, session: AsyncSession, redis
+) -> None:
+    await ensure_builtin_templates(session)
+    await session.commit()
+    llm = FakeLLM(
+        json_replies=[
+            {"intent": "new", "template": "invoice"},
+            {"client_name": "ООО «Ромашка»"},
+            {"intent": "fill", "template": ""},
+            {"client_name": "ООО «Вега»"},
+            {"intent": "fill", "template": ""},
+            {"client_name": "ООО «Альфа»"},
+            {"intent": "undo", "template": ""},
+            {"intent": "undo", "template": ""},
+        ]
+    )
+    handlers = _handlers(redis, llm=llm)
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Счёт для ООО Ромашка"), "e1"))
+    first = (await _replies(redis))[-1]
+    assert all(b.text != "↩️ Отменить" for row in first.buttons or [] for b in row)
+
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Клиент — ООО Вега"), "e2"))
+    changed = (await _replies(redis))[-1]
+    (undo,) = [b for row in changed.buttons or [] for b in row if b.text == "↩️ Отменить"]
+
+    await handlers[BOT_CALLBACK](_tap(undo.payload, "e3"))
+    undone = (await _replies(redis))[-1]
+    assert "↩️ Вернул как было: название клиента." in undone.text
+
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("Клиент — ООО Альфа"), "e5"))
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("верни как было"), "e6"))
+    assert "↩️ Вернул как было" in (await _replies(redis))[-1].text
+    await handlers[BOT_MESSAGE](_event(BOT_MESSAGE, _message("отмени"), "e7"))
+    assert (await _replies(redis))[-1].text.startswith("🤷 Отменять нечего")
+
+    user = await UserRepository(session).get_by_max_id(USER)
+    assert user is not None
+    document_id = await ChatStateRepository(session).active_document_id(user.id)
+    assert document_id is not None
+    document = await get_document(session, user_id=user.id, document_id=document_id)
+    assert document.values["client_name"].value == "ООО «Ромашка»"

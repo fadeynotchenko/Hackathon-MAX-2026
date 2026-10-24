@@ -87,6 +87,11 @@ class FieldSpec:
     default: str = ""
 
 
+# Ниже этой уверенности распознанное значение помечается «прочитано неуверенно».
+# Порог осторожный: лишняя пометка дешевле незамеченной цифры в реквизите.
+LOW_CONFIDENCE = 0.8
+
+
 @dataclass(frozen=True)
 class FieldValue:
     value: str
@@ -100,6 +105,15 @@ class FieldValue:
     @property
     def needs_confirmation(self) -> bool:
         return self.source in UNCONFIRMED_SOURCES and not self.confirmed
+
+    @property
+    def doubtful(self) -> bool:
+        """Прочитано с фото, но модель сама не уверена: такое значение сверяют первым."""
+        return (
+            self.needs_confirmation
+            and self.confidence is not None
+            and self.confidence < LOW_CONFIDENCE
+        )
 
 
 @dataclass(frozen=True)

@@ -98,6 +98,28 @@ async def test_metrics_are_built_from_facts_by_moscow_days(session: AsyncSession
         (u1, doc_d, "created", {"template_kind": "invoice"}, datetime(2026, 9, 10, tzinfo=UTC)),
         (u1, doc_d, "sent", {"fmt": "docx", "event_id": "e3"}, _at(19, 0)),
         (u1, doc_d, "delivery_failed", {"code": "max_api.403", "event_id": "e3"}, _at(19, 0, 1)),
+        (u1, doc_a, "agent", {"source": "text", "code": "filled", "duration_ms": 900}, _at(20, 12)),
+        (
+            u1,
+            doc_a,
+            "agent",
+            {"source": "text", "code": "partial", "duration_ms": 1100},
+            _at(20, 13),
+        ),
+        (
+            u2,
+            doc_b,
+            "agent",
+            {"source": "photo", "code": "nothing", "duration_ms": 9000},
+            _at(22, 9),
+        ),
+        (
+            u2,
+            None,
+            "agent",
+            {"source": "template", "code": "failed", "duration_ms": 20000},
+            _at(22, 10),
+        ),
     ]
     for user_id, document_id, kind, extra, at in facts:
         await journal.add(user_id=user_id, kind=kind, document_id=document_id, at=at, **extra)
@@ -141,6 +163,9 @@ async def test_metrics_are_built_from_facts_by_moscow_days(session: AsyncSession
     send = metrics.time_to_send_minutes
     assert (send.count, send.median, send.p90) == (3, 30.0, 12960.0)
     assert metrics.render_ms["pdf"].median == 1500 and metrics.render_ms["docx"].count == 1
+    text, photo = metrics.agent["text"], metrics.agent["photo"]
+    assert (text.runs, text.filled, text.partial, text.duration_ms.median) == (2, 1, 1, 1000)
+    assert (photo.nothing, metrics.agent["template"].failed) == (1, 1)
 
 
 async def test_empty_period_has_zeros_not_errors(session: AsyncSession) -> None:
@@ -149,7 +174,7 @@ async def test_empty_period_has_zeros_not_errors(session: AsyncSession) -> None:
     assert all(d.users_total == 0 and d.documents_created == 0 for d in metrics.daily)
     assert metrics.autofill.automatic_share is None
     assert metrics.time_to_send_minutes.median is None
-    assert metrics.funnel.created == 0 and metrics.render_ms == {}
+    assert metrics.funnel.created == 0 and metrics.render_ms == {} and metrics.agent == {}
 
 
 def test_percentile_uses_nearest_rank() -> None:

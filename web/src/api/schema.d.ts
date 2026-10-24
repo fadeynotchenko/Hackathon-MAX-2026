@@ -717,6 +717,13 @@ export interface components {
     schemas: {
         /** AdminMetricsResponse */
         AdminMetricsResponse: {
+            /**
+             * Agent
+             * @description Канал помощника (text, voice, photo, template) → прогоны и их исход
+             */
+            agent: {
+                [key: string]: components["schemas"]["AgentRunsSchema"];
+            };
             autofill: components["schemas"]["AutofillSchema"];
             /** Daily */
             daily: components["schemas"]["DailyMetricsSchema"][];
@@ -785,6 +792,33 @@ export interface components {
              * @description Ответ помощника для показа в чате
              */
             reply: string;
+        };
+        /** AgentRunsSchema */
+        AgentRunsSchema: {
+            /** @description Сколько человек ждал модель */
+            duration_ms: components["schemas"]["DistributionSchema"];
+            /**
+             * Failed
+             * @description Модель не ответила
+             */
+            failed: number;
+            /**
+             * Filled
+             * @description Записал всё, что предложил
+             */
+            filled: number;
+            /**
+             * Nothing
+             * @description Ничего не нашёл
+             */
+            nothing: number;
+            /**
+             * Partial
+             * @description Часть отклонила проверка или опора на слова человека
+             */
+            partial: number;
+            /** Runs */
+            runs: number;
         };
         /** AgentTextResponse */
         AgentTextResponse: {

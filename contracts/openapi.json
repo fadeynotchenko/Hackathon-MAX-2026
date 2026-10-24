@@ -3,6 +3,14 @@
     "schemas": {
       "AdminMetricsResponse": {
         "properties": {
+          "agent": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AgentRunsSchema"
+            },
+            "description": "Канал помощника (text, voice, photo, template) → прогоны и их исход",
+            "title": "Agent",
+            "type": "object"
+          },
           "autofill": {
             "$ref": "#/components/schemas/AutofillSchema"
           },
@@ -60,7 +68,8 @@
           "rejections",
           "deliveries",
           "time_to_send_minutes",
-          "render_ms"
+          "render_ms",
+          "agent"
         ],
         "title": "AdminMetricsResponse",
         "type": "object"
@@ -147,6 +156,48 @@
           "document"
         ],
         "title": "AgentFillResponse",
+        "type": "object"
+      },
+      "AgentRunsSchema": {
+        "properties": {
+          "duration_ms": {
+            "$ref": "#/components/schemas/DistributionSchema",
+            "description": "Сколько человек ждал модель"
+          },
+          "failed": {
+            "description": "Модель не ответила",
+            "title": "Failed",
+            "type": "integer"
+          },
+          "filled": {
+            "description": "Записал всё, что предложил",
+            "title": "Filled",
+            "type": "integer"
+          },
+          "nothing": {
+            "description": "Ничего не нашёл",
+            "title": "Nothing",
+            "type": "integer"
+          },
+          "partial": {
+            "description": "Часть отклонила проверка или опора на слова человека",
+            "title": "Partial",
+            "type": "integer"
+          },
+          "runs": {
+            "title": "Runs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "runs",
+          "filled",
+          "partial",
+          "nothing",
+          "failed",
+          "duration_ms"
+        ],
+        "title": "AgentRunsSchema",
         "type": "object"
       },
       "AgentTextResponse": {

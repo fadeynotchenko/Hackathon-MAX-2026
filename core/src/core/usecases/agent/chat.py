@@ -43,6 +43,7 @@ from core.events import EventBus
 from core.files import FilesConfig, InboundFileError, InboundFileTooLargeError, fetch_media
 from core.llm import ChatMessage, LLMClient, LLMError
 from core.logs import biz_warn
+from core.suggest import SuggestClient
 from core.usecases.agent.recognize import fill_from_file, transcribe
 from core.usecases.agent.service import (
     AgentFillResult,
@@ -60,10 +61,13 @@ from core.usecases.documents import (
     copy_document,
     create_draft,
     document_name,
+    dump_values,
     get_document,
     last_sends,
     list_organizations,
     list_templates,
+    load_values,
+    restore_fields,
     send_document_to_chat,
 )
 from core.usecases.users import mark_active
@@ -108,7 +112,15 @@ HOW_TO_FILL_TEXT = (
 # пустые места в файле останутся линиями — вписать от руки.
 GAPS_TEXT = "Можно прислать и так — пустые места останутся линиями, впишете от руки."
 
+# Значение с фото, в котором модель не уверена: смазанная цифра в ИНН иначе
+# терялась среди остальных и подтверждалась вместе с ними.
+DOUBTFUL_MARK = " 🔍 <i>прочитано неуверенно</i>"
+
 CONFIRM_BUTTON = "👍 Всё верно"
+UNDO_BUTTON = "↩️ Отменить"
+NOTHING_TO_UNDO_TEXT = (
+    "🤷 Отменять нечего: последнее изменение уже отменено или было в другом документе."
+)
 SEND_DOCX_BUTTON = "📘 Прислать DOCX"
 SEND_PDF_BUTTON = "📕 Прислать PDF"
 NEW_BUTTON = "➕ Новый документ"
@@ -134,7 +146,8 @@ intent:
 - new — подготовить новый документ (укажи его вид в template);
 - fill — дописать или поправить текущий документ; сюда же значения без вопроса —
   числа, даты, ФИО, реквизиты, в том числе столбиком или через запятую;
-- question — человек спрашивает о текущем документе и ничего не присылает для заполнения.
+- question — человек спрашивает о текущем документе и ничего не присылает для заполнения;
+- undo — отменить последнее изменение помощника: «верни как было», «отмени», «не то».
 Если текущего документа нет, запрос на заполнение означает new.
 template — вид нового документа из списка ниже или пустая строка, если вид не ясен.
 Вид назван без уточнения («счёт», «КП», «договор») — основной шаблон вида:
@@ -188,6 +201,7 @@ class ChatActionDeps:
     tokens: DownloadTokenRepository
     llm: LLMClient | None = None
     fetch: MediaFetcher | None = None
+    suggest: SuggestClient | None = None
 
     async def download(self, url: str) -> bytes:
         if self.fetch is not None:
@@ -238,7 +252,11 @@ def _template_buttons(
     return tuple(tuple(buttons[i : i + per_row]) for i in range(0, len(buttons), per_row))
 
 
-def _document_buttons(document: DocumentView) -> tuple[tuple[ChatButton, ...], ...]:
+def _document_buttons(
+    document: DocumentView, *, undo: bool = False
+) -> tuple[tuple[ChatButton, ...], ...]:
+    """Кнопки под ответом о документе; ``undo`` — ответ описывает правку помощника,
+    и её можно отменить."""
     rows: list[tuple[ChatButton, ...]] = []
     if document.unconfirmed:
         rows.append((ChatButton(CONFIRM_BUTTON, f"doc:confirm:{document.id}"),))
@@ -249,7 +267,11 @@ def _document_buttons(document: DocumentView) -> tuple[tuple[ChatButton, ...], .
                 ChatButton(SEND_PDF_BUTTON, f"doc:send:{document.id}:pdf"),
             )
         )
-    rows.append((ChatButton(NEW_BUTTON, "doc:new"),))
+    new = ChatButton(NEW_BUTTON, "doc:new")
+    if undo:
+        rows.append((ChatButton(UNDO_BUTTON, f"doc:undo:{document.id}"), new))
+    else:
+        rows.append((new,))
     return tuple(rows)
 
 
@@ -288,8 +310,9 @@ def _fill_text(
     blocks = ["\n".join(head)]
     written = [
         f"• {_esc(labels[key])}: <b>{_esc(context[key])}</b>"
+        + (DOUBTFUL_MARK if document.values[key].doubtful else "")
         for key in result.filled
-        if context.get(key)
+        if context.get(key) and key in document.values
     ]
     notes: list[str] = []
     if written:
@@ -299,6 +322,9 @@ def _fill_text(
         notes.append(f"👌 Ничего не поменял — в документе уже так: {_esc(same)}.")
     elif not result.rejected:
         notes.append(f"🤔 {source} не нашёл значений для полей документа.")
+    if result.registry:
+        found = ", ".join(lower_first(labels[key]) for key in result.registry)
+        notes.append(f"🏛 Из реестра по ИНН: {_esc(found)}.")
     if result.kept:
         kept = ", ".join(lower_first(labels[key]) for key in result.kept)
         notes.append(f"↩️ Не стал менять — во вложении другое: {_esc(kept)}.")
@@ -317,7 +343,12 @@ def _fill_text(
     if document.missing:
         blocks.append(_missing_block(document))
     if document.unconfirmed:
-        blocks.append("👉 Проверьте значения и нажмите «Всё верно».")
+        doubtful = any(document.values[key].doubtful for key in document.unconfirmed)
+        blocks.append(
+            "👉 Проверьте значения"
+            + (" — сначала помеченные 🔍" if doubtful else "")
+            + " и нажмите «Всё верно»."
+        )
     elif document.renderable:
         blocks.append(GAPS_TEXT if document.missing else READY_TEXT)
     return "\n\n".join(blocks)
@@ -387,35 +418,44 @@ async def _active_document(session: AsyncSession, user_id: int) -> DocumentView 
         return None
 
 
-async def _route(
-    llm: LLMClient, text: str, active: DocumentView | None, templates: list[TemplateView]
-) -> tuple[str, str]:
-    catalog = "\n".join(
-        f"- {t.slug}: {t.title}" + (f" — {t.description}" if t.description else "")
-        for t in templates
+def route_request(
+    text: str, current: str, catalog: list[tuple[str, str, str]]
+) -> tuple[list[ChatMessage], dict[str, object]]:
+    """Запрос модели «что хочет человек» и схема ответа. ``catalog`` — слуг, название
+    и описание шаблонов; ``current`` — текущий документ строкой или «нет»."""
+    listed = "\n".join(
+        f"- {slug}: {title}" + (f" — {description}" if description else "")
+        for slug, title, description in catalog
     )
-    current = (
-        f"{_heading(active)}, ждёт значений: {missing_text(active) or 'нет'}" if active else "нет"
-    )
-    schema = {
+    schema: dict[str, object] = {
         "type": "object",
         "properties": {
-            "intent": {"type": "string", "enum": ["new", "fill", "question"]},
-            "template": {"type": "string", "enum": [*(t.slug for t in templates), ""]},
+            "intent": {"type": "string", "enum": ["new", "fill", "question", "undo"]},
+            "template": {"type": "string", "enum": [*(slug for slug, _, _ in catalog), ""]},
         },
         "required": ["intent", "template"],
         "additionalProperties": False,
     }
-    raw = await llm.complete_json(
-        [
-            ChatMessage(
-                "system",
-                f"{ROUTE_INSTRUCTIONS}\n\nВиды документов:\n{catalog}\n\nТекущий документ: {current}",
-            ),
-            ChatMessage("user", text),
-        ],
-        schema=schema,
+    messages = [
+        ChatMessage(
+            "system",
+            f"{ROUTE_INSTRUCTIONS}\n\nВиды документов:\n{listed}\n\nТекущий документ: {current}",
+        ),
+        ChatMessage("user", text),
+    ]
+    return messages, schema
+
+
+async def _route(
+    llm: LLMClient, text: str, active: DocumentView | None, templates: list[TemplateView]
+) -> tuple[str, str]:
+    current = (
+        f"{_heading(active)}, ждёт значений: {missing_text(active) or 'нет'}" if active else "нет"
     )
+    messages, schema = route_request(
+        text, current, [(t.slug, t.title, t.description) for t in templates]
+    )
+    raw = await llm.complete_json(messages, schema=schema)
     return str(raw.get("intent", "fill")), str(raw.get("template", ""))
 
 
@@ -487,8 +527,53 @@ async def _catalog(session: AsyncSession, user_id: int) -> list[TemplateView]:
     return [t for t in await list_templates(session, user_id=user_id) if t.is_builtin]
 
 
+async def _remember(
+    chat: ChatStateRepository, user_id: int, before: DocumentView, result: AgentFillResult
+) -> bool:
+    """Запомнить прежние значения того, что записал помощник: их вернёт «Отменить».
+    Ничего не записано — и отменять нечего, прежняя правка тоже остаётся."""
+    if not result.filled:
+        return False
+    previous = {
+        key: dump_values({key: before.values[key]})[key] if key in before.values else None
+        for key in result.filled
+    }
+    await chat.set_last_change(user_id, {"document_id": before.id, "before": previous})
+    return True
+
+
+async def _undo(session: AsyncSession, user_id: int, document_id: int) -> ChatReply:
+    chat = ChatStateRepository(session)
+    change = await chat.take_last_change(user_id)
+    raw = change.get("before") if change is not None else None
+    if change is None or change.get("document_id") != document_id or not isinstance(raw, dict):
+        document = await get_document(session, user_id=user_id, document_id=document_id)
+        return ChatReply(NOTHING_TO_UNDO_TEXT, _document_buttons(document))
+    back = load_values({key: item for key, item in raw.items() if isinstance(item, dict)})
+    previous = {str(key): back.get(key) for key in raw}
+    document = await restore_fields(
+        session, user_id=user_id, document_id=document_id, previous=previous
+    )
+    await chat.set_active_document(user_id, document.id)
+    labels = {spec.key: spec.label for spec in document.template.fields}
+    undone = ", ".join(lower_first(labels.get(key, key)) for key in previous)
+    blocks = [_title_line(document), f"↩️ Вернул как было: {_esc(undone)}."]
+    if document.missing:
+        blocks.append(_missing_block(document))
+    if document.unconfirmed:
+        blocks.append("👉 Проверьте значения и нажмите «Всё верно».")
+    elif document.renderable:
+        blocks.append(GAPS_TEXT if document.missing else READY_TEXT)
+    return ChatReply("\n\n".join(blocks), _document_buttons(document))
+
+
 async def handle_chat_message(
-    session: AsyncSession, *, sender: ChatSender, text: str, llm: LLMClient | None
+    session: AsyncSession,
+    *,
+    sender: ChatSender,
+    text: str,
+    llm: LLMClient | None,
+    suggest: SuggestClient | None = None,
 ) -> ChatReply:
     user_id = await _ensure_user(session, sender)
     if llm is None:
@@ -503,6 +588,8 @@ async def handle_chat_message(
     savepoint = None
     try:
         intent, slug = await _route(llm, text, active, templates)
+        if intent == "undo" and active is not None:
+            return await _undo(session, user_id, active.id)
         if intent == "question" and active is not None:
             answer = await answer_question(
                 session, user_id=user_id, document_id=active.id, question=text, llm=llm
@@ -521,8 +608,15 @@ async def handle_chat_message(
             active = started.document
 
         result = await fill_from_message(
-            session, user_id=user_id, document_id=active.id, message=text, llm=llm
+            session,
+            user_id=user_id,
+            document_id=active.id,
+            message=text,
+            llm=llm,
+            suggest=suggest,
         )
+        # Новый документ отменять не к чему: «Отменить» вернула бы пустой бланк.
+        undo = started is None and await _remember(chat, user_id, active, result)
     except (LLMError, AppError) as exc:
         if savepoint is not None and savepoint.is_active:
             await savepoint.rollback()
@@ -533,7 +627,7 @@ async def handle_chat_message(
         biz_warn(logger, "agent.chat.llm_failed", error=str(exc))
         return ChatReply(LLM_DOWN_TEXT)
     text_out = _fill_text(result, seller=started.seller if started else None)
-    buttons = _document_buttons(result.document)
+    buttons = _document_buttons(result.document, undo=undo)
     if started is not None and await _has_fresh_pending(chat, user_id):
         # Вложение ждало выбора документа, а человек ответил словами: не теряем
         # его молча, но и не распознаём без спроса — оно могло быть о другом.
@@ -576,6 +670,7 @@ async def _recognize_into(
     deps: ChatActionDeps,
 ) -> ChatReply:
     data = await deps.download(url)
+    before = await get_document(session, user_id=user_id, document_id=document_id)
     result = await fill_from_file(
         session,
         user_id=user_id,
@@ -585,7 +680,10 @@ async def _recognize_into(
         max_bytes=deps.files.media_max_bytes,
         request=caption,
     )
-    return ChatReply(_fill_text(result, source="Во вложении"), _document_buttons(result.document))
+    undo = await _remember(ChatStateRepository(session), user_id, before, result)
+    return ChatReply(
+        _fill_text(result, source="Во вложении"), _document_buttons(result.document, undo=undo)
+    )
 
 
 async def _hear(
@@ -593,7 +691,9 @@ async def _hear(
 ) -> ChatReply:
     data = await deps.download(attachment.url)
     transcript = await transcribe(data=data, llm=deps.llm, max_bytes=deps.files.media_max_bytes)
-    reply = await handle_chat_message(session, sender=sender, text=transcript, llm=deps.llm)
+    reply = await handle_chat_message(
+        session, sender=sender, text=transcript, llm=deps.llm, suggest=deps.suggest
+    )
     heard = transcript[:TRANSCRIPT_PREVIEW_LENGTH]
     if len(transcript) > TRANSCRIPT_PREVIEW_LENGTH:
         heard += "…"
@@ -766,6 +866,9 @@ async def handle_chat_action(
             document = await confirm_fields(session, user_id=user_id, document_id=document_id)
             await chat.set_active_document(user_id, document.id)
             return ChatReply(_confirm_text(document), _document_buttons(document))
+
+        if action == "undo" and len(args) == 1 and document_id is not None:
+            return await _undo(session, user_id, document_id)
 
         if action == "send" and len(args) == 2 and document_id is not None:
             file, _ = await send_document_to_chat(

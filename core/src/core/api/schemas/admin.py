@@ -78,6 +78,17 @@ class DeliveriesSchema(BaseModel):
     pending: int = Field(description="Отправлены в периоде, бот ещё не подтвердил")
 
 
+class AgentRunsSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    runs: int
+    filled: int = Field(description="Записал всё, что предложил")
+    partial: int = Field(description="Часть отклонила проверка или опора на слова человека")
+    nothing: int = Field(description="Ничего не нашёл")
+    failed: int = Field(description="Модель не ответила")
+    duration_ms: DistributionSchema = Field(description="Сколько человек ждал модель")
+
+
 class AdminMetricsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,3 +103,6 @@ class AdminMetricsResponse(BaseModel):
         description="От создания документа до первой отправки в чат"
     )
     render_ms: dict[str, DistributionSchema] = Field(description="Формат → время сборки файла")
+    agent: dict[str, AgentRunsSchema] = Field(
+        description="Канал помощника (text, voice, photo, template) → прогоны и их исход"
+    )

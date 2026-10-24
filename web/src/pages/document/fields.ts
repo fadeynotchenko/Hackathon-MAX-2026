@@ -86,6 +86,28 @@ export function fragmentLabel(source: FieldValue['source'], fragment: string): s
   return source === 'agent' ? `В сообщении: «${fragment}»` : `На фото: «${fragment}»`;
 }
 
+// Порог тот же, что у ядра (core.domain.documents.LOW_CONFIDENCE): ниже него
+// распознанное сверяют первым, смазанная цифра в ИНН иначе терялась среди остальных.
+export const LOW_CONFIDENCE = 0.8;
+
+export function doubtful(value: FieldValue): boolean {
+  return (
+    !value.confirmed &&
+    value.source === 'ocr' &&
+    typeof value.confidence === 'number' &&
+    value.confidence < LOW_CONFIDENCE
+  );
+}
+
+// Ключи, ждущие подтверждения: прочитанные неуверенно — вверху списка.
+export function uncertainFirst(document: DocumentView): string[] {
+  const shaky = (key: string) => {
+    const value = document.values[key];
+    return value ? doubtful(value) : false;
+  };
+  return [...document.unconfirmed.filter(shaky), ...document.unconfirmed.filter((k) => !shaky(k))];
+}
+
 export function labelsOf(document: DocumentView, keys: readonly string[]): string[] {
   const labels = new Map(document.template.fields.map((field) => [field.key, field.label]));
   return keys.map((key) => labels.get(key) ?? key);

@@ -83,6 +83,7 @@ async def fill(
         document_id=document_id,
         message=payload.message,
         llm=state.llm,
+        suggest=state.suggest,
     )
     warm_document(background, user_id=current.id, document_id=document_id, cfg=state.files_config)
     return _fill_response(result)
@@ -145,6 +146,7 @@ async def voice(
         data=await read_body(request, max_bytes=limit),
         llm=state.llm,
         max_bytes=limit,
+        suggest=state.suggest,
     )
     warm_document(background, user_id=current.id, document_id=document_id, cfg=state.files_config)
     return VoiceFillResponse(

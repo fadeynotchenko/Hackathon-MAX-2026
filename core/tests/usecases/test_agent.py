@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.documents import FieldSpec, FieldType, FieldValue, ValueSource
 from core.domain.exceptions import AppError
+from core.suggest import CompanyRecord
 from core.usecases.agent import answer_question, draft_cover_letter, fill_from_message
 from core.usecases.agent.prompts import fill_instructions
 from core.usecases.agent.service import grounded
@@ -21,7 +22,7 @@ from core.usecases.documents import (
     list_templates,
     set_fields,
 )
-from tests.fakes import FakeLLM
+from tests.fakes import FakeLLM, FakeSuggest
 from tests.usecases.test_documents import make_user
 
 
@@ -249,3 +250,52 @@ def test_items_are_grounded_by_a_named_position() -> None:
     )
     assert grounded(items, listed, "добавь хостинг на год за 6000"), "прежние позиции — с новой"
     assert not grounded(items, listed, "поменяй номер на 18"), "позиций в сообщении нет"
+
+
+ROMASHKA = CompanyRecord(
+    name="ООО «Ромашка»",
+    inn="7707083893",
+    kpp="773601001",
+    ogrn="1027700132195",
+    address="117312, г. Москва, ул. Вавилова, д. 19",
+    director="Иванов Иван Иванович",
+    status="",
+    individual=False,
+)
+
+
+async def test_named_inn_brings_the_party_from_the_registry(session: AsyncSession) -> None:
+    user_id, document_id = await _invoice(session)
+    llm = FakeLLM(json_reply={"client_inn": "7707083893", "client_name": "Ромашка"})
+    suggest = FakeSuggest(companies=[ROMASHKA])
+
+    result = await fill_from_message(
+        session,
+        user_id=user_id,
+        document_id=document_id,
+        message="счёт для Ромашка, ИНН 7707083893",
+        llm=llm,
+        suggest=suggest,
+    )
+
+    assert suggest.queries == [("company", "7707083893")]
+    values = result.document.values
+    assert values["client_name"].value == "Ромашка", "названное человеком реестр не перебивает"
+    assert values["client_address"].value == ROMASHKA.address
+    assert values["client_address"].needs_confirmation, "из реестра — тоже на подтверждение"
+    assert result.registry == ("client_address",), "только поля, которые есть в шаблоне"
+    assert "client_name" not in result.registry
+    assert "Из реестра по ИНН:" in result.reply
+
+
+async def test_registry_outage_does_not_break_filling(session: AsyncSession) -> None:
+    user_id, document_id = await _invoice(session)
+    result = await fill_from_message(
+        session,
+        user_id=user_id,
+        document_id=document_id,
+        message="ИНН клиента 7707083893",
+        llm=FakeLLM(json_reply={"client_inn": "7707083893"}),
+        suggest=FakeSuggest(unavailable=True),
+    )
+    assert result.filled == ("client_inn",) and result.registry == ()

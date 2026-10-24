@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -28,7 +29,8 @@ from core.domain.documents import (
 )
 from core.domain.exceptions import AppError
 from core.llm import ChatMessage, LLMClient, LLMError, LLMInputError, LLMUnavailableError
-from core.logs import biz_info
+from core.logs import biz_info, biz_warn
+from core.suggest import SuggestClient, SuggestUnavailableError
 from core.usecases.agent.prompts import (
     ASK_INSTRUCTIONS,
     COVER_INSTRUCTIONS,
@@ -40,7 +42,13 @@ from core.usecases.agent.prompts import (
     missing_fields,
     missing_in_order,
 )
-from core.usecases.documents import DocumentView, get_document, set_fields
+from core.usecases.documents import (
+    DocumentView,
+    agent_outcome,
+    get_document,
+    record_agent_run,
+    set_fields,
+)
 
 MAX_ANSWER_TOKENS = 600
 
@@ -69,6 +77,8 @@ class AgentFillResult:
     kept: tuple[str, ...] = ()
     # Значения, которые в документе уже такие же: «ничего не поменял», а не «не нашёл».
     unchanged: tuple[str, ...] = ()
+    # Подставлено из реестра по названному ИНН, а не взято из слов человека.
+    registry: tuple[str, ...] = ()
 
 
 def stems(text: str) -> set[str]:
@@ -166,6 +176,47 @@ def written_keys(
     return tuple(key for key in proposals if key in updated.values and key not in refused)
 
 
+# Что реестр знает об организации по ИНН и что из этого кладём в поля стороны.
+_REGISTRY_FIELDS = ("name", "kpp", "ogrn", "address", "director")
+_SIDES = ("client_", "seller_")
+
+
+async def registry_values(
+    suggest: SuggestClient | None,
+    fields: tuple[FieldSpec, ...],
+    document: DocumentView,
+    proposals: Mapping[str, FieldValue],
+) -> dict[str, FieldValue]:
+    """Реквизиты стороны из реестра по ИНН, который человек назвал в сообщении.
+
+    «Счёт для ИНН 7707083893» — и название, КПП, адрес клиента не нужно диктовать.
+    Подставляется только пустое: названное человеком и уже записанное реестр не
+    перебивает. Значения ждут подтверждения, как всё от помощника. Реестр
+    молчит — поля остаются пустыми, заполнение от этого не падает."""
+    if suggest is None:
+        return {}
+    keys = {spec.key for spec in fields}
+    found: dict[str, FieldValue] = {}
+    for prefix in _SIDES:
+        named = proposals.get(f"{prefix}inn")
+        inn = re.sub(r"\D", "", named.value) if named is not None else ""
+        if not inn:
+            continue
+        try:
+            records = await suggest.companies(inn, count=1)
+        except SuggestUnavailableError as exc:
+            biz_warn(logger, "agent.fill.registry_failed", error=str(exc))
+            continue
+        record = next((record for record in records if record.inn == inn), None)
+        if record is None:
+            continue
+        for name in _REGISTRY_FIELDS:
+            key, value = f"{prefix}{name}", str(getattr(record, name))
+            if key in keys and value and key not in proposals and key not in document.values:
+                found[key] = FieldValue(value, ValueSource.AGENT, confirmed=False)
+    return found
+
+
 def compose_fill_reply(
     document: DocumentView,
     filled: tuple[str, ...],
@@ -173,11 +224,16 @@ def compose_fill_reply(
     *,
     kept: tuple[str, ...] = (),
     source: str = "В сообщении",
+    registry: tuple[str, ...] = (),
 ) -> str:
     labels = {spec.key: spec.label for spec in document.template.fields}
     parts: list[str] = []
     if filled:
         parts.append("Заполнил: " + ", ".join(lower_first(labels[key]) for key in filled) + ".")
+    if registry:
+        parts.append(
+            "Из реестра по ИНН: " + ", ".join(lower_first(labels[key]) for key in registry) + "."
+        )
     elif not rejected:
         parts.append(f"{source} не нашёл значений для полей документа.")
     if kept:
@@ -195,30 +251,38 @@ def compose_fill_reply(
     return " ".join(parts)
 
 
-async def fill_from_message(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    document_id: int,
+def fill_messages(
+    title: str,
+    fields: tuple[FieldSpec, ...],
+    values: Mapping[str, FieldValue],
+    missing: tuple[str, ...],
     message: str,
-    llm: LLMClient | None,
-) -> AgentFillResult:
-    model = require_llm(llm)
-    document = await get_document(session, user_id=user_id, document_id=document_id)
-    fields = document.template.fields
+) -> list[ChatMessage]:
+    """Запрос модели на заполнение: правила, поля, что уже есть и чего нет.
+    Отдельно от сценария — те же сообщения гоняет набор проверочных примеров."""
     prompt = (
-        f"{fill_instructions()}\n\nПоля документа «{document.template.title}»:\n"
-        f"{describe_fields(fields)}\n\nУже заполнено:\n{current_values(fields, document.values)}\n\n"
-        f"Ещё не заполнено:\n{missing_fields(fields, missing_in_order(document))}"
+        f"{fill_instructions()}\n\nПоля документа «{title}»:\n"
+        f"{describe_fields(fields)}\n\nУже заполнено:\n{current_values(fields, values)}\n\n"
+        f"Ещё не заполнено:\n{missing_fields(fields, missing)}"
     )
-    try:
-        raw = await model.complete_json(
-            [ChatMessage("system", prompt), ChatMessage("user", message)],
-            schema=fields_schema(fields),
-        )
-    except LLMError as exc:
-        raise map_llm_error(exc) from exc
+    return [ChatMessage("system", prompt), ChatMessage("user", message)]
 
+
+@dataclass(frozen=True)
+class Proposed:
+    values: dict[str, FieldValue]
+    unchanged: list[str]
+    ungrounded: list[str]
+
+
+def propose(
+    raw: Mapping[str, object],
+    fields: tuple[FieldSpec, ...],
+    values: Mapping[str, FieldValue],
+    message: str,
+) -> Proposed:
+    """Ответ модели → значения на запись: известные поля, опора на слова
+    человека, без повторов того, что в документе уже так."""
     specs = {spec.key: spec for spec in fields}
     proposals: dict[str, FieldValue] = {}
     unchanged: list[str] = []
@@ -232,14 +296,51 @@ async def fill_from_message(
         if not grounded(specs[key], text, message):
             ungrounded.append(key)
             continue
-        previous = document.values.get(key)
+        previous = values.get(key)
         if previous is not None and normalize(specs[key], text)[0] == previous.value:
             unchanged.append(key)
             continue
         proposals[key] = FieldValue(text, ValueSource.AGENT, confirmed=False)
+    return Proposed(proposals, unchanged, ungrounded)
+
+
+async def fill_from_message(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    document_id: int,
+    message: str,
+    llm: LLMClient | None,
+    suggest: SuggestClient | None = None,
+    channel: str = "text",
+) -> AgentFillResult:
+    model = require_llm(llm)
+    document = await get_document(session, user_id=user_id, document_id=document_id)
+    fields = document.template.fields
+    started = time.monotonic()
+    try:
+        raw = await model.complete_json(
+            fill_messages(
+                document.template.title,
+                fields,
+                document.values,
+                missing_in_order(document),
+                message,
+            ),
+            schema=fields_schema(fields),
+        )
+    except LLMError as exc:
+        raise map_llm_error(exc) from exc
+    duration_ms = int((time.monotonic() - started) * 1000)
+
+    proposed = propose(raw, fields, document.values, message)
+    proposals, unchanged, ungrounded = proposed.values, proposed.unchanged, proposed.ungrounded
+    found = await registry_values(suggest, fields, document, proposals)
+    proposals |= found
     updated = await set_fields(session, user_id=user_id, document_id=document_id, values=proposals)
     rejected = tuple(error for error in updated.errors if error.key in proposals)
     filled = written_keys(proposals, updated, rejected)
+    registry = tuple(key for key in filled if key in found)
     # Только ключи, без значений: в значениях реквизиты и имена. По логу видно,
     # что модель додумывает или что проверка опоры режет законное значение.
     biz_info(
@@ -250,13 +351,24 @@ async def fill_from_message(
         rejected=[error.key for error in rejected],
         ungrounded=ungrounded,
         unchanged=unchanged,
+        registry=list(registry),
+    )
+    await record_agent_run(
+        session,
+        user_id=user_id,
+        channel=channel,
+        outcome=agent_outcome(written=bool(filled or unchanged), lost=bool(rejected or ungrounded)),
+        duration_ms=duration_ms,
+        document_id=document_id,
+        template_kind=document.template.kind,
     )
     return AgentFillResult(
         document=updated,
         filled=filled,
         rejected=rejected,
-        reply=compose_fill_reply(updated, filled, rejected),
+        reply=compose_fill_reply(updated, filled, rejected, registry=registry),
         unchanged=tuple(unchanged),
+        registry=registry,
     )
 
 

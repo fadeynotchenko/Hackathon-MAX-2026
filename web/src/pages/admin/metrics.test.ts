@@ -4,6 +4,7 @@ import type { DailyMetrics } from '@/api/client';
 
 import { makeDay, makeMetrics } from './fixtures';
 import {
+  agentRows,
   autofillRows,
   formatMinutes,
   formatMs,
@@ -114,6 +115,44 @@ describe('period rows', () => {
       documentsCreated: 5,
       documentsCopied: 1,
       automaticShare: 0.7,
+    });
+  });
+});
+
+describe('agentRows', () => {
+  it('turns runs into shares, known channels first', () => {
+    const rows = agentRows({
+      custom: {
+        runs: 1,
+        filled: 1,
+        partial: 0,
+        nothing: 0,
+        failed: 0,
+        duration_ms: { count: 1, median: 10, p90: 10 },
+      },
+      photo: {
+        runs: 4,
+        filled: 1,
+        partial: 1,
+        nothing: 1,
+        failed: 1,
+        duration_ms: { count: 4, median: 9000, p90: 12000 },
+      },
+      voice: {
+        runs: 0,
+        filled: 0,
+        partial: 0,
+        nothing: 0,
+        failed: 0,
+        duration_ms: { count: 0, median: null, p90: null },
+      },
+    });
+    expect(rows.map((row) => row.key)).toEqual(['photo', 'custom']);
+    expect(rows[0]).toMatchObject({
+      label: 'Фото и сканы',
+      filled: 0.25,
+      failed: 0.25,
+      medianMs: 9000,
     });
   });
 });

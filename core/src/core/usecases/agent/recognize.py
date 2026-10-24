@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -33,6 +34,7 @@ from core.domain.exceptions import AppError
 from core.domain.media import AUDIBLE, READABLE, WAV, MediaType, require_media
 from core.files.audio import AudioDecodeError, to_speech_wav
 from core.llm import Attachment, ChatMessage, LLMClient, LLMError, LLMInputError
+from core.suggest import SuggestClient
 from core.usecases.agent.prompts import (
     RECOGNIZE_INSTRUCTIONS,
     REQUISITES_INSTRUCTIONS,
@@ -50,7 +52,13 @@ from core.usecases.agent.service import (
     require_llm,
     written_keys,
 )
-from core.usecases.documents import DocumentView, get_document, set_fields
+from core.usecases.documents import (
+    DocumentView,
+    agent_outcome,
+    get_document,
+    record_agent_run,
+    set_fields,
+)
 from core.usecases.documents.requisites import REQUISITE_FIELDS
 
 FRAGMENT_MAX_LENGTH = 300
@@ -182,6 +190,7 @@ async def fill_from_file(
     media = require_media(data, kinds=READABLE, max_bytes=max_bytes)
     document = await get_document(session, user_id=user_id, document_id=document_id)
     fields = recognizable(document.template.fields)
+    started = time.monotonic()
     reading = await _read(
         model,
         instructions=RECOGNIZE_INSTRUCTIONS,
@@ -204,6 +213,15 @@ async def fill_from_file(
     rejected = tuple(error for error in updated.errors if error.key in proposals)
     filled = written_keys(proposals, updated, rejected)
     kept = _conflicts(document, reading, protected)
+    await record_agent_run(
+        session,
+        user_id=user_id,
+        channel="photo",
+        outcome=agent_outcome(written=bool(filled or kept), lost=bool(rejected)),
+        duration_ms=int((time.monotonic() - started) * 1000),
+        document_id=document_id,
+        template_kind=document.template.kind,
+    )
     reply = compose_fill_reply(updated, filled, rejected, kept=kept, source="Во вложении")
     if reading.kind:
         reply = f"Во вложении — {reading.kind}. {reply}"
@@ -293,11 +311,18 @@ async def fill_from_voice(
     data: bytes,
     llm: LLMClient | None,
     max_bytes: int,
+    suggest: SuggestClient | None = None,
 ) -> VoiceFillResult:
     # Чужой или удалённый документ — 404 до модели: голосовое не уходит к провайдеру зря.
     await get_document(session, user_id=user_id, document_id=document_id)
     transcript = await transcribe(data=data, llm=llm, max_bytes=max_bytes)
     fill = await fill_from_message(
-        session, user_id=user_id, document_id=document_id, message=transcript, llm=llm
+        session,
+        user_id=user_id,
+        document_id=document_id,
+        message=transcript,
+        llm=llm,
+        suggest=suggest,
+        channel="voice",
     )
     return VoiceFillResult(transcript=transcript, fill=fill)

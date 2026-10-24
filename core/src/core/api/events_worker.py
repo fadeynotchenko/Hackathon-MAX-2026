@@ -50,6 +50,7 @@ from core.events import (
 from core.files import FilesConfig
 from core.llm import LLMClient
 from core.logs import bind_context
+from core.suggest import SuggestClient
 from core.usecases.agent import (
     ChatActionDeps,
     ChatAttachment,
@@ -91,6 +92,7 @@ class WorkerDeps:
     files: FilesConfig
     llm: LLMClient | None
     fetch: MediaFetcher | None = None
+    suggest: SuggestClient | None = None
 
 
 async def on_user_started(event: Event) -> None:
@@ -156,6 +158,7 @@ def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
         tokens=DownloadTokenRepository(deps.redis),
         llm=deps.llm,
         fetch=deps.fetch,
+        suggest=deps.suggest,
     )
 
     async def on_message(event: Event) -> None:
@@ -168,7 +171,7 @@ def build_handlers(deps: WorkerDeps) -> dict[str, EventHandler]:
             # должна увидеть документ, который этот ответ описывает.
             async with get_session() as session:
                 reply = await handle_chat_message(
-                    session, sender=sender, text=data.text, llm=deps.llm
+                    session, sender=sender, text=data.text, llm=deps.llm, suggest=deps.suggest
                 )
             await _reply(deps, data.max_user_id, reply)
 

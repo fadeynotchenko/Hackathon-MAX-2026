@@ -31,12 +31,19 @@ class Fact(StrEnum):
     DELIVERED = "delivered"
     DELIVERY_FAILED = "delivery_failed"
     REJECTED = "rejected"
+    # Прогон помощника: источник — канал (text, voice, photo, template), код — исход.
+    AGENT = "agent"
 
 
 # Источник у факта «создан»: документ взят за основу другого.
 COPY_SOURCE = "copy"
 # Документ сделан по присланному файлу: значения взяты из него.
 FILE_SOURCE = "file"
+# Исход прогона помощника для метрик качества.
+AGENT_FILLED = "filled"
+AGENT_PARTIAL = "partial"
+AGENT_NOTHING = "nothing"
+AGENT_FAILED = "failed"
 DELIVERY_PENDING = "pending"
 DELIVERY_DELIVERED = "delivered"
 DELIVERY_FAILED = "failed"
@@ -84,6 +91,38 @@ async def record(
         event_id=event_id,
         duration_ms=duration_ms,
     )
+
+
+async def record_agent_run(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    channel: str,
+    outcome: str,
+    duration_ms: int,
+    document_id: int | None = None,
+    template_kind: str | None = None,
+) -> None:
+    """Прогон помощника: по каналу, исходу и времени модели видно, где он
+    промахивается и сколько человек ждёт. Значений полей здесь нет."""
+    await record(
+        session,
+        user_id=user_id,
+        kind=Fact.AGENT,
+        document_id=document_id,
+        template_kind=template_kind,
+        source=channel,
+        code=outcome,
+        duration_ms=duration_ms,
+    )
+
+
+def agent_outcome(*, written: bool, lost: bool) -> str:
+    """Исход прогона: записал всё, записал с потерями (отклонено проверкой или
+    не опирается на слова человека) или ничего не нашёл."""
+    if not written:
+        return AGENT_NOTHING
+    return AGENT_PARTIAL if lost else AGENT_FILLED
 
 
 def _fact(row: DocumentEvent) -> DocumentFact:

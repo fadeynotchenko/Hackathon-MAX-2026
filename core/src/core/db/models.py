@@ -263,6 +263,9 @@ class ChatState(Base):
     # Фото или скан, присланный до выбора документа: ссылка MAX, а не байты —
     # файл перекачивается, когда пользователь выберет, куда его распознать.
     pending_media: Mapped[dict[str, object] | None] = mapped_column(NullableJson)
+    # Последняя правка помощника в чате: документ и прежние значения полей —
+    # по ним «Отменить» возвращает документ, как был до неё.
+    last_change: Mapped[dict[str, object] | None] = mapped_column(NullableJson)
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()
     )

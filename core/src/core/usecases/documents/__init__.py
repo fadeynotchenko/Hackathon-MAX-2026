@@ -18,8 +18,11 @@ from .drafts import (
     create_from_values,
     delete_document,
     document_name,
+    dump_values,
     get_document,
     list_documents,
+    load_values,
+    restore_fields,
     set_fields,
     set_parties,
 )
@@ -34,11 +37,17 @@ from .files import (
     send_document_to_chat,
 )
 from .journal import (
+    AGENT_FAILED,
+    AGENT_FILLED,
+    AGENT_NOTHING,
+    AGENT_PARTIAL,
     DocumentFact,
     Fact,
     SendState,
+    agent_outcome,
     document_history,
     last_sends,
+    record_agent_run,
     record_delivery,
 )
 from .lookup import RequisiteSuggestion, SuggestKind, suggest_requisites
@@ -75,6 +84,10 @@ from .templates import (
 )
 
 __all__ = [
+    "AGENT_FAILED",
+    "AGENT_FILLED",
+    "AGENT_NOTHING",
+    "AGENT_PARTIAL",
     "DOCX",
     "KINDS",
     "PDF",
@@ -96,6 +109,7 @@ __all__ = [
     "TemplateInput",
     "TemplateView",
     "Unset",
+    "agent_outcome",
     "blank_source",
     "confirm_fields",
     "copy_document",
@@ -113,6 +127,7 @@ __all__ = [
     "document_name",
     "document_preview",
     "document_source",
+    "dump_values",
     "ensure_builtin_templates",
     "get_document",
     "get_template",
@@ -125,9 +140,12 @@ __all__ = [
     "list_templates",
     "load_document_file",
     "load_file_by_token",
+    "load_values",
     "preview_page",
+    "record_agent_run",
     "record_delivery",
     "render_document",
+    "restore_fields",
     "seller_for_document",
     "send_document_to_chat",
     "set_fields",

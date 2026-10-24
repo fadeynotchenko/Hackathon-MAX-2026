@@ -16,6 +16,7 @@ from core.domain.places import Place
 from core.files import FilesConfig, docx_lines
 from core.llm import LLMUnavailableError
 from core.usecases.agent import import_template_file
+from core.usecases.agent.template_import import chunks, suggest_places
 from core.usecases.documents import (
     DOCX,
     TemplateField,
@@ -352,3 +353,59 @@ async def test_editing_places_keeps_old_documents_on_the_same_sample(
     kept = await get_document(session, user_id=user_id, document_id=old.id)
     assert kept.template.id != template.id and kept.template.file == edited.file
     assert [field.key for field in kept.template.fields] == ["client_name"]
+
+
+def test_long_sample_is_split_by_lines() -> None:
+    lines = ["а" * 40, "б" * 40, "в" * 40]
+    assert chunks(lines, limit=90) == ["а" * 40 + "\n" + "б" * 40, "в" * 40]
+    assert chunks(["", "  "], limit=90) == []
+
+
+async def test_long_sample_is_read_in_parts() -> None:
+    """Реквизиты в конце длинного договора не теряются: вторая часть идёт отдельно."""
+    lines = ["Заказчик: ООО «Альфа»", *("Типовое условие." for _ in range(1000)), "ИНН 7707083893"]
+    llm = FakeLLM(
+        json_replies=[
+            {
+                "title": "Договор",
+                "kind": "contract",
+                "places": [
+                    {
+                        "text": "ООО «Альфа»",
+                        "before": "",
+                        "label": "Клиент",
+                        "type": "text",
+                        "key": "",
+                    }
+                ],
+            },
+            {
+                "title": "",
+                "kind": "",
+                "places": [
+                    {"text": "7707083893", "before": "", "label": "ИНН", "type": "inn", "key": ""}
+                ],
+            },
+        ]
+    )
+    found = await suggest_places(llm, lines)
+    assert [item["text"] for item in found.places] == ["ООО «Альфа»", "7707083893"]
+    assert (found.title, found.parts, found.truncated) == ("Договор", 2, False)
+    assert "ИНН 7707083893" in llm.calls[1][1][1].content
+
+
+async def test_fragment_missed_by_the_assistant_is_asked_again() -> None:
+    lines = ["Для: ООО «Альфа», срок — 10 дней"]
+    missed = {"text": "ООО Альфа", "before": "", "label": "Клиент", "type": "text", "key": ""}
+    fixed = {**missed, "text": "ООО «Альфа»"}
+    llm = FakeLLM(
+        json_replies=[
+            {"title": "", "kind": "", "places": [missed]},
+            {"title": "", "kind": "", "places": [fixed, {**missed, "text": "Выдумка"}]},
+        ]
+    )
+    found = await suggest_places(llm, lines)
+    assert found.places == [fixed], "из второго прохода — только то, что есть в файле"
+    assert (found.proposed, found.repaired) == (1, 1)
+    (_, repair, _) = llm.calls[1]
+    assert "ООО Альфа" in repair[1].content

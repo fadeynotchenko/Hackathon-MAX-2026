@@ -128,6 +128,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         bus=app.state.api.event_bus,
         files=app.state.api.files_config,
         llm=llm,
+        suggest=app.state.api.suggest,
     )
     app.state.events_task = asyncio.create_task(
         run_events_worker(worker_redis, stream=events.stream_to_core, stop=stop, deps=worker_deps),

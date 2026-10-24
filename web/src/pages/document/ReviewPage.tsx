@@ -16,7 +16,7 @@ import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 import { hapticResult } from '@/max/webapp';
 
-import { documentTitle, fragmentLabel, labelsOf } from './fields';
+import { documentTitle, doubtful, fragmentLabel, labelsOf, uncertainFirst } from './fields';
 
 export function ReviewPage() {
   const { api } = useAuth();
@@ -104,14 +104,14 @@ export function ReviewPage() {
 
       {pending ? (
         <CellList mode="island" filled header={<CellHeader>Сверьте с оригиналом</CellHeader>}>
-          {doc.unconfirmed.map((key) => {
+          {uncertainFirst(doc).map((key) => {
             const field = fieldsByKey.get(key);
             const value = doc.values[key];
             if (!field || !value) return null;
             return (
               <CellSimple
                 key={key}
-                overline={`${field.label} · ${SOURCE_LABEL[value.source]}`}
+                overline={`${field.label} · ${SOURCE_LABEL[value.source]}${doubtful(value) ? ' · прочитано неуверенно' : ''}`}
                 title={displayValue(field.type, value.value)}
                 subtitle={value.fragment ? fragmentLabel(value.source, value.fragment) : undefined}
                 subtitleMode="tertiary"

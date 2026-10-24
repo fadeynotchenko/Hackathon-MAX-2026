@@ -29,6 +29,7 @@ import { useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 
 import {
+  agentRows,
   autofillRows,
   DEFAULT_PERIOD,
   formatDay,
@@ -179,6 +180,7 @@ function Dashboard({ metrics, stale }: { metrics: AdminMetrics; stale: boolean }
   const { deliveries } = metrics;
   const toSend = metrics.time_to_send_minutes;
   const renders = Object.entries(metrics.render_ms).sort(([a], [b]) => a.localeCompare(b));
+  const agent = agentRows(metrics.agent);
 
   return (
     <div className={stale ? 'dashboard dashboard--stale' : 'dashboard'} aria-busy={stale}>
@@ -314,6 +316,28 @@ function Dashboard({ metrics, stale }: { metrics: AdminMetrics; stale: boolean }
           )}
         </ChartCard>
       </Section>
+
+      <CellList mode="island" filled header={<CellHeader>Помощник</CellHeader>}>
+        {agent.length ? (
+          agent.map((row) => (
+            <CellSimple
+              key={row.key}
+              title={`${row.label} · ${formatNumber(row.runs)}`}
+              subtitle={[
+                `всё записал ${formatShare(row.filled)}`,
+                `с потерями ${formatShare(row.partial)}`,
+                `ничего ${formatShare(row.nothing)}`,
+                row.failed ? `не ответил ${formatShare(row.failed)}` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+              after={<span className="nowrap">{formatMs(row.medianMs)}</span>}
+            />
+          ))
+        ) : (
+          <CellSimple title="За период помощником не пользовались" />
+        )}
+      </CellList>
 
       <CellList mode="island" filled header={<CellHeader>Доставка и скорость</CellHeader>}>
         <CellSimple

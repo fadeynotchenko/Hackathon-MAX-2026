@@ -577,6 +577,29 @@ async def confirm_fields(
     return _view(saved, template)
 
 
+async def restore_fields(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    document_id: int,
+    previous: Mapping[str, FieldValue | None],
+) -> DocumentView:
+    """Вернуть полям прежние значения целиком — с источником и подтверждением.
+
+    Это отмена правки помощника, а не новый ввод: значение возвращается тем, каким
+    оно было, без новой проверки на «отклонено». ``None`` — поля до правки не было."""
+    document = await _load(session, user_id=user_id, document_id=document_id)
+    template = to_view(document.template)
+    values = load_values(document.values)
+    for key, value in previous.items():
+        if value is None:
+            values.pop(key, None)
+        else:
+            values[key] = value
+    saved, _errors = await _save(session, document, template, values)
+    return _view(saved, template)
+
+
 async def delete_document(session: AsyncSession, *, user_id: int, document_id: int) -> None:
     """Удалить документ вместе с записями о собранных файлах (каскад в БД).
 

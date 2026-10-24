@@ -200,6 +200,53 @@ export function rejectionRows(rejections: AdminMetrics['rejections']): Row[] {
     .sort(byValue);
 }
 
+// Каналы помощника в том порядке, в каком ими пользуются: текст, голос, фото, образец.
+export const AGENT_CHANNELS = ['text', 'voice', 'photo', 'template'] as const;
+export const AGENT_CHANNEL_LABEL: Record<string, string> = {
+  text: 'Сообщение',
+  voice: 'Голосовое',
+  photo: 'Фото и сканы',
+  template: 'Свой шаблон из файла',
+};
+
+export interface AgentRow {
+  key: string;
+  label: string;
+  runs: number;
+  // Доли прогонов: записал всё, с потерями, ничего не нашёл, модель не ответила.
+  filled: number;
+  partial: number;
+  nothing: number;
+  failed: number;
+  medianMs: number | null;
+}
+
+// Прогоны помощника по каналам: где он чаще промахивается и сколько ждут ответа.
+export function agentRows(agent: AdminMetrics['agent']): AgentRow[] {
+  const known: string[] = [...AGENT_CHANNELS];
+  const channels = [
+    ...known.filter((key) => key in agent),
+    ...Object.keys(agent).filter((key) => !known.includes(key)),
+  ];
+  return channels.flatMap((key) => {
+    const runs = agent[key];
+    if (!runs?.runs) return [];
+    const share = (value: number) => value / runs.runs;
+    return [
+      {
+        key,
+        label: AGENT_CHANNEL_LABEL[key] ?? key,
+        runs: runs.runs,
+        filled: share(runs.filled),
+        partial: share(runs.partial),
+        nothing: share(runs.nothing),
+        failed: share(runs.failed),
+        medianMs: runs.duration_ms.median ?? null,
+      },
+    ];
+  });
+}
+
 export interface Summary {
   usersTotal: number;
   usersNew: number;

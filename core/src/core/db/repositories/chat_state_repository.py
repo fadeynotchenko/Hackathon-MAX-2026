@@ -44,3 +44,17 @@ class ChatStateRepository:
         media, state.pending_media = state.pending_media, None
         await self._session.flush()
         return media
+
+    async def set_last_change(self, user_id: int, change: dict[str, object] | None) -> None:
+        state = await self._state(user_id)
+        state.last_change = change
+        await self._session.flush()
+
+    async def take_last_change(self, user_id: int) -> dict[str, object] | None:
+        """Забрать последнюю правку: отменить одно и то же дважды нельзя."""
+        state = await self._session.get(ChatState, user_id)
+        if state is None or state.last_change is None:
+            return None
+        change, state.last_change = state.last_change, None
+        await self._session.flush()
+        return change

@@ -28,7 +28,14 @@ from core.db.repositories import (
 )
 from core.domain.calendar import day_start, local_day
 from core.domain.documents import ValueSource
-from core.usecases.documents.journal import COPY_SOURCE, Fact
+from core.usecases.documents.journal import (
+    AGENT_FAILED,
+    AGENT_FILLED,
+    AGENT_NOTHING,
+    AGENT_PARTIAL,
+    COPY_SOURCE,
+    Fact,
+)
 
 MAX_DAYS = 180
 WEEK = 7
@@ -89,6 +96,19 @@ class Deliveries:
 
 
 @dataclass(frozen=True)
+class AgentRuns:
+    """Прогоны помощника одного канала: сколько раз он записал всё, записал с
+    потерями, ничего не нашёл или упал, и сколько человек ждал модель."""
+
+    runs: int
+    filled: int
+    partial: int
+    nothing: int
+    failed: int
+    duration_ms: Distribution
+
+
+@dataclass(frozen=True)
 class AdminMetrics:
     since: date
     until: date
@@ -99,6 +119,7 @@ class AdminMetrics:
     deliveries: Deliveries
     time_to_send_minutes: Distribution
     render_ms: dict[str, Distribution]
+    agent: dict[str, AgentRuns]
 
 
 def percentile(values: Sequence[float], share: float) -> float | None:
@@ -148,6 +169,26 @@ def _autofill(documents: list[dict[str, dict[str, object]]]) -> Autofill:
     )
 
 
+def _agent_runs(runs: list[DocumentEvent]) -> dict[str, AgentRuns]:
+    by_channel: dict[str, list[DocumentEvent]] = defaultdict(list)
+    for fact in runs:
+        by_channel[fact.source or "text"].append(fact)
+    out: dict[str, AgentRuns] = {}
+    for channel, facts in sorted(by_channel.items()):
+        outcomes = Counter(fact.code for fact in facts)
+        out[channel] = AgentRuns(
+            runs=len(facts),
+            filled=outcomes[AGENT_FILLED],
+            partial=outcomes[AGENT_PARTIAL],
+            nothing=outcomes[AGENT_NOTHING],
+            failed=outcomes[AGENT_FAILED],
+            duration_ms=_distribution(
+                [fact.duration_ms for fact in facts if fact.duration_ms is not None], digits=0
+            ),
+        )
+    return out
+
+
 def _time_to_send(
     history: list[DocumentEvent], window_start: datetime, window_end: datetime
 ) -> Distribution:
@@ -195,6 +236,7 @@ async def admin_metrics(
     render_ms: dict[str, list[float]] = defaultdict(list)
     cohort: set[int] = set()
     sends: list[DocumentEvent] = []
+    agent_runs: list[DocumentEvent] = []
     for fact in facts:
         day = local_day(fact.created_at)
         counts[day][fact.kind] += 1
@@ -212,6 +254,8 @@ async def admin_metrics(
             rejections[fact.code or "unknown"] += 1
         elif fact.kind == Fact.SENT:
             sends.append(fact)
+        elif fact.kind == Fact.AGENT:
+            agent_runs.append(fact)
 
     sent_documents = [fact.document_id for fact in sends if fact.document_id is not None]
     stages = await journal.for_documents(
@@ -269,4 +313,5 @@ async def admin_metrics(
         ),
         time_to_send_minutes=_time_to_send(history, window_start, window_end),
         render_ms={fmt: _distribution(values, digits=0) for fmt, values in render_ms.items()},
+        agent=_agent_runs(agent_runs),
     )

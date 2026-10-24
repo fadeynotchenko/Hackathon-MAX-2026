@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
+import type { DocumentView, FieldValue } from '@/api/client';
 import { makeDocument } from '@/test-utils';
 
 import {
   changedValues,
   defaultCoverText,
   documentTitle,
+  doubtful,
   fragmentLabel,
+  uncertainFirst,
   draftFromDocument,
   fieldErrors,
   mergeAfterSave,
@@ -173,5 +176,30 @@ describe('document form state', () => {
   it('says where a value to confirm was read from', () => {
     expect(fragmentLabel('ocr', 'ИНН 7707083893')).toBe('На фото: «ИНН 7707083893»');
     expect(fragmentLabel('agent', 'на 120 тысяч')).toBe('В сообщении: «на 120 тысяч»');
+  });
+});
+
+describe('doubtful readings', () => {
+  const ocr = (confidence: number | null): FieldValue => ({
+    value: '7707083893',
+    source: 'ocr',
+    confidence,
+    confirmed: false,
+    fragment: null,
+  });
+
+  it('marks only unconfirmed photo values below the threshold', () => {
+    expect(doubtful(ocr(0.5))).toBe(true);
+    expect(doubtful(ocr(0.95))).toBe(false);
+    expect(doubtful(ocr(null))).toBe(false);
+    expect(doubtful({ ...ocr(0.5), confirmed: true })).toBe(false);
+  });
+
+  it('puts doubtful values first', () => {
+    const doc = {
+      unconfirmed: ['client_name', 'client_inn'],
+      values: { client_name: ocr(0.99), client_inn: ocr(0.4) },
+    } as unknown as DocumentView;
+    expect(uncertainFirst(doc)).toEqual(['client_inn', 'client_name']);
   });
 });

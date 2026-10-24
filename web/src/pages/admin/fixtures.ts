@@ -62,6 +62,16 @@ export function makeMetrics(overrides: Partial<AdminMetrics> = {}): AdminMetrics
     deliveries: { delivered: 2, failed: 0, pending: 0 },
     time_to_send_minutes: { count: 2, median: 12, p90: 30 },
     render_ms: { pdf: { count: 2, median: 1800, p90: 2500 } },
+    agent: {
+      text: {
+        runs: 4,
+        filled: 3,
+        partial: 1,
+        nothing: 0,
+        failed: 0,
+        duration_ms: { count: 4, median: 2100, p90: 3200 },
+      },
+    },
     ...overrides,
   };
 }
