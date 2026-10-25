@@ -35,7 +35,8 @@ def prepare_mark(data: bytes) -> bytes:
     image = image.convert("RGBA")
     image.thumbnail((MARK_MAX_SIDE, MARK_MAX_SIDE))
     pixels = [
-        (r, g, b, 0) if min(r, g, b) >= _WHITE else (r, g, b, a) for r, g, b, a in image.getdata()
+        (r, g, b, 0) if min(r, g, b) >= _WHITE else (r, g, b, a)
+        for r, g, b, a in image.get_flattened_data()
     ]
     image.putdata(pixels)
     bbox = image.getbbox()

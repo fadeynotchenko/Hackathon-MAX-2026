@@ -1,13 +1,17 @@
-# DATA-API 1.0 — сценарий обязательных HTTP-проверок сервиса подготовки документов:
-# реквизиты своей организации и клиента → счёт из шаблона → заполнение позиций →
-# сборка DOCX → чтение из истории; cleanup удаляет всё, что сценарий создал.
+# DATA-API 1.0: обязательные HTTP-проверки сервиса подготовки документов.
 #
-# Секретов здесь нет: токен роли user передаётся отдельным каналом. Его выпускает
-# оператор на срок проверки (внутри контейнера api):
-#   python -m core.scripts.issue_reviewer_token --days 14
+# Сценарий идёт по основному пути пользователя: реквизиты своей организации и
+# клиента, счёт из шаблона, позиции, сборка DOCX, отправка в чат MAX, путь
+# документа, акт по счёту. Отдельные проверки показывают отказы: запрос без
+# токена, реквизит с неверной контрольной суммой, чужой или несуществующий id.
+# Cleanup удаляет всё, что сценарий создал, поэтому его можно гонять повторно.
+#
+# Секретов в файле нет. Токен роли user выпускает оператор на срок проверки
+# (внутри контейнера api) и передаёт отдельным каналом:
+#   python -m core.scripts.issue_reviewer_token --days 365
 #
 # Тела запросов совпадают с test-data.json (генерируется из core.usecases.documents.demo).
-# Сценарий целиком прогоняется против приложения тестом core/tests/api/test_data_api.py,
+# Весь сценарий прогоняется против приложения тестом core/tests/api/test_data_api.py,
 # пути и методы сверены с contracts/openapi.json (генерируется из кода).
 
 schemaVersion: "1.0"
@@ -25,7 +29,7 @@ api:
 checks:
   - id: "health"
     name: "Сервис отвечает"
-    description: "Проверка БД, Redis и фонового потребителя событий"
+    description: "Состояние БД, Redis и фонового потребителя событий бота"
     method: "GET"
     path: "/api/v1/health"
     role: "public"
@@ -41,6 +45,52 @@ checks:
         properties:
           status:
             const: "ok"
+          checks:
+            type: "object"
+            required: ["database", "redis"]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "auth-required"
+    name: "Без токена данные пользователя закрыты"
+    description: "Запрос без заголовка авторизации получает 401 в едином формате ошибки с машинным кодом"
+    method: "GET"
+    path: "/api/v1/documents"
+    role: "public"
+    expected:
+      statusCodes: [401]
+      contentType: "application/json"
+      requiredFields:
+        - "detail"
+        - "code"
+        - "request_id"
+      bodySchema:
+        type: "object"
+        properties:
+          code:
+            const: "auth.missing_token"
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "profile"
+    name: "Профиль текущего пользователя"
+    description: "Токен проверяющего принимается, учётка отдельная и без прав администратора"
+    method: "GET"
+    path: "/api/v1/me"
+    role: "user"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields:
+        - "id"
+        - "max_user_id"
+        - "display_name"
+        - "is_admin"
+      bodySchema:
+        type: "object"
+        properties:
+          is_admin:
+            const: false
     timeoutMs: 5000
     repeatable: true
 
@@ -62,6 +112,33 @@ checks:
     repeatable: true
     extract:
       templateId: "$[0].id"
+
+  - id: "invalid-requisites"
+    name: "Реквизит с неверной контрольной суммой отклоняется"
+    description: "ИНН с неверным контрольным разрядом: 422 с текстом для человека, организация не сохраняется"
+    method: "POST"
+    path: "/api/v1/organizations"
+    role: "user"
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        name: "ООО «Ромашка»"
+        values:
+          inn: "7728417604"
+    expected:
+      statusCodes: [422]
+      contentType: "application/json"
+      requiredFields:
+        - "detail"
+        - "code"
+      bodySchema:
+        type: "object"
+        properties:
+          code:
+            const: "organization.invalid"
+    timeoutMs: 5000
+    repeatable: true
 
   - id: "create-organization"
     name: "Реквизиты своей организации сохраняются"
@@ -239,8 +316,90 @@ checks:
     timeoutMs: 15000
     repeatable: true
 
+  - id: "send-document"
+    name: "Файл уходит в чат MAX"
+    description: "Ядро ставит событие document.ready в очередь бота и отвечает 202 с его UUID; у учётки проверяющих выдуманный MAX-id, поэтому бот отметит недоставку, а не пришлёт файл"
+    method: "POST"
+    path: "/api/v1/documents/{document_id}/send"
+    role: "user"
+    dependsOn:
+      - "render-document"
+    request:
+      path:
+        document_id: "${documentId}"
+      headers:
+        Content-Type: "application/json"
+      body:
+        format: "docx"
+    expected:
+      statusCodes: [202]
+      contentType: "application/json"
+      requiredFields:
+        - "event_id"
+        - "format"
+        - "filename"
+      bodySchema:
+        type: "object"
+        properties:
+          format:
+            const: "docx"
+    timeoutMs: 15000
+    repeatable: false
+
+  - id: "document-history"
+    name: "Путь документа виден по шагам"
+    description: "Журнал фактов: создан, готов, собран, отправлен (и доставлен, когда бот ответит)"
+    method: "GET"
+    path: "/api/v1/documents/{document_id}/history"
+    role: "user"
+    dependsOn:
+      - "send-document"
+    request:
+      path:
+        document_id: "${documentId}"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      bodySchema:
+        type: "array"
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "create-act"
+    name: "Акт по счёту создаётся в один клик"
+    description: "Стороны, позиции и сумма переходят из счёта, номер и дата новые"
+    method: "POST"
+    path: "/api/v1/documents/{document_id}/act"
+    role: "user"
+    dependsOn:
+      - "fill-document"
+    request:
+      path:
+        document_id: "${documentId}"
+    expected:
+      statusCodes: [201]
+      contentType: "application/json"
+      requiredFields:
+        - "id"
+        - "status"
+        - "template"
+        - "values"
+        - "preview"
+      bodySchema:
+        type: "object"
+        properties:
+          template:
+            type: "object"
+            properties:
+              slug:
+                const: "act"
+    timeoutMs: 5000
+    repeatable: false
+    extract:
+      actId: "$.id"
+
   - id: "read-document"
-    name: "Документ читается из истории"
+    name: "Документ читается с предпросмотром"
     method: "GET"
     path: "/api/v1/documents/{document_id}"
     role: "user"
@@ -257,6 +416,7 @@ checks:
         - "title"
         - "status"
         - "ready"
+        - "preview"
       bodySchema:
         type: "object"
         properties:
@@ -265,7 +425,52 @@ checks:
     timeoutMs: 5000
     repeatable: true
 
+  - id: "list-documents"
+    name: "История документов"
+    description: "Список документов пользователя: счёт и акт из этого сценария"
+    method: "GET"
+    path: "/api/v1/documents"
+    role: "user"
+    dependsOn:
+      - "create-act"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      bodySchema:
+        type: "array"
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "document-not-found"
+    name: "Несуществующий документ отвечает 404"
+    description: "Чужие и удалённые документы не видны: тот же 404 с машинным кодом"
+    method: "GET"
+    path: "/api/v1/documents/{document_id}"
+    role: "user"
+    request:
+      path:
+        document_id: 999999999
+    expected:
+      statusCodes: [404]
+      contentType: "application/json"
+      requiredFields:
+        - "detail"
+        - "code"
+    timeoutMs: 5000
+    repeatable: true
+
 cleanup:
+  - id: "delete-act"
+    method: "DELETE"
+    path: "/api/v1/documents/{document_id}"
+    role: "user"
+    request:
+      path:
+        document_id: "${actId}"
+    expected:
+      statusCodes: [200, 404]
+    timeoutMs: 5000
+
   - id: "delete-document"
     method: "DELETE"
     path: "/api/v1/documents/{document_id}"

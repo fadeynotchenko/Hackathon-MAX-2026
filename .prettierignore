@@ -13,3 +13,4 @@ contracts/events.schema.json
 core/src/core/db/migrations/versions
 *.py
 core/.venv
+core/tests/api/DATA-API.schema.json

@@ -45,6 +45,9 @@ INVOICE = {
     },
     "expected": {"total": "120 000,00", "total_in_words": "Сто двадцать тысяч рублей 00 копеек"},
 }
+# ИНН своей организации с последней цифрой на единицу больше: контрольный разряд
+# не сходится, сервер обязан отказать и ничего не сохранить.
+INVALID_INN = DEMO_SELLER["inn"][:-1] + str((int(DEMO_SELLER["inn"][-1]) + 1) % 10)
 
 
 def _card(requisites: dict[str, str]) -> dict[str, object]:
@@ -72,6 +75,18 @@ def build() -> dict[str, object]:
         "invoice": {
             "endpoint": "PATCH /api/v1/documents/{document_id}/fields",
             **INVOICE,
+        },
+        "act": {
+            "endpoint": "POST /api/v1/documents/{document_id}/act",
+            "template_slug": "act",
+            "about": "Акт по готовому счёту: стороны, позиции и сумма переходят из счёта",
+            "expected": INVOICE["expected"],
+        },
+        "invalid_organization": {
+            "endpoint": "POST /api/v1/organizations",
+            "about": "ИНН с неверным контрольным разрядом: 422, организация не сохраняется",
+            "body": {"name": DEMO_SELLER["name"], "values": {"inn": INVALID_INN}},
+            "expected": {"status": 422, "code": "organization.invalid"},
         },
     }
 

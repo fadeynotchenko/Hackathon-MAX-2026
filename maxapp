@@ -48,6 +48,7 @@ show_help() {
   printf '  %s/redis%s        redis-cli к Redis стенда\n' "$C_GREEN" "$C_RESET"
   printf '  %s/deploy%s       ./deploy.sh (только prod)\n' "$C_GREEN" "$C_RESET"
   printf '  %s/check%s        локальные проверки: ruff, lint-imports, pytest, eslint, tsc, depcruise, vitest\n' "$C_GREEN" "$C_RESET"
+  printf '  %s/audit%s        известные уязвимости зависимостей: pnpm audit и pip-audit по uv.lock (нужна сеть)\n' "$C_GREEN" "$C_RESET"
   printf '  %s/install%s      сделать команду maxapp глобальной (нужен root)\n' "$C_GREEN" "$C_RESET"
   printf '  %s/help%s, %s/quit%s\n' "$C_GREEN" "$C_RESET" "$C_GREEN" "$C_RESET"
 }
@@ -85,6 +86,20 @@ do_check() {
   return "$rc"
 }
 
+# Аудит вне check: базы уязвимостей живут в сети, а check должен идти и без неё.
+do_audit() {
+  local rc=0 req
+  printf '%s→ pnpm audit%s\n' "$C_CYAN" "$C_RESET"
+  npx -y pnpm@12.4.2 audit || rc=1
+  printf '%s→ pip-audit (core/uv.lock)%s\n' "$C_CYAN" "$C_RESET"
+  req="$(mktemp)"
+  (cd core && uv export --frozen --no-hashes --no-emit-project --format requirements-txt >"$req") &&
+    uvx pip-audit --disable-pip --no-deps -r "$req" || rc=1
+  rm -f "$req"
+  if [ "$rc" -eq 0 ]; then printf '%s✓ уязвимостей не найдено%s\n' "$C_GREEN" "$C_RESET"; else printf '%s✗ есть уязвимости%s\n' "$C_RED" "$C_RESET"; fi
+  return "$rc"
+}
+
 env_value() { grep -E "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2- | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"; }
 
 dispatch() {
@@ -105,6 +120,7 @@ dispatch() {
     deploy)
       if [ "$MAXAPP_ENV" = prod ]; then ./deploy.sh; else printf '%sdeploy только для --prod%s\n' "$C_RED" "$C_RESET"; fi ;;
     check)       do_check ;;
+    audit)       do_audit ;;
     install)
       if ln -sf "$ROOT_DIR/maxapp" /usr/local/bin/maxapp 2>/dev/null; then
         printf '%s✓ команда maxapp доступна из любой папки%s\n' "$C_GREEN" "$C_RESET"

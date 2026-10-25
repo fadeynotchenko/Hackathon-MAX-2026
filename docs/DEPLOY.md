@@ -1,94 +1,60 @@
 # Деплой
 
-Прод — один хост с Docker и compose-плагином, стек `docker-compose.prod.yml`,
-выкатка скриптом `deploy.sh`. Управление — консоль `./maxapp --prod`.
+Прод: один хост с Docker и compose-плагином, стек `docker-compose.prod.yml`,
+выкатка скриптом `deploy.sh`, управление консолью `./maxapp --prod`
 
-Адрес стенда — `https://project-documents-max.ru`: он же указан URL мини-приложения
-в MAX. Клиент MAX открывает мини-апп только по https с доверенным сертификатом,
-а вебхук бота MAX доставляет на тот же домен, поэтому стенд должен быть доступен
-из интернета постоянно: локальный `docker compose up` на ноутбуке для этого не
-годится (см. «Домашний компьютер вместо сервера»).
+Адрес стенда `https://project-documents-max.ru`, он же URL мини-приложения в MAX.
+Клиент MAX открывает мини-апп только по https с доверенным сертификатом, вебхук
+бота MAX шлёт на тот же домен. Поэтому стенд должен быть доступен из интернета
+постоянно, и ноутбук с `docker compose up` для этого не подходит (см. «Домашний
+компьютер вместо сервера»)
 
 ## Что нужно заранее
 
-- Сервер с публичным IPv4 и Docker с compose-плагином: 2 CPU, 4 ГБ памяти, 20 ГБ
-  диска (под такой хост настроены лимиты контейнеров и Postgres). Образы берутся с
-  Docker Hub: если `docker pull` на сервере не проходит, подключите зеркало реестра
-  (`registry-mirrors` в `/etc/docker/daemon.json`), которое даёт хостинг.
-- A-запись домена у регистратора: `project-documents-max.ru → <IP сервера>`
-  (AAAA — только если IPv6 у сервера настоящий, иначе удалите её: Let's Encrypt
-  проверяет домен и по IPv6). Проверка: `dig +short project-documents-max.ru`
-  отвечает IP сервера.
-- Входящие порты 80 и 443 открыты в файрволе сервера и в панели хостинга: 80 нужен
-  Let's Encrypt для проверки домена и редиректа на https, 443 — мини-аппу и вебхуку.
+| Что    | Требование                                                                                        |
+| ------ | ------------------------------------------------------------------------------------------------- |
+| Сервер | публичный IPv4, Docker с compose-плагином, 2 CPU, 4 ГБ памяти, 20 ГБ диска                        |
+| DNS    | A-запись `project-documents-max.ru` на IP сервера, проверка `dig +short project-documents-max.ru` |
+| Порты  | входящие 80 и 443 открыты в файрволе и в панели хостинга                                          |
+
+Лимиты контейнеров и настройки PostgreSQL рассчитаны на такой хост. Базовые образы
+берутся с зеркала `mirror.gcr.io`: анонимный лимит Docker Hub ронял выкатку на 429. AAAA-запись ставьте, только если IPv6 у сервера настоящий: Let's Encrypt
+проверяет домен и по IPv6. Порт 80 нужен для проверки домена и редиректа на
+https, 443 для мини-аппа и вебхука
 
 ## Первый запуск
 
-1. Клонировать репозиторий, например в `/opt/maxapp`.
-2. `cp .env.example .env` и заполнить. Обязательные переменные (реестр
-   `core.config.env_spec`, `required_for`):
-   - `MAX_BOT_TOKEN` — токен от MasterBot; он же подписывает initData мини-аппа;
-   - `JWT_SECRET` — 32+ случайных символа (`openssl rand -hex 32`);
-   - `DB_USER`, `DB_PASSWORD`, `DB_NAME` — Postgres в контейнере `db`;
-   - `REDIS_PASSWORD` — Redis в контейнере `redis`;
-   - `DOMAIN` — публичное имя стенда для `server_name` nginx и сертификата
-     (`project-documents-max.ru`, уже стоит в `.env.example`);
-   - `PUBLIC_BASE_URL` — `https://<DOMAIN>`, нужен боту в режиме webhook;
-   - `BOT_WEBHOOK_SECRET` — 16+ символов, MAX присылает его в заголовке вебхука.
-     Остальное имеет дефолты (`ENV=production` и `BOT_MODE=webhook` compose выставляет
-     сам). Плейсхолдеры `dev-only-*` из `.env.example` в production отвергаются на старте.
-     Полезно задать `MAX_MINI_APP_NAME` (кнопка «Открыть» под сообщениями бота),
-     `ADMIN_MAX_IDS`, `GIGACHAT_AUTH_KEY` и `ACME_EMAIL` (почта учётки Let's Encrypt).
-3. `./deploy.sh` — проверит `DOMAIN`, создаст каталоги `app_logs/{api,bot,nginx}`,
-   `backups/` и `gateway/letsencrypt/` с владельцами под uid контейнеров, соберёт
-   образы, прогонит тесты в образе, выпустит сертификат (ниже), поднимет стек и
-   дождётся healthcheck'ов; миграции api применит сам при старте (advisory-lock
-   защищает от гонки воркеров).
-4. Проверка: `./maxapp --prod health`, `./maxapp --prod logs bot`,
-   `curl -I https://project-documents-max.ru` (200, сертификат Let's Encrypt). Бот
-   при старте в режиме webhook сам регистрирует подписку в MAX на
-   `PUBLIC_BASE_URL + BOT_WEBHOOK_PATH`; мини-апп открывается из чата с ботом.
+1. Клонировать репозиторий, например в `/opt/maxapp`
+2. `cp .env.example .env` и заполнить обязательные переменные (реестр
+   `core.config.env_spec`, поле `required_for`)
+3. Запустить `./deploy.sh`
+4. Проверить: `./maxapp --prod health`, `./maxapp --prod logs bot`,
+   `curl -I https://project-documents-max.ru` (200 и сертификат Let's Encrypt)
 
-## Сертификат
+| Переменная           | Зачем                                                                        |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `MAX_BOT_TOKEN`      | токен бота от MasterBot, им же проверяется подпись initData мини-аппа        |
+| `JWT_SECRET`         | подпись access-токенов, 32 и больше символов (`openssl rand -hex 32`)        |
+| `DB_USER`            | пользователь PostgreSQL в контейнере `db`                                    |
+| `DB_PASSWORD`        | пароль PostgreSQL                                                            |
+| `DB_NAME`            | имя базы                                                                     |
+| `REDIS_PASSWORD`     | пароль Redis в контейнере `redis`                                            |
+| `DOMAIN`             | имя стенда для `server_name` nginx и сертификата, в `.env.example` уже стоит |
+| `PUBLIC_BASE_URL`    | `https://<DOMAIN>`, нужен боту в режиме webhook                              |
+| `BOT_WEBHOOK_SECRET` | 16 и больше символов, MAX присылает его в заголовке вебхука                  |
 
-Выпуском и продлением занимается контейнер `certbot` (`gateway/certbot.sh`),
-руками ничего делать не нужно:
+Остальное имеет значения по умолчанию, `ENV=production` и `BOT_MODE=webhook`
+compose выставляет сам. Плейсхолдеры `dev-only-*` из `.env.example` в production
+отвергаются на старте и ядром, и ботом. Полезно задать `MAX_MINI_APP_NAME` (кнопка
+«Открыть» под сообщениями бота), `ADMIN_MAX_IDS`, `GIGACHAT_AUTH_KEY`,
+`DADATA_API_KEY` и `ACME_EMAIL` (почта учётки Let's Encrypt)
 
-- При первом запуске `deploy.sh` кладёт в `gateway/ssl/` самоподписанную пару
-  (без неё nginx не стартует), поднимает `gateway` и `certbot` и ждёт до двух
-  минут, пока Let's Encrypt проверит домен по http-01 через общий webroot
-  `gateway/acme/`. Бот стартует уже с настоящим сертификатом.
-- Выпущенная пара копируется в `gateway/ssl/`; `gateway` замечает замену и
-  перечитывает конфиг сам (`gateway/cert-reload.sh`, проверка раз в минуту).
-- Продление certbot проверяет дважды в сутки; учётка и история выпусков — в
-  `gateway/letsencrypt/` (в git не попадает).
-- Не выпустился (DNS ещё не обновился, закрыт порт 80) — `deploy.sh` так и скажет,
-  а certbot повторяет попытку каждые 15 минут: `./maxapp --prod logs certbot`.
-  После выпуска перезапустите бота, чтобы он заново зарегистрировал вебхук:
-  `docker compose -f docker-compose.prod.yml restart bot`.
-
-Свой сертификат (например, от регистратора) — положить `fullchain.pem` и
-`privkey.pem` в `gateway/ssl/` и не поднимать `certbot`
-(`docker compose -f docker-compose.prod.yml stop certbot`).
-
-## Доступ для проверяющих
-
-HTTP-проверки (`DATA-API.yaml`, роль `user`) идут с долгим токеном отдельной
-учётки: обычный access-токен живёт 15 минут, а initData без клиента MAX не
-получить. Выпуск и отзыв — внутри контейнера api:
-
-```bash
-docker compose -f docker-compose.prod.yml exec api python -m core.scripts.issue_reviewer_token --days 14
-docker compose -f docker-compose.prod.yml exec api python -m core.scripts.issue_reviewer_token --revoke
-```
-
-Срок — до 365 дней. Отзыв удаляет учётку с её документами. Чтобы проверяющим
-доставлялись файлы в чат, выпускайте токен на настоящий MAX-id: `--max-user-id`.
-
-Сценарий DATA-API создаёт организацию и клиента с ИНН из `test-data.json`, а
-cleanup их удаляет. Прогон, оборванный до cleanup, оставляет карточки, и
-следующий получает 422 `organization.duplicate_inn`: перевыпуск учётки
-(`--revoke`, затем `--days 14`) начинает её с пустого листа.
+Что делает `deploy.sh` при первом запуске: проверяет `DOMAIN`, создаёт каталоги
+`app_logs/{api,bot,nginx}`, `backups/` и `gateway/letsencrypt/` с владельцами под
+uid контейнеров, собирает образы, гоняет тесты в образе, выпускает сертификат,
+поднимает стек и ждёт healthcheck. Миграции api применяет сам при старте, гонку
+воркеров снимает advisory-lock. Бот в режиме webhook сам регистрирует подписку в
+MAX на `PUBLIC_BASE_URL + BOT_WEBHOOK_PATH`
 
 ## Обновление
 
@@ -96,81 +62,140 @@ cleanup их удаляет. Прогон, оборванный до cleanup, о
 ./deploy.sh
 ```
 
-Шаги: `git pull --ff-only` → тесты core в образе `core/Dockerfile --target test` (красные =
-стоп; `SKIP_TESTS=1` пропускает, только если они зелёные в CI) → каталоги и TLS →
-снимок БД `backups/predeploy_<дата>.dump` (хранится `PREDEPLOY_KEEP`, файлы `0600`) →
-`docker compose up -d --build --remove-orphans --wait` → сводка, health, чистка старых
-слоёв. Изменения в `.env` вносятся до запуска: контейнеры перечитают его при
-пересоздании. `PREDEPLOY_KEEP` и `SKIP_TESTS` читаются из окружения shell, не из `.env`.
+| Шаг | Что происходит                                                                               |
+| --- | -------------------------------------------------------------------------------------------- |
+| 1   | проверки: `.env` с настоящим `DOMAIN`, docker и git на месте                                 |
+| 2   | `git pull --ff-only`                                                                         |
+| 3   | pytest ядра в образе `core/Dockerfile --target test`, красные тесты останавливают выкатку    |
+| 4   | каталоги логов и бэкапов, самоподписанная пара TLS при первом запуске                        |
+| 5   | первый выпуск Let's Encrypt (gateway и certbot) до старта бота                               |
+| 6   | снимок БД `backups/predeploy_<дата>.dump`, файлы `0600`, хранится `PREDEPLOY_KEEP` последних |
+| 7   | `docker compose up -d --build --remove-orphans --wait`                                       |
+| 8   | сводка контейнеров, health API и сертификата, чистка старых слоёв                            |
+
+Правки `.env` вносятся до запуска: контейнеры перечитают его при пересоздании.
+`PREDEPLOY_KEEP` и `SKIP_TESTS` читаются из окружения shell, не из `.env`.
+`SKIP_TESTS=1` пропускает шаг 3, им пользуются, только если тесты уже зелёные
 
 ## Сервисы прод-стенда
 
-| Сервис      | Образ                | Роль                                                                            |
-| ----------- | -------------------- | ------------------------------------------------------------------------------- |
-| `db`        | postgres:17-alpine   | БД, порт только на 127.0.0.1                                                    |
-| `redis`     | redis:7-alpine       | сессии бота, стримы событий; AOF, пароль обязателен                             |
-| `api`       | Dockerfile (runtime) | uvicorn, `API_WORKERS` воркеров                                                 |
-| `bot`       | bot/Dockerfile       | бот, webhook на `bot:8080`, health `:8081`                                      |
-| `gateway`   | gateway/Dockerfile   | TLS, статика мини-аппа (web), `/api/` → api, `${BOT_WEBHOOK_PATH}` → bot        |
-| `certbot`   | certbot/certbot      | выпуск и продление сертификата Let's Encrypt для `DOMAIN` в `gateway/ssl/`      |
-| `db_backup` | postgres:17-alpine   | суточный `pg_dump` в `backups/` в `DB_BACKUP_HOUR_UTC`, хранит `DB_BACKUP_KEEP` |
+| Сервис      | Образ              | Роль                                                                            |
+| ----------- | ------------------ | ------------------------------------------------------------------------------- |
+| `db`        | postgres:17-alpine | БД, наружу порт не открыт                                                       |
+| `redis`     | redis:7-alpine     | сессии бота, стримы событий, токены скачивания; AOF, пароль обязателен          |
+| `api`       | core/Dockerfile    | uvicorn, `API_WORKERS` воркеров, образ с LibreOffice для PDF                    |
+| `bot`       | bot/Dockerfile     | бот, вебхук на `bot:8080`, health на `:8081`                                    |
+| `gateway`   | gateway/Dockerfile | TLS, статика мини-аппа, `/api/` в api, `${BOT_WEBHOOK_PATH}` в bot              |
+| `certbot`   | certbot/certbot    | выпуск и продление сертификата Let's Encrypt для `DOMAIN` в `gateway/ssl/`      |
+| `db_backup` | postgres:17-alpine | суточный `pg_dump` в `backups/` в `DB_BACKUP_HOUR_UTC`, хранит `DB_BACKUP_KEEP` |
 
-`api`, `bot` и `certbot` работают с read-only FS, `tmpfs /tmp`, `cap_drop ALL`,
-`no-new-privileges` и лимитами памяти и pids; `db`, `redis`, `gateway` и `certbot` —
-с точечными `cap_add` под свои entrypoint'ы и `no-new-privileges`; `db_backup`
-получает только переменные дампа.
+Наружу открыт только gateway (80 и 443). Hardening контейнеров (read-only FS,
+`cap_drop`, лимиты) описан в [SECURITY.md](SECURITY.md#контейнеры)
+
 `API_WORKERS` по умолчанию 1: файл-лог не умеет ротироваться из нескольких
-процессов; для большего числа воркеров задайте `LOG_DIR=` (пусто) и читайте логи
-из docker stdout.
+процессов. Для большего числа воркеров задайте `LOG_DIR=` (пусто) и читайте логи
+из stdout контейнера
+
+## Сертификат
+
+Выпуском и продлением занимается контейнер `certbot` (`gateway/certbot.sh`),
+руками ничего делать не нужно:
+
+- первый `deploy.sh` кладёт в `gateway/ssl/` самоподписанную пару (без неё nginx не
+  стартует), поднимает `gateway` и `certbot` и до двух минут ждёт, пока Let's
+  Encrypt проверит домен по http-01 через общий webroot `gateway/acme/`. Бот
+  стартует уже с настоящим сертификатом
+- выпущенная пара копируется в `gateway/ssl/`, gateway замечает замену и
+  перечитывает конфиг сам (`gateway/cert-reload.sh`, проверка раз в минуту)
+- продление certbot проверяет дважды в сутки, учётка и история выпусков лежат в
+  `gateway/letsencrypt/` (в git не попадает)
+- если сертификат не выпустился (DNS не обновился, закрыт порт 80), `deploy.sh`
+  так и скажет, а certbot повторяет попытку каждые 15 минут:
+  `./maxapp --prod logs certbot`. После выпуска перезапустите бота, чтобы он заново
+  зарегистрировал вебхук: `docker compose -f docker-compose.prod.yml restart bot`
+
+Свой сертификат (например, от регистратора): положить `fullchain.pem` и
+`privkey.pem` в `gateway/ssl/` и остановить `certbot`
+(`docker compose -f docker-compose.prod.yml stop certbot`)
+
+## Доступ для проверяющих
+
+HTTP-проверки `DATA-API.yaml` с ролью `user` идут с долгим токеном отдельной
+учётки: обычный access-токен живёт 15 минут, а initData без клиента MAX не
+получить. Проверка идёт после дедлайна, когда прод уже не меняют, поэтому токен
+выпускается на год. Выпуск и отзыв внутри контейнера api:
+
+```bash
+docker compose -f docker-compose.prod.yml exec api python -m core.scripts.issue_reviewer_token --days 365
+docker compose -f docker-compose.prod.yml exec api python -m core.scripts.issue_reviewer_token --revoke
+```
+
+- срок от 1 до 365 дней, отзыв удаляет учётку вместе с её документами, и токен
+  перестаёт работать сразу
+- у учётки по умолчанию выдуманный MAX-id `409000001`. Сценарий отправляет счёт в
+  чат, ядро отвечает 202, а бот отмечает недоставку `delivery_failed`. Чтобы файлы
+  приходили в настоящий чат, выпускайте токен на свой MAX-id: `--max-user-id`
+- сценарий создаёт организацию, клиента, счёт и акт по нему, cleanup удаляет акт,
+  счёт, клиента и организацию. Если прогон оборвался до cleanup, повторное
+  создание ответит 422 `organization.duplicate_inn`. Тогда учётку перевыпускают
+  (`--revoke`, затем `--days 365`), и она начинает с пустого листа
 
 ## Бэкапы и откат
 
-- Суточные дампы: `backups/<DB_NAME>_<дата>.dump` + `.sha256`.
-- Снимок перед выкаткой: `backups/predeploy_<дата>.dump`.
-- Восстановление (при остановленных `api` и `bot`, иначе блокировки):
-  `docker compose -f docker-compose.prod.yml stop api bot`, затем
-  `docker compose -f docker-compose.prod.yml exec -T db pg_restore -U $DB_USER -d $DB_NAME --clean --if-exists < backups/<файл>.dump`,
-  затем `./deploy.sh`.
-- Откат кода: `git checkout <ревизия> && ./deploy.sh` (миграции вниз — `alembic downgrade -1` внутри контейнера api при необходимости).
+| Что                   | Где и как                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| суточные дампы        | `backups/<DB_NAME>_<дата>.dump` и `.sha256` рядом                                              |
+| снимок перед выкаткой | `backups/predeploy_<дата>.dump`                                                                |
+| откат кода            | `git checkout <ревизия> && ./deploy.sh`, миграция вниз `alembic downgrade -1` в контейнере api |
+
+Восстановление дампа при остановленных `api` и `bot` (иначе блокировки):
+
+```bash
+docker compose -f docker-compose.prod.yml stop api bot
+docker compose -f docker-compose.prod.yml exec -T db pg_restore -U $DB_USER -d $DB_NAME --clean --if-exists < backups/<файл>.dump
+./deploy.sh
+```
 
 ## Логи на сервере
 
-`app_logs/` (bind-mount, по подкаталогу на сервис): `api/api.log`, `bot/bot.<дата>.N.log`,
-`nginx/access-<дата>.log` (gateway). Живой хвост —
-`./maxapp --prod logs <сервис>`. Формат и корреляция — `docs/LOGGING.md`.
+`app_logs/` (bind-mount, по подкаталогу на сервис): `api/api.log`,
+`bot/bot.<дата>.N.log`, `nginx/access-<дата>.log`. Живой хвост:
+`./maxapp --prod logs <сервис>`. Формат и поиск по инциденту описаны в
+[LOGGING.md](LOGGING.md)
 
 ## Домашний компьютер вместо сервера
 
-Тот же прод-стенд поднимается и на своей машине, если у подключения белый
-(статический) IP: A-запись домена — на этот IP, на роутере проброс внешних
-портов 80 и 443 на компьютер, затем `docker compose down` (dev и прод используют
-одни имена контейнеров) и `./deploy.sh` (Linux, от root: он выставляет владельцев
-каталогов). Мини-апп и бот работают, пока компьютер включён; для проверки жюри и
-постоянной работы нужен сервер.
+Прод-стенд поднимается и на своей машине, если у подключения белый статический
+IP: A-запись домена на этот IP, проброс внешних портов 80 и 443 на компьютер,
+затем `docker compose down` (dev и прод используют одни имена контейнеров) и
+`./deploy.sh` (Linux, от root: скрипт выставляет владельцев каталогов). Мини-апп и
+бот работают, пока компьютер включён, для проверки жюри нужен сервер
 
-Туннели на чужих доменах (cloudflared, ngrok) подходят только для отладки dev-стенда:
-URL мини-аппа в MAX тогда придётся менять на адрес туннеля, а домен
-`project-documents-max.ru` останется без стенда.
+Туннели на чужих доменах (cloudflared, ngrok) подходят только для отладки
+dev-стенда: URL мини-аппа в MAX тогда придётся сменить на адрес туннеля
 
 ## Один бот на прод и локальный стенд
 
 Бот в dev работает polling'ом, а SDK при запуске polling'а снимает все
-вебхук-подписки бота — локальный `docker compose up` с тем же `MAX_BOT_TOKEN`
-молча отключил бы прод. Поэтому бот в polling-режиме сначала смотрит подписки и,
-если вебхук уже есть, polling не запускает: в логе `bot.polling.blocked` с адресом
-вебхука, а файлы документов локальный стенд в чат по-прежнему доставляет. Для
-отладки входящих сообщений заведите в MasterBot второго бота и укажите его токен в
-локальном `.env`; забрать апдейты у прода насовсем — `BOT_POLLING_TAKEOVER=true`
-(прод-бот подпишется снова только при своём рестарте).
+вебхук-подписки бота: локальный `docker compose up` с тем же `MAX_BOT_TOKEN` молча
+отключил бы прод. Поэтому бот в polling-режиме сначала читает подписки и при живом
+вебхуке polling не запускает (`bot.polling.blocked` в логе с адресом вебхука).
+Файлы документов локальный стенд в чат по-прежнему доставляет
+
+Для отладки входящих сообщений заведите в MasterBot второго бота и укажите его
+токен в локальном `.env`. Забрать апдейты у прода насовсем:
+`BOT_POLLING_TAKEOVER=true` (прод-бот подпишется снова только при своём рестарте)
 
 ## Dev-стенд
 
-`docker compose up --build`: пять контейнеров (`db`,
-`redis`, `api`, `bot`, `web`), исходники смонтированы, core с `--reload`, бот через
-`tsx watch`, мини-апп через vite с HMR на `:3090` (порты задаются в `.env`, группа
-«Порты на хосте»). Gateway в dev не поднимается: vite сам проксирует `/api/`. Зависимости Node ставит
-одноразовый сервис `deps`, `bot` и `web` ждут его. Бот в dev работает polling'ом:
-публичный адрес не нужен. Чтобы открыть мини-апп из настоящего MAX-клиента, поднимите
-туннель на `localhost:3090` (`allowedHosts` у vite открыт) и укажите его адрес как URL
-мини-аппа в MasterBot. Dev-вход включается переменной `DEV_LOGIN_ENABLED=true`
-(dev-compose ставит её сам; в production запрещена).
+`docker compose up --build` поднимает пять контейнеров: `db`, `redis`, `api`,
+`bot`, `web`. Исходники смонтированы: core с `--reload`, бот через `tsx watch`,
+мини-апп через vite с HMR на `:3090` (порты в `.env`, группа «Порты на хосте»).
+Gateway в dev не поднимается, vite сам проксирует `/api/`. Node-зависимости ставит
+одноразовый сервис `deps`, `bot` и `web` ждут его
+
+Бот в dev работает polling'ом и публичного адреса не требует. Чтобы открыть
+мини-апп из настоящего клиента MAX, поднимите туннель на `localhost:3090`
+(`allowedHosts` у vite открыт) и укажите его адрес как URL мини-аппа в MasterBot.
+Dev-вход включает `DEV_LOGIN_ENABLED=true` (dev-compose ставит её сам, в
+production валидатор её запрещает)

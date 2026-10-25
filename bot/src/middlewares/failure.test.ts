@@ -8,7 +8,11 @@ describe('handler failure', () => {
     const log = silentLogger();
     const error = vi.spyOn(log, 'error');
     const reply = vi.fn().mockResolvedValue(undefined);
-    await handlerFailure(log)(new Error('boom'), { updateType: 'message_created', chatId: 3, reply } as never);
+    await handlerFailure(log)(new Error('boom'), {
+      updateType: 'message_created',
+      chatId: 3,
+      reply,
+    } as never);
     expect(error).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'bot.handler.error' }),
       'handler failed',

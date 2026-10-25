@@ -178,13 +178,13 @@ def fill_pdf(
     """Копия PDF, где на местах полей стоят ``values[key]`` (пустая строка —
     место просто закрыто)."""
     spots = _spots(pdf, places, values)
-    reader = PdfReader(io.BytesIO(_strip(pdf, spots)))
-    writer = PdfWriter()
-    for number, page in enumerate(reader.pages):
+    # Слой накладывается на страницы, уже принадлежащие writer: правка
+    # страницы читателя pypdf считает ненадёжной и уберёт в 7.0.
+    writer = PdfWriter(clone_from=io.BytesIO(_strip(pdf, spots)))
+    for number, page in enumerate(writer.pages):
         mine = [spot for spot in spots if spot.page == number]
         if mine:
             page.merge_page(_overlay(page, mine))
-        writer.add_page(page)
     out = io.BytesIO()
     writer.write(out)
     return out.getvalue()

@@ -4,7 +4,7 @@
       "name": "счёт одной фразой",
       "template": "invoice",
       "message": "Счёт на 120 000 за разработку сайта для ООО Ромашка",
-      "expect": {"client_name": "ООО Ромашка"},
+      "expect": { "client_name": "ООО Ромашка" },
       "items": ["разработ"],
       "absent": ["client_inn", "seller_name", "number"]
     },
@@ -12,21 +12,21 @@
       "name": "реквизиты клиента цифра в цифру",
       "template": "invoice",
       "message": "клиент ООО «Вега», ИНН 7707083893, адрес г. Казань, ул. Баумана, д. 5",
-      "expect": {"client_name": "ООО «Вега»", "client_inn": "7707083893"},
+      "expect": { "client_name": "ООО «Вега»", "client_inn": "7707083893" },
       "absent": ["seller_inn", "seller_address", "items"]
     },
     {
       "name": "номер счёта и позиции через запятую",
       "template": "invoice",
       "message": "счёт № 17, монтаж кондиционера 2 шт по 15 000, доставка 3 000",
-      "expect": {"number": "17"},
+      "expect": { "number": "17" },
       "items": ["монтаж", "доставк"]
     },
     {
       "name": "клиент — ИП, не продавец",
       "template": "invoice",
       "message": "выстави на ИП Семёнов Пётр за консультацию 5000",
-      "expect": {"client_name": "ИП Семёнов Пётр"},
+      "expect": { "client_name": "ИП Семёнов Пётр" },
       "items": ["консульт"],
       "absent": ["seller_name", "seller_director"]
     },
@@ -34,7 +34,7 @@
       "name": "КП с суммой и сроком",
       "template": "offer",
       "message": "КП для ООО Альфа на поставку офисной мебели, 450 тысяч, срок поставки 14 рабочих дней",
-      "expect": {"client_name": "ООО Альфа", "total": "450000"},
+      "expect": { "client_name": "ООО Альфа", "total": "450000" },
       "absent": ["seller_phone", "seller_email"]
     },
     {
@@ -48,33 +48,76 @@
       "name": "договор оказания услуг",
       "template": "service-contract",
       "message": "договор с ООО «Стройпроект» на уборку офиса за 30 000 рублей в месяц, оплата в течение 5 дней",
-      "expect": {"client_name": "ООО «Стройпроект»", "total": "30000", "payment_days": "5"},
+      "expect": { "client_name": "ООО «Стройпроект»", "total": "30000", "payment_days": "5" },
       "absent": ["client_inn", "city"]
     },
     {
       "name": "договор: подписант клиента",
       "template": "service-contract",
       "message": "со стороны заказчика подписывает генеральный директор Кузнецова Анна Сергеевна",
-      "expect": {"client_director": "Кузнецова Анна Сергеевна"},
+      "expect": { "client_director": "Кузнецова Анна Сергеевна" },
       "absent": ["seller_director"]
     },
     {
       "name": "город не додумывается",
       "template": "service-contract",
       "message": "договор для ООО Ромашка на ремонт техники",
-      "expect": {"client_name": "ООО Ромашка"},
+      "expect": { "client_name": "ООО Ромашка" },
       "absent": ["city", "client_address", "total"]
     }
   ],
   "route": [
-    {"name": "новый счёт", "message": "Счёт на 50 000 для ООО Вега", "intent": "new", "template": "invoice"},
-    {"name": "новое КП", "message": "Нужно коммерческое предложение для клиента", "intent": "new", "template": "offer"},
-    {"name": "договор без уточнения — основной", "message": "Составь договор на услуги", "intent": "new", "template": "service-contract"},
-    {"name": "договор с самозанятым", "message": "договор с самозанятым на дизайн логотипа", "intent": "new", "template": "contract-self-employed"},
-    {"name": "отмена правки", "message": "не то, верни как было", "current": "Счёт на оплату, ждёт значений: номер счёта", "intent": "undo", "template": ""},
-    {"name": "данные к текущему", "message": "ИНН 7707083893", "current": "Счёт на оплату, ждёт значений: ИНН клиента", "intent": "fill", "template": ""},
-    {"name": "вопрос о текущем", "message": "что ещё осталось заполнить?", "current": "Счёт на оплату, ждёт значений: номер счёта", "intent": "question", "template": ""},
-    {"name": "вид не ясен", "message": "привет, помоги с документом", "intent": ["new", "question", "fill"], "template": ""}
+    {
+      "name": "новый счёт",
+      "message": "Счёт на 50 000 для ООО Вега",
+      "intent": "new",
+      "template": "invoice"
+    },
+    {
+      "name": "новое КП",
+      "message": "Нужно коммерческое предложение для клиента",
+      "intent": "new",
+      "template": "offer"
+    },
+    {
+      "name": "договор без уточнения — основной",
+      "message": "Составь договор на услуги",
+      "intent": "new",
+      "template": "service-contract"
+    },
+    {
+      "name": "договор с самозанятым",
+      "message": "договор с самозанятым на дизайн логотипа",
+      "intent": "new",
+      "template": "contract-self-employed"
+    },
+    {
+      "name": "отмена правки",
+      "message": "не то, верни как было",
+      "current": "Счёт на оплату, ждёт значений: номер счёта",
+      "intent": "undo",
+      "template": ""
+    },
+    {
+      "name": "данные к текущему",
+      "message": "ИНН 7707083893",
+      "current": "Счёт на оплату, ждёт значений: ИНН клиента",
+      "intent": "fill",
+      "template": ""
+    },
+    {
+      "name": "вопрос о текущем",
+      "message": "что ещё осталось заполнить?",
+      "current": "Счёт на оплату, ждёт значений: номер счёта",
+      "intent": "question",
+      "template": ""
+    },
+    {
+      "name": "вид не ясен",
+      "message": "привет, помоги с документом",
+      "intent": ["new", "question", "fill"],
+      "template": ""
+    }
   ],
   "template": [
     {

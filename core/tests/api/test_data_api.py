@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import jsonschema
 import pytest
 import yaml
 from httpx import AsyncClient, Response
@@ -26,6 +27,10 @@ from core.usecases.documents import ensure_builtin_templates
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SPEC = yaml.safe_load((REPO_ROOT / "DATA-API.yaml").read_text(encoding="utf-8"))
 TEST_DATA = json.loads((REPO_ROOT / "test-data.json").read_text(encoding="utf-8"))
+# Схема DATA-API 1.0 из комплекта организаторов (gitverse.ru/stasnorman/example-data-api),
+# скопирована без правок: тот же разбор, что у их validate_data_api.py.
+OFFICIAL_SCHEMA = json.loads(Path(__file__).with_name("DATA-API.schema.json").read_text("utf-8"))
+OPENAPI = json.loads((REPO_ROOT / "contracts" / "openapi.json").read_text(encoding="utf-8"))
 
 _VARIABLE = re.compile(r"\$\{(\w+)\}")
 _JSONPATH_STEP = re.compile(r"\.(\w+)|\[(\d+)\]")
@@ -139,9 +144,19 @@ async def test_every_check_passes_and_cleanup_removes_what_it_created(
 
     filled = bodies["fill-document"]
     assert filled["errors"] == [], filled["errors"]
-    preview = filled["preview"].replace("\xa0", " ")
-    for text in TEST_DATA["invoice"]["expected"].values():
-        assert text in preview, f"в предпросмотре нет «{text}»"
+    for step, data in (("fill-document", "invoice"), ("create-act", "act")):
+        preview = bodies[step]["preview"].replace("\xa0", " ")
+        for text in TEST_DATA[data]["expected"].values():
+            assert text in preview, f"{step}: в предпросмотре нет «{text}»"
+
+    path = [fact["kind"] for fact in bodies["document-history"]]
+    assert path[:4] == ["created", "ready", "rendered", "sent"], path
+    listed = {document["id"] for document in bodies["list-documents"]}
+    assert listed == {bodies["create-document"]["id"], bodies["create-act"]["id"]}
+    assert (
+        bodies["invalid-requisites"]["code"]
+        == TEST_DATA["invalid_organization"]["expected"]["code"]
+    )
 
     headers = {"Authorization": f"Bearer {reviewer_token}"}
     for listing in ("/api/v1/documents", "/api/v1/counterparties", "/api/v1/organizations"):
@@ -160,6 +175,11 @@ def test_request_bodies_match_test_data_file() -> None:
     steps = {step["id"]: step for step in [*SPEC["checks"], *SPEC.get("cleanup", ())]}
     assert steps["create-organization"]["request"]["body"] == TEST_DATA["organization"]["body"]
     assert steps["create-counterparty"]["request"]["body"] == TEST_DATA["counterparty"]["body"]
+    invalid = steps["invalid-requisites"]
+    assert invalid["request"]["body"] == TEST_DATA["invalid_organization"]["body"]
+    assert invalid["expected"]["statusCodes"] == [
+        TEST_DATA["invalid_organization"]["expected"]["status"]
+    ]
     sent = steps["fill-document"]["request"]["body"]["values"]
     invoice = TEST_DATA["invoice"]["values"]
     assert set(sent) == set(invoice)
@@ -175,3 +195,37 @@ def test_no_secrets_in_data_api() -> None:
     text = (REPO_ROOT / "DATA-API.yaml").read_text(encoding="utf-8")
     assert "Authorization" not in text.split("checks:", 1)[1]
     assert not re.search(r"eyJ[\w-]{10,}\.", text), "в DATA-API.yaml похоже на JWT"
+
+
+def test_file_matches_official_schema() -> None:
+    jsonschema.Draft202012Validator(OFFICIAL_SCHEMA).validate(SPEC)
+
+
+def test_every_path_and_method_exists_in_openapi() -> None:
+    """Третий уровень валидатора организаторов: каждая проверка и шаг cleanup
+    ссылаются на операцию, которая есть в contracts/openapi.json."""
+    for step in [*SPEC["checks"], *SPEC.get("cleanup", ())]:
+        operations = OPENAPI["paths"].get(step["path"], {})
+        assert step["method"].lower() in operations, (
+            f"{step['id']}: {step['method']} {step['path']}"
+        )
+
+
+def test_variables_are_extracted_before_use_and_ids_are_unique() -> None:
+    steps = [*SPEC["checks"], *SPEC.get("cleanup", ())]
+    ids = [step["id"] for step in steps]
+    assert len(ids) == len(set(ids)), ids
+    known: set[str] = set()
+    for step in steps:
+        used = set(_VARIABLE.findall(json.dumps(step.get("request", {}), ensure_ascii=False)))
+        assert used <= known, f"{step['id']}: {used - known} ещё не извлечены"
+        known |= set(step.get("extract", {}))
+        if step in SPEC["checks"] and step["method"] != "GET":
+            assert "repeatable" in step, f"{step['id']}: нет repeatable"
+
+
+def test_docs_name_the_real_number_of_checks() -> None:
+    """README и FEATURES называют число проверок: оно не отстаёт от файла."""
+    count = f"{len(SPEC['checks'])} проверок"
+    for doc in ("README.md", "FEATURES.md"):
+        assert count in (REPO_ROOT / doc).read_text(encoding="utf-8"), f"{doc}: нет «{count}»"

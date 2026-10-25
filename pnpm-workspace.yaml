@@ -23,3 +23,9 @@ minimumReleaseAgeExclude:
   - react-router-dom@7.18.4
   - react-router@7.18.4
   - vitest@5.0.1
+
+# Транзитивные зависимости инструментов разработки с исправленными уязвимостями
+# (pnpm audit): их родители ещё не подняли нижнюю границу сами.
+overrides:
+  source-map-js: ">=1.2.2"
+  zod: ">=4.6.6"

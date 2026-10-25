@@ -9,7 +9,13 @@ function run(update: Record<string, unknown>, updateType = 'message_created') {
   const sendMessageToChat = vi.fn().mockResolvedValue(undefined);
   const next = vi.fn().mockResolvedValue(undefined);
   const ctx = { update, updateType, api: { sendMessageToChat } };
-  return { log, warn, sendMessageToChat, next, done: malformedUpdateGuard(log)(ctx as never, next) };
+  return {
+    log,
+    warn,
+    sendMessageToChat,
+    next,
+    done: malformedUpdateGuard(log)(ctx as never, next),
+  };
 }
 
 describe('malformed update guard', () => {

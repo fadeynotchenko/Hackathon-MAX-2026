@@ -18,13 +18,15 @@ dependencies = [
     "asyncpg>=0.30",
     "alembic>=1.14",
     "redis>=5.2",
-    "PyJWT>=2.10",
+    "PyJWT>=2.15",
     "python-dotenv>=1.0",
     "python-docx>=1.2.0",
     "httpx>=0.28",
-    "pypdf>=6.0",
+    "pypdf>=6.21.2",
     "pdfplumber>=0.11",
     "reportlab>=4.2",
+    # Подпись и печать: прозрачный фон и размер (core.files.marks).
+    "pillow>=13.0",
     "av>=16",
 ]
 
@@ -37,8 +39,9 @@ dev = [
     "ruff>=0.9",
     "import-linter>=2.1",
     "pre-commit>=4.0",
-    # Чтение DATA-API.yaml в tests/api/test_data_api.py.
+    # Чтение DATA-API.yaml и проверка по официальной схеме в tests/api/test_data_api.py.
     "pyyaml>=6.0",
+    "jsonschema>=4.23",
 ]
 
 [build-system]

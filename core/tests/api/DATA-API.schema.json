@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mirea:api-judge:data-api:1.0",
+  "title": "DATA-API 1.0",
+  "description": "Схема для DATA-API.yaml, которую используется платформой по оценке решений и необходимая для описания воспроизводимых обязательных проверок API.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "solution", "api", "checks"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Версия схемы DATA-API schema."
+    },
+    "solution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 200},
+        "teamId": {"type": "string", "minLength": 1, "maxLength": 100}
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseUrl"],
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Общедоступный базовый URL-адрес HTTPS для тестируемого API."
+        },
+        "openapi": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Относительный путь к файлу openapi.yaml или openapi.json."
+        },
+        "defaultHeaders": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/check"}
+    },
+    "cleanup": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/cleanupStep"}
+    }
+  },
+  "$defs": {
+    "scalar": {
+      "type": ["string", "number", "integer", "boolean", "null"]
+    },
+    "parameterValue": {
+      "oneOf": [
+        {"$ref": "#/$defs/scalar"},
+        {
+          "type": "array",
+          "items": {"$ref": "#/$defs/scalar"}
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/parameterValue"}
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/parameterValue"}
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        },
+        "body": {}
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statusCodes"],
+      "properties": {
+        "statusCodes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 100, "maximum": 599}
+        },
+        "contentType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiredFields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "bodySchema": {
+          "type": "object",
+          "description": "Необязательный фрагмент схемы JSON для текста ответа."
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "method", "path", "role", "expected"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "name": {"type": "string", "minLength": 1, "maxLength": 300},
+        "description": {"type": "string", "maxLength": 2000},
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Роль тестовой учетной записи. Используйте public для конечной точки без проверки подлинности."
+        },
+        "request": {"$ref": "#/$defs/request"},
+        "expected": {"$ref": "#/$defs/expected"},
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 120000,
+          "default": 5000
+        },
+        "repeatable": {
+          "type": "boolean",
+          "description": "Истинно тогда, когда проверка может быть повторна обнаружена, без критических изменений состояния проекта."
+        },
+        "dependsOn": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]+$"
+          }
+        },
+        "extract": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Выражение JSONPath, например $.id"
+          }
+        }
+      }
+    },
+    "cleanupStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "method", "path", "role"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "path": {"type": "string", "pattern": "^/", "minLength": 1},
+        "role": {"type": "string", "minLength": 1},
+        "request": {"$ref": "#/$defs/request"},
+        "expected": {"$ref": "#/$defs/expected"},
+        "timeoutMs": {"type": "integer", "minimum": 100, "maximum": 120000}
+      }
+    }
+  }
+}
