@@ -477,6 +477,8 @@ class Marks:
 SIGNER_MARKER = "{{seller_director}}"
 # Что ещё бывает в строке подписи кроме имени: «______ / {{seller_director}} /»,
 # «{{seller_position}}\t____\t{{seller_director}}». Слова — уже предложение.
+# Роль перед линией — тоже строка подписи: «Исполнитель: ______ / {{seller_director}}».
+_SIGN_ROLE = re.compile(r"^\s*[А-ЯЁ][а-яё]+:")
 _SIGN_LINE_REST = re.compile(r"{{[^{}]+}}|[\s_/().\-—–]")
 # Размер и сдвиг картинок от места подписи, в сантиметрах: подпись — на линии,
 # печать заходит на подпись справа и выступает над строкой, как на бумаге.
@@ -486,11 +488,14 @@ _EMU_PER_CM = 360000
 _UNDERLINE = re.compile(r"_{3,}")
 
 
-def _sign_lines(root: etree._Element) -> list[etree._Element]:
+def _sign_lines(root: etree._Element) -> list[tuple[etree._Element, bool]]:
+    """Строки подписи образца и есть ли в самом образце линия «____»: после
+    подстановки линией печатается и пустое поле, и по ней строку не узнать."""
     return [
-        paragraph
+        (paragraph, bool(_UNDERLINE.search(text)))
         for paragraph in _paragraphs(root, with_fallback=False)
-        if SIGNER_MARKER in (text := _text(paragraph)) and not _SIGN_LINE_REST.sub("", text)
+        if SIGNER_MARKER in (text := _text(paragraph))
+        and not _SIGN_LINE_REST.sub("", _SIGN_ROLE.sub("", text))
     ]
 
 
@@ -566,14 +571,17 @@ def _split_at(paragraph: etree._Element, index: int) -> etree._Element | None:
     return None
 
 
-def _sign_spot(line: etree._Element) -> tuple[etree._Element, etree._Element | None]:
+def _sign_spot(
+    line: etree._Element, underlined: bool
+) -> tuple[etree._Element, etree._Element | None] | None:
     """Где ставить подпись: в начало линии «____» этой строки, а если строка —
     одно имя в ячейке («расшифровка подписи»), то в пустую ячейку слева от неё —
-    это ячейка «подпись». Возвращает абзац и кусок, перед которым встать."""
+    это ячейка «подпись». Возвращает абзац и кусок, перед которым встать, или
+    ``None``, если места для подписи в строке нет."""
     text = _text(line).rstrip()
     # Линия подписи — ближайшая к имени: пустая должность перед ней тоже печатается
     # линией, а пустое имя — линией в конце строки.
-    lines = list(_UNDERLINE.finditer(text))
+    lines = list(_UNDERLINE.finditer(text)) if underlined else []
     if len(lines) > 1 and lines[-1].end() == len(text):
         lines.pop()
     if lines:
@@ -585,7 +593,12 @@ def _sign_spot(line: etree._Element) -> tuple[etree._Element, etree._Element | N
                 paragraph = left.find(_W_P)
                 if paragraph is not None:
                     return paragraph, None
-    return line, None
+        # Линия — нижняя граница самой ячейки с именем, и в ячейке больше ничего.
+        if _bottom_border(cell) and _cells_text(cell).strip() == _text(line).strip():
+            return line, None
+    # Ни линии, ни ячейки для подписи: это имя в шапке («директор Иванов И. И.»),
+    # а не место подписи.
+    return None
 
 
 def _put_picture(
@@ -617,11 +630,14 @@ def _put_picture(
         properties.addnext(run._r)
 
 
-def _place_marks(document: DocxDocument, lines: list[etree._Element], marks: Marks) -> None:
-    for line in lines:
-        if line.getparent() is None:
+def _place_marks(
+    document: DocxDocument, lines: list[tuple[etree._Element, bool]], marks: Marks
+) -> None:
+    for line, underlined in lines:
+        spot = _sign_spot(line, underlined) if line.getparent() is not None else None
+        if spot is None:
             continue
-        paragraph, before = _sign_spot(line)
+        paragraph, before = spot
         if marks.stamp:
             _put_picture(
                 document,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from io import BytesIO
 
 import pytest
@@ -44,6 +43,11 @@ def _anchors(data: bytes) -> int:
     return sum(1 for _ in Document(BytesIO(data)).element.body.iter(_ANCHOR))
 
 
+# У сторон-граждан нет строки подписи продавца с должностным лицом: подпись и
+# печать туда не ставятся.
+_WITHOUT_SIGN_LINE = {"contract-persons", "contract-self-employed", "act-transfer"}
+
+
 def test_marks_go_into_the_seller_sign_line_of_every_blank_that_has_one() -> None:
     mark = prepare_mark(photo())
     for template in BUILTIN_TEMPLATES:
@@ -54,13 +58,22 @@ def test_marks_go_into_the_seller_sign_line_of_every_blank_that_has_one() -> Non
             blank="____",
             marks=Marks(signature=mark, stamp=mark),
         )
-        # Строка подписи — где кроме маркеров нет слов: линии, слеши, скобки.
-        has_line = any(
-            "{{seller_director}}" in line
-            and not re.search(r"[^\W_]", re.sub(r"{{[^{}]+}}", "", line))
-            for line in docx_lines(template.blank_bytes())
-        )
-        assert (_anchors(signed) > 0) == has_line, template.slug
+        assert (_anchors(signed) > 0) == (template.slug not in _WITHOUT_SIGN_LINE), template.slug
+
+
+def test_name_in_the_header_is_not_a_sign_line() -> None:
+    """В шапке акта «директор Иванов И. И.» — не место подписи: подпись и печать
+    встают один раз, в строку «Исполнитель: ______ / Иванов И. И.»."""
+    act = next(t for t in BUILTIN_TEMPLATES if t.slug == "act-services")
+    mark = prepare_mark(photo())
+    signed = fill_docx(
+        act.blank_bytes(),
+        places=(),
+        context={"seller_director": "Иванов И. И."},
+        blank="____",
+        marks=Marks(signature=mark, stamp=mark),
+    )
+    assert _anchors(signed) == 2
 
 
 def test_text_of_the_document_stays_the_same_with_marks() -> None:
