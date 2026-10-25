@@ -11,6 +11,7 @@ from core.domain.documents import (
     ValueSource,
     account_key_valid,
     format_money,
+    next_number,
     normalize,
     parse_date,
     parse_money,
@@ -274,3 +275,14 @@ def test_text_and_integer_have_sane_limits() -> None:
     assert error is not None and error.code == "field.too_long"
     _, error = normalize(spec, "9" * 20)
     assert error is not None and error.code == "field.integer_invalid"
+
+
+def test_next_number_continues_the_latest_pattern() -> None:
+    assert next_number([]) == "1"
+    assert next_number(["17"]) == "18"
+    assert next_number(["КП-007", "КП-003"]) == "КП-008", "ведущие нули остаются"
+    assert next_number(["4", "20", "3"]) == "21", "после ручной правки — от наибольшего"
+    assert next_number(["17/2026", "5/2026"]) == "18/2026", "год в конце не трогаем"
+    assert next_number(["2026-15"]) == "2026-16"
+    assert next_number(["Б/Н", "12"]) == "13", "номер без числа пропускается"
+    assert next_number(["Б/Н"]) == "1"

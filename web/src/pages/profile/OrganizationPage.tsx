@@ -15,6 +15,7 @@ import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 import { hapticResult } from '@/max/webapp';
 
+import { OrganizationMarks } from './OrganizationMarks';
 import { RequisitesForm } from './RequisitesForm';
 import { splitRequisiteErrors, type Requisites } from './requisites';
 
@@ -130,6 +131,8 @@ function OrganizationForm({ organization, onBack }: OrganizationFormProps) {
         </div>
       ) : null}
       <RequisitesForm values={values} onChange={setValues} errors={errors} side="seller" />
+      {/* Картинки — у сохранённой организации: им нужен её id. */}
+      {organization ? <OrganizationMarks organization={organization} /> : null}
       {organization ? (
         <CellList mode="island" filled>
           {!organization.is_default ? (

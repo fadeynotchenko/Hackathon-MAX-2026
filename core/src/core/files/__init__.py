@@ -12,15 +12,17 @@ from .errors import (
     InboundFileError,
     InboundFileTooLargeError,
     PdfUnavailableError,
+    ScannedPdfError,
     TemplateFileError,
 )
 from .inbound import fetch_media
+from .marks import MarkImageError, prepare_mark
 from .pdf import convert_to_pdf
 from .pdf_overlay import fill_pdf
 from .pdf_text import pdf_lines
-from .previews import PREVIEW_WIDTHS, PreviewCache, PreviewPage
+from .previews import PREVIEW_WIDTHS, PreviewCache, PreviewPage, pdf_to_jpeg
 from .storage import DocumentStorage, StoredFile
-from .template_docx import docx_layout, docx_lines, fill_docx, mark_blank_cells
+from .template_docx import Marks, docx_layout, docx_lines, fill_docx, mark_blank_cells
 
 __all__ = [
     "PREVIEW_WIDTHS",
@@ -29,9 +31,12 @@ __all__ = [
     "FilesConfig",
     "InboundFileError",
     "InboundFileTooLargeError",
+    "MarkImageError",
+    "Marks",
     "PdfUnavailableError",
     "PreviewCache",
     "PreviewPage",
+    "ScannedPdfError",
     "StoredFile",
     "TemplateFileError",
     "build_docx",
@@ -43,4 +48,6 @@ __all__ = [
     "fill_pdf",
     "mark_blank_cells",
     "pdf_lines",
+    "pdf_to_jpeg",
+    "prepare_mark",
 ]

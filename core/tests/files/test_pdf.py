@@ -21,7 +21,8 @@ def _fake_soffice(tmp_path: Path) -> tuple[str, Path]:
 
 
 async def _pid(pid_file: Path) -> int:
-    for _ in range(100):
+    # До 10 с: под нагрузкой полного прогона запуск shell-скрипта занимал больше двух.
+    for _ in range(500):
         if pid_file.exists() and pid_file.read_text().strip():
             return int(pid_file.read_text())
         await asyncio.sleep(0.02)

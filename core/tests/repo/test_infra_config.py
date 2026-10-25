@@ -104,7 +104,8 @@ def test_nginx_limits_heavy_and_upload_routes(nginx_template: str) -> None:
     """Распознавание и файл-образец шаблона принимают тело больше общего лимита,
     но в своей зоне частоты."""
     assert re.search(r"zone=api_heavy:\d+m\s+rate=\d+r/s", nginx_template)
-    assert "|requisites/recognize|templates/import)$ {" in nginx_template
+    assert "|requisites/recognize|" in nginx_template
+    assert "|templates/import)$ {" in nginx_template
     upload = nginx_template.split("templates/import)$ {", 1)[1].split("}", 1)[0]
     assert "limit_req zone=api_heavy" in upload
     sizes = re.findall(r"client_max_body_size (\d+)m;", upload)
@@ -126,6 +127,8 @@ def test_nginx_takes_files_on_every_upload_route(nginx_template: str) -> None:
         "/api/v1/documents/import",
         "/api/v1/requisites/recognize",
         "/api/v1/templates/import",
+        "/api/v1/organizations/3/marks/signature",
+        "/api/v1/organizations/3/marks/stamp",
     ):
         assert UPLOAD_PATHS.match(path) and heavy.match(path), path
 

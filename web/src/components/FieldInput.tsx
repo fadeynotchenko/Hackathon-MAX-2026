@@ -7,11 +7,14 @@
 // Позиции счёта — своя таблица строк (ItemsInput) с тем же видом подписи и ошибки.
 // Поле с подсказками (название, ИНН, банк, адрес) открывает под собой список из
 // реестра (Suggestions).
+// Реквизит (ИНН, КПП, ОГРН, БИК, счёт) проверяется здесь же, когда человек уходит
+// с поля: ошибка сервера, если она есть, важнее.
 import { Input, Textarea, Typography } from '@maxhub/max-ui';
-import { useId } from 'react';
+import { useId, useState } from 'react';
 
 import type { FieldType } from '@/api/client';
 import { inputKind } from '@/lib/format';
+import { requisiteProblem } from '@/lib/requisites';
 
 import { ItemsInput } from './ItemsInput';
 import { useSuggestions, type SuggestSource } from './Suggestions';
@@ -47,6 +50,7 @@ export function FieldInput({
 }: FieldInputProps) {
   const id = useId();
   const kind = inputKind(type);
+  const [left, setLeft] = useState(false);
   const suggestions = useSuggestions(type === 'items' ? undefined : suggest);
   if (type === 'items') {
     return (
@@ -60,7 +64,8 @@ export function FieldInput({
       />
     );
   }
-  const describedBy = error || hint ? `${id}-note` : undefined;
+  const shown = error || (left ? requisiteProblem(type, value) : null);
+  const describedBy = shown || hint ? `${id}-note` : undefined;
   // У поля даты плейсхолдера не видно — «необязательно» остаётся в подписи.
   const optionalInLabel = required === false && kind.type === 'date';
   const shownPlaceholder =
@@ -68,11 +73,15 @@ export function FieldInput({
   const common = {
     id,
     value,
-    'aria-invalid': Boolean(error),
+    'aria-invalid': Boolean(shown),
     'aria-describedby': describedBy,
     ...(shownPlaceholder ? { placeholder: shownPlaceholder } : {}),
     ...(maxLength ? { maxLength } : {}),
     ...suggestions.inputProps,
+    onBlur: () => {
+      setLeft(true);
+      suggestions.close?.();
+    },
   };
   const change = (next: string) => {
     onChange(next);
@@ -81,7 +90,7 @@ export function FieldInput({
 
   return (
     <div
-      className={`field ${kind.multiline ? 'field--multiline' : 'field--single'}${error ? ' field--error' : ''}`}
+      className={`field ${kind.multiline ? 'field--multiline' : 'field--single'}${shown ? ' field--error' : ''}`}
     >
       <div className="field__label">
         <Typography.Text variant="description-strong" color="secondary" asChild>
@@ -126,13 +135,13 @@ export function FieldInput({
         )}
         {suggestions.list}
       </div>
-      {error ? (
+      {shown ? (
         <Typography.Text
           id={describedBy}
           variant="description"
           className="field__note field__error"
         >
-          {error}
+          {shown}
         </Typography.Text>
       ) : hint ? (
         <Typography.Text

@@ -19,7 +19,7 @@ from core.domain.exceptions import AppError
 # ручками, у которых в OpenAPI бинарное тело.
 UPLOAD_PATHS = re.compile(
     r"^/api/v1/(documents/[0-9]+/agent/(recognize|voice)|documents/import"
-    r"|requisites/recognize|templates/import)$"
+    r"|requisites/recognize|templates/import|organizations/[0-9]+/marks/(signature|stamp))$"
 )
 
 IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff")

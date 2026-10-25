@@ -124,7 +124,11 @@ async def test_draft_is_prefilled_from_profile_and_counterparty(session: AsyncSe
     assert document.values["seller_inn"].value == "7707083893"
     assert document.values["client_name"].source is ValueSource.COUNTERPARTY
     assert document.status == STATUS_DRAFT
-    assert set(document.missing) == {"number", "items"}, "дату счёта ставит система"
+    assert set(document.missing) == {"items"}, "дату и номер счёта ставит система"
+    assert (document.values["number"].value, document.values["number"].source) == (
+        "1",
+        ValueSource.DEFAULT,
+    )
     assert BLANK in document.preview, "незаполненное поле видно прочерком"
     assert "ПАО Сбербанк" in document.preview
 
@@ -227,12 +231,11 @@ async def test_archive_tells_same_invoices_apart_by_number(session: AsyncSession
     await set_fields(
         session, user_id=user_id, document_id=numbered.id, values={"number": FieldValue("17")}
     )
-    await create_draft(session, user_id=user_id, template_id=invoice.id)
+    following = await create_draft(session, user_id=user_id, template_id=invoice.id)
     numbers = {
         summary.id: summary.number for summary in await list_documents(session, user_id=user_id)
     }
-    assert numbers[numbered.id] == "17"
-    assert None in numbers.values(), "у документа без номера номера нет"
+    assert numbers == {numbered.id: "17", following.id: "18"}, "следующий счёт — № 18"
 
 
 async def test_documents_and_templates_are_private(session: AsyncSession) -> None:

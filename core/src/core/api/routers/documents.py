@@ -38,6 +38,7 @@ from core.usecases.documents import (
     UNSET,
     confirm_fields,
     copy_document,
+    create_act,
     create_draft,
     delete_document,
     document_history,
@@ -186,6 +187,26 @@ async def copy(
         document_id=document_id,
         title=payload.title if payload else None,
     )
+    warm_document(background, user_id=current.id, document_id=document.id, cfg=state.files_config)
+    return DocumentSchema.model_validate(document)
+
+
+@router.post(
+    "/{document_id}/act",
+    response_model=DocumentSchema,
+    status_code=status.HTTP_201_CREATED,
+    responses=_ERRORS | {409: {"model": ErrorResponse}},
+    operation_id="create_act",
+    summary="Акт выполненных работ по счёту, договору или КП",
+)
+async def act(
+    document_id: IdPath,
+    current: CurrentUserDep,
+    session: SessionDep,
+    background: BackgroundTasks,
+    state: StateDep,
+) -> DocumentSchema:
+    document = await create_act(session, user_id=current.id, document_id=document_id)
     warm_document(background, user_id=current.id, document_id=document.id, cfg=state.files_config)
     return DocumentSchema.model_validate(document)
 

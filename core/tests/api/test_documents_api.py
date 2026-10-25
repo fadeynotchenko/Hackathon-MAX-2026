@@ -91,7 +91,8 @@ async def test_document_flow_from_requisites_to_preview(
     assert document["status"] == "draft"
     assert document["values"]["seller_inn"]["source"] == "profile"
     assert document["values"]["client_name"]["source"] == "counterparty"
-    assert "number" in document["missing"]
+    assert document["values"]["number"] == {**document["values"]["number"], "value": "1"}
+    assert document["values"]["number"]["source"] == "default", "первый счёт — № 1"
 
     filled = await client.patch(
         f"/api/v1/documents/{document['id']}/fields",
@@ -244,7 +245,7 @@ async def test_render_and_download_over_http(
         f"/api/v1/documents/{document['id']}/render", headers=headers, json={"format": "docx"}
     )
     assert rendered.status_code == 200, rendered.text
-    assert rendered.json()["filename"] == "КП для Клиента.docx"
+    assert rendered.json()["filename"] == "КП для Клиента № 1.docx"
     assert rendered.json()["stale"] is False
 
     listed = await client.get(f"/api/v1/documents/{document['id']}/files", headers=headers)
@@ -311,7 +312,7 @@ async def test_send_publishes_event_and_token_works_once(
         f"/api/v1/documents/{document['id']}/send", headers=headers, json={"format": "docx"}
     )
     assert sent.status_code == 202, sent.text
-    assert sent.json()["filename"] == "КП для Клиента.docx"
+    assert sent.json()["filename"] == "КП для Клиента № 1.docx"
 
     entries = await redis.xrange("test:to_bot")
     assert len(entries) == 1, "ядро кладёт ровно одно событие доставки"
@@ -319,7 +320,7 @@ async def test_send_publishes_event_and_token_works_once(
     assert fields["type"] == "document.ready"
     payload = DocumentReady.model_validate_json(fields["payload"])
     assert payload.max_user_id == 1 and payload.size > 0
-    assert payload.filename == "КП для Клиента.docx"
+    assert payload.filename == "КП для Клиента № 1.docx"
     assert sent.json()["event_id"] == fields["id"]
 
     # Токен — единственный ключ к файлу: без Bearer, но ровно один раз.
@@ -458,10 +459,29 @@ async def test_history_of_foreign_document_is_hidden(
     for method, path in (
         ("GET", f"/api/v1/documents/{document['id']}/history"),
         ("POST", f"/api/v1/documents/{document['id']}/copy"),
+        ("POST", f"/api/v1/documents/{document['id']}/act"),
     ):
         response = await client.request(method, path, headers=stranger)
         assert response.status_code == 404, path
         assert response.json()["code"] == "document.not_found"
+
+
+async def test_act_is_made_from_an_offer(
+    client: AsyncClient, session: AsyncSession, make_init_data
+) -> None:
+    await _seed(session)
+    headers = await _auth(client, make_init_data)
+    offer = (await client.get("/api/v1/templates?slug=offer", headers=headers)).json()[0]
+    document = (
+        await client.post("/api/v1/documents", headers=headers, json={"template_id": offer["id"]})
+    ).json()
+
+    act = await client.post(f"/api/v1/documents/{document['id']}/act", headers=headers)
+
+    assert act.status_code == 201
+    assert act.json()["template"]["kind"] == "act"
+    again = await client.post(f"/api/v1/documents/{act.json()['id']}/act", headers=headers)
+    assert (again.status_code, again.json()["code"]) == (409, "act.unsupported")
 
 
 async def test_huge_ids_and_control_characters_are_422_not_500(

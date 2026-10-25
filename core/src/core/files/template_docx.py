@@ -16,6 +16,10 @@
 значение внутри пустое; абзац, от которого осталась одна подпись, убирается,
 а строка таблицы — когда опустели все её ячейки с данными. Строка таблицы с
 маркером столбца ``{{items.name}}`` повторяется на каждую позицию списка.
+
+Подпись и печать организации (``Marks``) встают плавающими картинками в строку
+подписи продавца — абзац, где кроме ``{{seller_director}}`` только линии и
+скобки. Картинка не сдвигает текст: она лежит поверх линии, как на бумаге.
 """
 
 from __future__ import annotations
@@ -24,12 +28,15 @@ import re
 import zipfile
 from collections.abc import Iterator, Mapping, Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 from io import BytesIO
 
 from docx import Document as open_docx
 from docx.document import Document as DocxDocument
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Cm
+from docx.text.paragraph import Paragraph
 from lxml import etree
 
 from core.domain.documents import (
@@ -459,17 +466,139 @@ def _put_marker(paragraph: etree._Element, text: str, source: etree._Element | N
     paragraph.append(run)
 
 
+@dataclass(frozen=True)
+class Marks:
+    """Подпись и печать организации картинками PNG (``core.files.marks``)."""
+
+    signature: bytes | None = None
+    stamp: bytes | None = None
+
+
+SIGNER_MARKER = "{{seller_director}}"
+# Что ещё бывает в строке подписи кроме имени: «______ / {{seller_director}} /»,
+# «{{seller_position}}\t____\t{{seller_director}}». Слова — уже предложение.
+_SIGN_LINE_REST = re.compile(r"{{[^{}]+}}|[\s_/().\-—–]")
+# Размер и место картинок относительно начала строки подписи, в сантиметрах:
+# подпись поднята над линией, печать заходит на подпись справа.
+SIGNATURE_WIDTH_CM, SIGNATURE_X_CM, SIGNATURE_Y_CM = 3.2, 0.0, -0.9
+STAMP_WIDTH_CM, STAMP_X_CM, STAMP_Y_CM = 3.8, 2.2, -2.2
+_EMU_PER_CM = 360000
+
+
+def _sign_lines(root: etree._Element) -> list[etree._Element]:
+    return [
+        paragraph
+        for paragraph in _paragraphs(root, with_fallback=False)
+        if SIGNER_MARKER in (text := _text(paragraph)) and not _SIGN_LINE_REST.sub("", text)
+    ]
+
+
+def _anchor(inline: etree._Element, *, x_cm: float, y_cm: float, z: int) -> etree._Element:
+    """Встроенная картинка → плавающая: без обтекания, за текстом, со сдвигом
+    от символа строки — текст строки остаётся на месте."""
+    anchor = OxmlElement("wp:anchor")
+    for name, value in {
+        "distT": "0",
+        "distB": "0",
+        "distL": "0",
+        "distR": "0",
+        "simplePos": "0",
+        "relativeHeight": str(z),
+        "behindDoc": "1",
+        "locked": "0",
+        "layoutInCell": "1",
+        "allowOverlap": "1",
+    }.items():
+        anchor.set(name, value)
+    simple = OxmlElement("wp:simplePos")
+    simple.set("x", "0")
+    simple.set("y", "0")
+    anchor.append(simple)
+    for axis, relative, offset in (("H", "character", x_cm), ("V", "line", y_cm)):
+        position = OxmlElement(f"wp:position{axis}")
+        position.set("relativeFrom", relative)
+        value = OxmlElement("wp:posOffset")
+        value.text = str(int(offset * _EMU_PER_CM))
+        position.append(value)
+        anchor.append(position)
+    anchor.append(inline.find(qn("wp:extent")))
+    effect = OxmlElement("wp:effectExtent")
+    for side in "ltrb":
+        effect.set(side, "0")
+    anchor.append(effect)
+    anchor.append(OxmlElement("wp:wrapNone"))
+    for tag in ("wp:docPr", "wp:cNvGraphicFramePr", "a:graphic"):
+        found = inline.find(qn(tag))
+        if found is not None:
+            anchor.append(found)
+    return anchor
+
+
+def _put_picture(
+    document: DocxDocument,
+    paragraph: etree._Element,
+    data: bytes,
+    *,
+    width_cm: float,
+    x_cm: float,
+    y_cm: float,
+    z: int,
+) -> None:
+    run = Paragraph(paragraph, document._body).add_run()
+    run.add_picture(BytesIO(data), width=Cm(width_cm))
+    inline = run._r.find(".//" + qn("wp:inline"))
+    if inline is None:
+        return
+    inline.getparent().replace(inline, _anchor(inline, x_cm=x_cm, y_cm=y_cm, z=z))
+    # Якорь — в начале строки: сдвиг считается от её первого символа.
+    paragraph.remove(run._r)
+    properties = paragraph.find(qn("w:pPr"))
+    if properties is None:
+        paragraph.insert(0, run._r)
+    else:
+        properties.addnext(run._r)
+
+
+def _place_marks(document: DocxDocument, lines: list[etree._Element], marks: Marks) -> None:
+    for line in lines:
+        if line.getparent() is None:
+            continue
+        if marks.signature:
+            _put_picture(
+                document,
+                line,
+                marks.signature,
+                width_cm=SIGNATURE_WIDTH_CM,
+                x_cm=SIGNATURE_X_CM,
+                y_cm=SIGNATURE_Y_CM,
+                z=2,
+            )
+        if marks.stamp:
+            _put_picture(
+                document,
+                line,
+                marks.stamp,
+                width_cm=STAMP_WIDTH_CM,
+                x_cm=STAMP_X_CM,
+                y_cm=STAMP_Y_CM,
+                z=1,
+            )
+
+
 def fill_docx(
     data: bytes,
     *,
     places: Sequence[tuple[str, Place]],
     context: Mapping[str, str],
     blank: str,
+    marks: Marks | None = None,
 ) -> bytes:
     """Документ в оформлении образца: места и маркеры ``{{key}}`` → значения.
     Пустое значение печатается ``blank`` — как в текстовом шаблоне, — кроме
     необязательного в условном куске ``[[…]]``: оно исчезает с подписью."""
     document = _open(data)
+    # Строки подписи ищутся до подстановки: потом в них уже имя, а не маркер.
+    sign_lines = _sign_lines(document.element.body) if marks else []
     for root in _roots(document, all_parts=True):
         _repeat_rows(root, context)
         # Ячейки с данными каждой строки, где есть условный кусок: строка
@@ -497,6 +626,8 @@ def fill_docx(
                 and not any(_cells_text(cell).strip() for cell in cells)
             ):
                 table.remove(row)
+    if marks:
+        _place_marks(document, sign_lines, marks)
     buffer = BytesIO()
     document.save(buffer)
     return buffer.getvalue()

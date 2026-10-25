@@ -1539,3 +1539,13 @@ input[type='search']::-webkit-search-cancel-button {
   z-index: 49;
   background: rgb(0 0 0 / 45%);
 }
+
+/* Превью подписи и печати: на светлой подложке видно прозрачный фон картинки. */
+.mark-preview {
+  display: block;
+  max-width: 96px;
+  max-height: 56px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #fff;
+}

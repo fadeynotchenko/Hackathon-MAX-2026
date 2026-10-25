@@ -101,6 +101,12 @@ class Organization(Base):
     # Ключ → значение в каноническом виде домена (inn, kpp, bic, account, address...).
     values: Mapped[dict[str, str]] = mapped_column(JsonDict, default=dict)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Подпись руководителя и печать картинками PNG для документов организации.
+    # Сами байты грузятся только по запросу: список организаций их не читает.
+    signature: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    signature_sha256: Mapped[str | None] = mapped_column(String(64))
+    stamp: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    stamp_sha256: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         UtcDateTime, server_default=func.now(), onupdate=func.now()

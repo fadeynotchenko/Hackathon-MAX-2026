@@ -34,13 +34,16 @@ from core.usecases.documents.requisites import CLIENT_PREFIX, REQUISITE_FIELDS, 
 INVOICE_KIND = "invoice"
 OFFER_KIND = "offer"
 CONTRACT_KIND = "contract"
+ACT_KIND = "act"
 OTHER_KIND = "other"
-KINDS = (INVOICE_KIND, OFFER_KIND, CONTRACT_KIND, OTHER_KIND)
+KINDS = (INVOICE_KIND, OFFER_KIND, CONTRACT_KIND, ACT_KIND, OTHER_KIND)
 # Слова, по которым вид узнаётся в названии или заголовке образца. «Счёт» —
 # только в начале или как «счёт на оплату», «счёт №»: «расчётный счёт» есть в
 # реквизитах почти любого бланка.
 _KIND_WORDS = (
     (CONTRACT_KIND, re.compile(r"договор|dogovor")),
+    # «Акт» — словом целиком: «актуальный», «контактный» его содержат.
+    (ACT_KIND, re.compile(r"(?<![а-я])акт(?![а-я])|(?<![a-z])akt(?![a-z])")),
     (
         OFFER_KIND,
         re.compile(r"коммерческ|предложени|(?<![а-я])кп(?![а-я])|kommerch|predlozh"),

@@ -35,15 +35,23 @@ from core.domain.media import DOCX, MediaKind, require_media
 from core.domain.places import LABEL_MARKER, Place, anchor, found, label_of
 from core.domain.sample_rules import rule_fields
 from core.files import (
+    PdfUnavailableError,
+    ScannedPdfError,
     TemplateFileError,
     docx_layout,
     docx_lines,
     mark_blank_cells,
     pdf_lines,
+    pdf_to_jpeg,
 )
-from core.llm import ChatMessage, LLMClient, LLMError
+from core.llm import Attachment, ChatMessage, LLMClient, LLMError
 from core.logs import biz_info, biz_warn
-from core.usecases.agent.prompts import TEMPLATE_PLACES_INSTRUCTIONS, TEMPLATE_REPAIR_INSTRUCTIONS
+from core.usecases.agent.prompts import (
+    SCAN_INSTRUCTIONS,
+    SCAN_SCHEMA,
+    TEMPLATE_PLACES_INSTRUCTIONS,
+    TEMPLATE_REPAIR_INSTRUCTIONS,
+)
 from core.usecases.documents.journal import (
     AGENT_FAILED,
     AGENT_FILLED,
@@ -79,6 +87,15 @@ UNUSED_FILE_TTL = timedelta(days=1)
 # Место в файле — один фрагмент строки: список позиций на его месте не
 # развернуть в строки таблицы, поэтому такого типа помощнику не предлагаем.
 PLACE_TYPES = tuple(t for t in FieldType if t is not FieldType.ITEMS)
+# Скан читается по картинкам страниц: столько страниц и такой ширины, чтобы мелкий
+# шрифт реквизитов читался, а чтение укладывалось в срок запроса с файлом.
+SCAN_PAGES = 2
+SCAN_WIDTH = 1600
+SCAN_RENDER_TIMEOUT_SECONDS = 30
+SCAN_NOTICE = (
+    "Это скан: текст прочитан с картинки, оформление файла не сохранится — "
+    "сверьте текст и места для данных"
+)
 FOUND_BY_MARKERS = "markers"
 FOUND_BY_ASSISTANT = "assistant"
 FOUND_BY_RULES = "rules"
@@ -92,6 +109,7 @@ KIND_TITLES = {
     "invoice": "Счёт на оплату",
     "offer": "Коммерческое предложение",
     "contract": "Договор",
+    "act": "Акт выполненных работ",
 }
 
 
@@ -340,6 +358,61 @@ def ruled_fields(lines: Sequence[str]) -> list[ImportedField]:
     ]
 
 
+async def read_scan(llm: LLMClient, data: bytes) -> list[str]:
+    """Строки скана PDF: помощник переписывает текст страниц с картинок.
+
+    Раньше скан отклонялся, и человеку оставалось перепечатать документ. Текст с
+    картинки — чтение, а не оригинал, поэтому шаблон из него текстовый (оформление
+    скана не воспроизвести), а человек видит текст до сохранения."""
+    try:
+        pages = await pdf_to_jpeg(
+            data,
+            width=SCAN_WIDTH,
+            timeout_seconds=SCAN_RENDER_TIMEOUT_SECONDS,
+            last_page=SCAN_PAGES,
+        )
+    except PdfUnavailableError as exc:
+        raise _scan_unreadable(str(exc)) from exc
+    lines: list[str] = []
+    for number, page in enumerate(pages[:SCAN_PAGES], 1):
+        try:
+            raw = await llm.complete_json(
+                [
+                    ChatMessage("system", SCAN_INSTRUCTIONS),
+                    ChatMessage(
+                        "user",
+                        f"Страница {number}.",
+                        (Attachment(page, "image/jpeg", f"page-{number}.jpg"),),
+                    ),
+                ],
+                schema=SCAN_SCHEMA,
+            )
+        except LLMError as exc:
+            if not lines:
+                raise _scan_unreadable(str(exc)) from exc
+            biz_warn(logger, "agent.scan.page_failed", page=number, error=str(exc))
+            break
+        got = raw.get("lines")
+        lines += (
+            [str(line).rstrip() for line in got if isinstance(line, str | int)]
+            if isinstance(got, list)
+            else []
+        )
+    if not any(line.strip() for line in lines):
+        raise _scan_unreadable("помощник не прочитал текст скана")
+    biz_info(logger, "agent.scan.read", pages=len(pages), lines=len(lines))
+    return lines
+
+
+def _scan_unreadable(reason: str) -> AppError:
+    return AppError(
+        "Скан не получилось прочитать. Пришлите DOCX или PDF, сохранённый из редактора",
+        code="template.scan_unreadable",
+        status_code=422,
+        log_message=reason,
+    )
+
+
 def _title_from(filename: str) -> str:
     """«Фирменный_КП-2026.docx» → «Фирменный КП 2026»."""
     stem = PurePath(filename).stem
@@ -356,8 +429,19 @@ async def import_template_file(
     max_bytes: int,
 ) -> TemplateImport:
     media = require_media(data, kinds={MediaKind.DOCUMENT}, max_bytes=max_bytes)
+    scanned = False
     try:
         lines = docx_lines(data) if media is DOCX else pdf_lines(data)
+    except ScannedPdfError as exc:
+        if llm is None:
+            raise AppError(
+                "Это скан, а помощник выключен. Пришлите DOCX или PDF, сохранённый из редактора",
+                code="template.file_unreadable",
+                status_code=422,
+                log_message=str(exc),
+            ) from exc
+        lines = await read_scan(llm, data)
+        scanned = True
     except TemplateFileError as exc:
         raise AppError(
             "В файле не нашлось текста. Пришлите DOCX или PDF, сохранённый из редактора, а не скан",
@@ -445,9 +529,19 @@ async def import_template_file(
     repo = TemplateFileRepository(session)
     await repo.delete_unused(user_id, before=datetime.now(UTC) - UNUSED_FILE_TTL)
     layout = "\n".join(docx_layout(data)) if media is DOCX else None
+    # Скан образцом не хранится: менять значения поверх картинки нечем, шаблон
+    # по нему текстовый — из прочитанных строк.
     file_id = (
-        await repo.create(owner_user_id=user_id, filename=name, data=data, text=text, layout=layout)
-    ).id
+        None
+        if scanned
+        else (
+            await repo.create(
+                owner_user_id=user_id, filename=name, data=data, text=text, layout=layout
+            )
+        ).id
+    )
+    if scanned:
+        notice = f"{SCAN_NOTICE}. {notice}" if notice else SCAN_NOTICE
     title = (title or _title_from(name))[:TITLE_MAX]
     if kind not in KINDS:
         heading = [line for line in lines if line.strip()][:3]

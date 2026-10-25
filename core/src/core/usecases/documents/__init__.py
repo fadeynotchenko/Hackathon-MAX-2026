@@ -1,3 +1,4 @@
+from .acts import ACT_SOURCES, create_act
 from .counterparties import (
     CounterpartyView,
     create_counterparty,
@@ -52,11 +53,15 @@ from .journal import (
 )
 from .lookup import RequisiteSuggestion, SuggestKind, suggest_requisites
 from .organizations import (
+    MARK_KINDS,
     OrganizationView,
     create_organization,
     delete_organization,
+    delete_organization_mark,
     list_organizations,
+    organization_mark,
     seller_for_document,
+    set_organization_mark,
     update_organization,
 )
 from .previews import (
@@ -84,12 +89,14 @@ from .templates import (
 )
 
 __all__ = [
+    "ACT_SOURCES",
     "AGENT_FAILED",
     "AGENT_FILLED",
     "AGENT_NOTHING",
     "AGENT_PARTIAL",
     "DOCX",
     "KINDS",
+    "MARK_KINDS",
     "PDF",
     "REQUISITE_FIELDS",
     "STATUS_DRAFT",
@@ -113,6 +120,7 @@ __all__ = [
     "blank_source",
     "confirm_fields",
     "copy_document",
+    "create_act",
     "create_counterparty",
     "create_draft",
     "create_from_values",
@@ -122,6 +130,7 @@ __all__ = [
     "delete_counterparty",
     "delete_document",
     "delete_organization",
+    "delete_organization_mark",
     "delete_template",
     "document_history",
     "document_name",
@@ -141,6 +150,7 @@ __all__ = [
     "load_document_file",
     "load_file_by_token",
     "load_values",
+    "organization_mark",
     "preview_page",
     "record_agent_run",
     "record_delivery",
@@ -149,6 +159,7 @@ __all__ = [
     "seller_for_document",
     "send_document_to_chat",
     "set_fields",
+    "set_organization_mark",
     "set_parties",
     "suggest_requisites",
     "template_preview",

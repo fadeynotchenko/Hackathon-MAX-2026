@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -177,6 +177,44 @@ def _ogrn_valid(value: str) -> bool:
     if len(value) == 15:
         return int(value[:14]) % 13 % 10 == int(value[14])
     return False
+
+
+# Номер документа: «17», «КП-007», «2026-15» — растёт последнее число; «17/2026»,
+# «17-2026», «17/26» — год в конце не трогаем, растёт номер перед ним. «17-26»
+# годом не считается: так же пишут и «серия-номер».
+_NUMBER = re.compile(r"^(.*?)(\d+)$")
+_NUMBER_WITH_YEAR = re.compile(r"^(.*?)(\d+)([/-]20\d{2}|/\d{2})$")
+
+
+def _number_parts(number: str) -> tuple[str, str, str] | None:
+    """Номер на части: что до счётчика, сам счётчик, что после (год)."""
+    for pattern, has_tail in ((_NUMBER_WITH_YEAR, True), (_NUMBER, False)):
+        found = pattern.match(number.strip())
+        if found is not None:
+            prefix, digits = found.group(1), found.group(2)
+            return prefix, digits, found.group(3) if has_tail else ""
+    return None
+
+
+def next_number(numbers: Sequence[str]) -> str:
+    """Следующий номер после прежних документов того же вида, новые первыми.
+
+    Вид номера берётся у последнего документа, а счётчик — наибольший среди
+    номеров того же вида: после ручной правки на «20» следующий будет «21».
+    Ведущие нули сохраняются: «КП-007» → «КП-008». Номер без числа в конце
+    («Б/Н») не продолжается — тогда, как и у первого документа, «1»."""
+    for latest in numbers:
+        parts = _number_parts(latest)
+        if parts is None:
+            continue
+        prefix, digits, tail = parts
+        counters = [
+            int(other[1])
+            for number in numbers
+            if (other := _number_parts(number)) and (other[0], other[2]) == (prefix, tail)
+        ]
+        return f"{prefix}{max(counters) + 1:0{len(digits)}d}{tail}"
+    return "1"
 
 
 def account_key_valid(account: str, bic: str, *, correspondent: bool = False) -> bool:

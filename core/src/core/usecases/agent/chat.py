@@ -54,11 +54,13 @@ from core.usecases.agent.service import (
     missing_text,
 )
 from core.usecases.documents import (
+    ACT_SOURCES,
     DocumentView,
     OrganizationView,
     TemplateView,
     confirm_fields,
     copy_document,
+    create_act,
     create_draft,
     document_name,
     dump_values,
@@ -125,9 +127,10 @@ SEND_DOCX_BUTTON = "📘 Прислать DOCX"
 SEND_PDF_BUTTON = "📕 Прислать PDF"
 NEW_BUTTON = "➕ Новый документ"
 COPY_BUTTON = "📑 На основе этого"
+ACT_BUTTON = "🖋 Акт"
 MEDIA_BUTTON = "📎 Взять из вложения"
 # Значок вида документа в заголовке ответа и на кнопке шаблона; свой вид — 📄.
-_KIND_ICONS = {"invoice": "🧾", "offer": "💼", "contract": "🤝"}
+_KIND_ICONS = {"invoice": "🧾", "offer": "💼", "contract": "🤝", "act": "🖋"}
 # Предел текста кнопки в контракте notify.user.
 _BUTTON_LIMIT = 64
 
@@ -151,7 +154,7 @@ intent:
 Если текущего документа нет, запрос на заполнение означает new.
 template — вид нового документа из списка ниже или пустая строка, если вид не ясен.
 Вид назван без уточнения («счёт», «КП», «договор») — основной шаблон вида:
-invoice, offer или service-contract; вариант — только если человек его назвал
+invoice, offer, service-contract или act; вариант — только если человек его назвал
 («договор с самозанятым», «счёт на товар»)."""
 
 MediaFetcher = Callable[[str], Awaitable[bytes]]
@@ -881,15 +884,30 @@ async def handle_chat_action(
                 bus=deps.bus,
                 tokens=deps.tokens,
             )
+            sent = await get_document(session, user_id=user_id, document_id=document_id)
+            after = [ChatButton(COPY_BUTTON, f"doc:copy:{args[0]}")]
+            # Отправленный счёт или договор закрывают актом — кнопка рядом.
+            if sent.template.kind in ACT_SOURCES:
+                after.append(ChatButton(ACT_BUTTON, f"doc:act:{args[0]}"))
             return ChatReply(
                 f"⏳ Собираю «{_esc(file.filename)}» — пришлю следующим сообщением.",
-                (
-                    (
-                        ChatButton(COPY_BUTTON, f"doc:copy:{args[0]}"),
-                        ChatButton(NEW_BUTTON, "doc:new"),
-                    ),
-                ),
+                (tuple(after), (ChatButton(NEW_BUTTON, "doc:new"),)),
             )
+
+        if action == "act" and len(args) == 1 and document_id is not None:
+            document = await create_act(session, user_id=user_id, document_id=document_id)
+            await chat.set_active_document(user_id, document.id)
+            blocks = [
+                f"{_title_line(document)} — новый документ",
+                "Стороны, позиции и основание взял из документа.",
+            ]
+            if document.missing:
+                blocks.append(_missing_block(document, "Осталось заполнить"))
+            if document.unconfirmed:
+                blocks.append("👉 Проверьте значения и нажмите «Всё верно».")
+            elif document.renderable:
+                blocks.append(GAPS_TEXT if document.missing else READY_TEXT)
+            return ChatReply("\n\n".join(blocks), _document_buttons(document))
 
         if action == "copy" and len(args) == 1 and document_id is not None:
             document = await copy_document(session, user_id=user_id, document_id=document_id)

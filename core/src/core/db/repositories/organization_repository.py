@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,3 +74,16 @@ class OrganizationRepository:
     async def delete(self, organization: Organization) -> None:
         await self._session.delete(organization)
         await self._session.flush()
+
+    async def set_mark(self, organization: Organization, kind: str, data: bytes | None) -> None:
+        """Подпись или печать (``kind``) картинкой; ``None`` — убрать."""
+        setattr(organization, kind, data)
+        setattr(organization, f"{kind}_sha256", hashlib.sha256(data).hexdigest() if data else None)
+        await self._session.flush()
+        # updated_at ставит база: без refresh чтение после flush пошло бы в неё синхронно.
+        await self._session.refresh(organization, ["updated_at"])
+
+    async def mark(self, organization_id: int, kind: str) -> bytes | None:
+        column = getattr(Organization, kind)
+        stmt = select(column).where(Organization.id == organization_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()

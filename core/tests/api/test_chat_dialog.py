@@ -89,7 +89,7 @@ async def test_message_creates_document_and_asks_for_confirmation(
     (reply,) = await _replies(redis)
     assert reply.max_user_id == USER
     assert reply.format == "html", "ответ размечен: заголовок и значения жирным"
-    assert reply.text.startswith("🧾 <b>Счёт на оплату</b>")
+    assert reply.text.startswith("🧾 <b>Счёт на оплату № 1</b>")
     assert "• Позиции: <b>1. Сайт — 1 × 120 000,00 = 120 000,00</b>" in reply.text
     labels = [[b.text for b in row] for row in reply.buttons or []]
     assert labels == [["👍 Всё верно"], ["➕ Новый документ"]]
@@ -157,7 +157,9 @@ async def test_chat_offers_only_standard_templates(db: None, session: AsyncSessi
     # Свои шаблоны заводят и правят в мини-приложении, в чате — только стандартные.
     assert len(titles) == len(BUILTIN_TEMPLATES)
     standard = titles[: len(BUILTIN_TEMPLATES)]
-    assert standard[0] == "🤝 Договор оказания услуг", "основной договор — первым в своём виде"
+    contracts = [title for title in standard if title.startswith("🤝")]
+    assert contracts[0] == "🤝 Договор оказания услуг", "основной договор — первым в своём виде"
+    assert "🖋 Акт выполненных работ" in standard
     assert "💼 Коммерческое предложение" in standard and "🧾 Счёт на оплату" in standard
 
 
@@ -368,7 +370,7 @@ async def test_photo_without_document_waits_for_the_template_button(
         )
     )
     filled = (await _replies(redis))[-1]
-    assert filled.text.startswith("🧾 <b>Счёт на оплату</b>")
+    assert filled.text.startswith("🧾 <b>Счёт на оплату № 1</b>")
     assert "• Название клиента: <b>ООО «Ромашка»</b>" in filled.text
     assert storage.urls == ["https://i.max.test/p/1"]
 
@@ -380,7 +382,7 @@ async def test_photo_without_document_waits_for_the_template_button(
         )
     )
     second = (await _replies(redis))[-1]
-    assert second.text.startswith("💼 <b>Коммерческое предложение</b> — новый документ")
+    assert second.text.startswith("💼 <b>Коммерческое предложение № 1</b> — новый документ")
     assert "📋 <b>Нужно заполнить:</b>\n• Название клиента" in second.text
     assert len(storage.urls) == 1, "отложенное фото распознаётся один раз"
 
@@ -398,7 +400,7 @@ async def test_caption_names_the_document_for_the_photo(
     )
 
     (reply,) = await _replies(redis)
-    assert reply.text.startswith("🤝 <b>Договор оказания услуг</b>")
+    assert reply.text.startswith("🤝 <b>Договор оказания услуг № 1</b>")
     assert "• ИНН клиента: <b>7707083893</b>" in reply.text
 
 
@@ -584,3 +586,32 @@ async def test_last_change_is_undone_by_button_and_by_words(
     assert document_id is not None
     document = await get_document(session, user_id=user.id, document_id=document_id)
     assert document.values["client_name"].value == "ООО «Ромашка»"
+
+
+async def test_act_button_makes_an_act_from_the_invoice(
+    db: None, session: AsyncSession, redis
+) -> None:
+    await ensure_builtin_templates(session)
+    await session.commit()
+    llm = FakeLLM(
+        json_replies=[
+            {"intent": "new", "template": "invoice"},
+            {"items": SITE, "client_name": "ООО «Ромашка»"},
+        ]
+    )
+    handlers = _handlers(redis, llm=llm)
+    await handlers[BOT_MESSAGE](
+        _event(BOT_MESSAGE, _message("Счёт на 120 000 за сайт для ООО Ромашка"), "e1")
+    )
+    user = await UserRepository(session).get_by_max_id(USER)
+    assert user is not None
+    invoice_id = await ChatStateRepository(session).active_document_id(user.id)
+
+    await handlers[BOT_CALLBACK](_tap(f"doc:act:{invoice_id}", "e2"))
+
+    reply = (await _replies(redis))[-1]
+    assert reply.text.startswith("🖋 <b>Акт выполненных работ № 1</b> — новый документ")
+    act_id = await ChatStateRepository(session).active_document_id(user.id)
+    assert act_id is not None and act_id != invoice_id
+    act = await get_document(session, user_id=user.id, document_id=act_id)
+    assert act.values["client_name"].value == "ООО «Ромашка»"

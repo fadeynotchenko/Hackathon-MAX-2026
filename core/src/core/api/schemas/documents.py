@@ -61,7 +61,7 @@ class TemplateSchema(BaseModel):
     id: int
     slug: str
     title: str
-    kind: str = Field(description="Вид документа: invoice, offer, contract или other")
+    kind: str = Field(description="Вид документа: invoice, offer, contract, act или other")
     description: str
     body_format: str
     is_builtin: bool
@@ -110,7 +110,7 @@ class TemplateFieldRequest(BaseModel):
     )
 
 
-TemplateKind = Literal["invoice", "offer", "contract", "other"]
+TemplateKind = Literal["invoice", "offer", "contract", "act", "other"]
 
 
 class TemplateRequest(BaseModel):
@@ -414,6 +414,8 @@ class OrganizationSchema(BaseModel):
     is_default: bool = Field(description="Основная: от неё документ, если организацию не выбрали")
     created_at: datetime
     updated_at: datetime
+    has_signature: bool = Field(description="Загружена подпись руководителя картинкой")
+    has_stamp: bool = Field(description="Загружена печать картинкой")
 
 
 class OrganizationRequest(BaseModel):

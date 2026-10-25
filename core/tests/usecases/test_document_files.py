@@ -16,13 +16,16 @@ from core.usecases.documents import (
     DOCX,
     PDF,
     create_draft,
+    create_organization,
     ensure_builtin_templates,
     list_document_files,
     list_templates,
     load_document_file,
     render_document,
     set_fields,
+    set_organization_mark,
 )
+from tests.files.test_marks import photo
 from tests.usecases.test_documents import make_user
 
 READY_OFFER = {
@@ -64,7 +67,7 @@ async def test_render_docx_contains_filled_values(
 
     assert file.format == DOCX and file.size > 0 and file.stale is False
     # Кавычки-ёлочки и прочая типографика из имени файла вычищаются.
-    assert file.filename == "КП для Клиента.docx"
+    assert file.filename == "КП для Клиента № 1.docx"
     _, data = await load_document_file(
         session, user_id=user_id, document_id=document_id, fmt=DOCX, cfg=files_config
     )
@@ -313,3 +316,31 @@ def test_file_name_is_safe_for_the_bot() -> None:
     assert build_filename("Строка\nвторая\tтаб", "docx") == "Строка вторая таб.docx"
     assert build_filename("....", "docx") == "document.docx"
     assert len(build_filename("Я" * 300, "docx").encode()) <= 160
+
+
+async def test_stamp_of_the_organization_goes_into_the_file_and_makes_it_stale(
+    session: AsyncSession, files_config: FilesConfig
+) -> None:
+    user_id = await make_user(session)
+    company = await create_organization(
+        session, user_id=user_id, name="ООО «Ромашка»", values={"inn": "7707083893"}
+    )
+    document_id = await _ready_document(session, user_id)
+    plain = await render_document(
+        session, user_id=user_id, document_id=document_id, fmt=DOCX, cfg=files_config
+    )
+    assert not plain.stale
+
+    await set_organization_mark(
+        session, user_id=user_id, organization_id=company.id, kind="stamp", data=photo()
+    )
+    (listed,) = await list_document_files(session, user_id=user_id, document_id=document_id)
+    assert listed.stale, "новая печать — прежний файл устарел"
+
+    await render_document(
+        session, user_id=user_id, document_id=document_id, fmt=DOCX, cfg=files_config
+    )
+    _, data = await load_document_file(
+        session, user_id=user_id, document_id=document_id, fmt=DOCX, cfg=files_config
+    )
+    assert b"word/media/" in data, "печать в файле"

@@ -24,6 +24,7 @@ from core.files import (
 )
 from core.usecases.documents.drafts import get_document
 from core.usecases.documents.files import SourceFile, template_source
+from core.usecases.documents.organizations import document_marks
 from core.usecases.documents.templates import get_template, list_templates
 
 
@@ -72,10 +73,7 @@ async def template_preview(
 async def document_preview(
     session: AsyncSession, *, user_id: int, document_id: int, page: int, size: str, cfg: FilesConfig
 ) -> PreviewPage:
-    document = await get_document(session, user_id=user_id, document_id=document_id)
-    source = await template_source(
-        session, document.template, document.values, title=document.title, text=document.preview
-    )
+    source = await document_source(session, user_id=user_id, document_id=document_id)
     return await preview_page(source, page=page, size=size, cfg=cfg)
 
 
@@ -98,9 +96,19 @@ async def warm_builtin_previews(session: AsyncSession, *, cfg: FilesConfig) -> i
 
 
 async def document_source(session: AsyncSession, *, user_id: int, document_id: int) -> SourceFile:
+    """Файл документа для листа: с подписью и печатью организации, как в PDF."""
     document = await get_document(session, user_id=user_id, document_id=document_id)
+    marks, marks_key = await document_marks(
+        session, user_id=user_id, organization_id=document.organization_id
+    )
     return await template_source(
-        session, document.template, document.values, title=document.title, text=document.preview
+        session,
+        document.template,
+        document.values,
+        title=document.title,
+        text=document.preview,
+        marks=marks,
+        marks_key=marks_key,
     )
 
 

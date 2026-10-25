@@ -29,6 +29,7 @@ from core.domain.documents import (
     fill_context,
     fill_text_template,
     legacy_items,
+    next_number,
     validate_fields,
 )
 from core.domain.exceptions import NotFoundError
@@ -263,6 +264,11 @@ async def create_from_values(
     )
 
 
+NUMBER_KEY = "number"
+# Сколько прошлых документов смотреть в поисках последнего номера.
+NUMBERS_LOOKBACK = 200
+
+
 async def _create(
     session: AsyncSession,
     *,
@@ -282,8 +288,16 @@ async def _create(
         counterparty_id=counterparty_id,
     )
     values |= dict(initial or {})
+    repo = DocumentRepository(session)
+    if any(spec.key == NUMBER_KEY for spec in template.fields) and NUMBER_KEY not in values:
+        # Следующий номер после прошлых документов того же вида от той же
+        # организации: счёт № 18 после № 17, свой счётчик у КП и у договоров.
+        recent = await repo.recent_numbers(
+            user_id, organization_id=seller_id, template_kind=template.kind, limit=NUMBERS_LOOKBACK
+        )
+        values[NUMBER_KEY] = FieldValue(next_number(recent), source=ValueSource.DEFAULT)
     validated = validate_fields(template.fields, values)
-    document = await DocumentRepository(session).create(
+    document = await repo.create(
         user_id,
         template_id=template.id,
         counterparty_id=counterparty_id,

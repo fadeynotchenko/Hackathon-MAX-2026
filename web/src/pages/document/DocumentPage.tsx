@@ -7,11 +7,18 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { DocumentFact, DocumentView } from '@/api/client';
 import { Banner, type BannerTone } from '@/components/Banner';
 import { SheetPreview } from '@/components/SheetPreview';
-import { IconCopy, IconEdit, IconSend, IconTemplates, IconTrash } from '@/components/icons';
+import {
+  IconCheck,
+  IconCopy,
+  IconEdit,
+  IconSend,
+  IconTemplates,
+  IconTrash,
+} from '@/components/icons';
 import { Page } from '@/components/Page';
 import { ErrorState, Loading } from '@/components/StateViews';
 import { useAuth } from '@/auth/context';
-import { FACT_LABEL, documentName, formatDate, formatDateTime } from '@/lib/format';
+import { ACT_SOURCES, FACT_LABEL, documentName, formatDate, formatDateTime } from '@/lib/format';
 import { errorText, useAsync } from '@/lib/useAsync';
 import { useBack } from '@/lib/useBack';
 
@@ -41,7 +48,7 @@ export function DocumentPage() {
     () => Promise.all([api.document(documentId), api.documentHistory(documentId)]),
     [api, documentId],
   );
-  const [busy, setBusy] = useState<'copy' | 'delete' | 'keep' | null>(null);
+  const [busy, setBusy] = useState<'copy' | 'act' | 'delete' | 'keep' | null>(null);
   const [kept, setKept] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +81,20 @@ export function DocumentPage() {
       setBusy(null);
     } catch (err) {
       setError(errorText(err, 'Не удалось создать копию'));
+      setBusy(null);
+    }
+  };
+
+  // Счёт или договор закрывают актом: стороны, позиции и основание — из документа.
+  const act = async () => {
+    setBusy('act');
+    setError(null);
+    try {
+      const made = await api.createAct(doc.id);
+      void navigate(`/documents/${made.id}/fill`);
+      setBusy(null);
+    } catch (err) {
+      setError(errorText(err, 'Не удалось сделать акт'));
       setBusy(null);
     }
   };
@@ -144,6 +165,11 @@ export function DocumentPage() {
         <CellAction before={<IconCopy />} disabled={busy !== null} onClick={() => void copy()}>
           На основе этого
         </CellAction>
+        {ACT_SOURCES.includes(doc.template.kind) ? (
+          <CellAction before={<IconCheck />} disabled={busy !== null} onClick={() => void act()}>
+            Сделать акт
+          </CellAction>
+        ) : null}
         {doc.template.can_keep && !kept ? (
           <CellAction
             before={<IconTemplates />}

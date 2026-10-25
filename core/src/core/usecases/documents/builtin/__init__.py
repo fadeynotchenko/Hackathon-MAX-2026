@@ -13,15 +13,17 @@ Word без кода: маркер — это поле ниже. ``{{key|вар�
 """
 
 from ._common import CLIENT, SELLER, SUBJECT, BuiltinTemplate
+from .acts import ACT, ACTS
 from .contracts import CONTRACTS, SERVICE_CONTRACT
 from .invoices import INVOICE, INVOICES
 from .offers import OFFER, OFFERS
 
-BUILTIN_TEMPLATES: tuple[BuiltinTemplate, ...] = (*INVOICES, *OFFERS, *CONTRACTS)
+BUILTIN_TEMPLATES: tuple[BuiltinTemplate, ...] = (*INVOICES, *OFFERS, *CONTRACTS, *ACTS)
 # Основной шаблон вида — для просьбы без уточнения.
-MAIN_SLUGS = frozenset({INVOICE.slug, OFFER.slug, SERVICE_CONTRACT.slug})
+MAIN_SLUGS = frozenset({INVOICE.slug, OFFER.slug, SERVICE_CONTRACT.slug, ACT.slug})
 
 __all__ = [
+    "ACT",
     "BUILTIN_TEMPLATES",
     "CLIENT",
     "INVOICE",

@@ -252,6 +252,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/act": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Акт выполненных работ по счёту, договору или КП */
+        post: operations["create_act"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}/agent/ask": {
         parameters: {
             query?: never;
@@ -572,6 +589,25 @@ export interface paths {
         post?: never;
         /** Удалить организацию; основной станет следующая */
         delete: operations["delete_organization"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/marks/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Загруженная подпись или печать — PNG с прозрачным фоном */
+        get: operations["get_organization_mark"];
+        /** Подпись (signature) или печать (stamp) картинкой: встанет в документы организации */
+        put: operations["set_organization_mark"];
+        post?: never;
+        /** Убрать подпись или печать из документов организации */
+        delete: operations["delete_organization_mark"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1382,6 +1418,16 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Has Signature
+             * @description Загружена подпись руководителя картинкой
+             */
+            has_signature: boolean;
+            /**
+             * Has Stamp
+             * @description Загружена печать картинкой
+             */
+            has_stamp: boolean;
             /** Id */
             id: number;
             /** Inn */
@@ -1638,7 +1684,7 @@ export interface components {
              * @description Вид документа по мнению помощника или по заголовку
              * @enum {string}
              */
-            kind: "invoice" | "offer" | "contract" | "other";
+            kind: "invoice" | "offer" | "contract" | "act" | "other";
             /**
              * Notice
              * @description Почему места не искались помощником
@@ -1681,7 +1727,7 @@ export interface components {
              * @default other
              * @enum {string}
              */
-            kind: "invoice" | "offer" | "contract" | "other";
+            kind: "invoice" | "offer" | "contract" | "act" | "other";
             /** Title */
             title: string;
         };
@@ -1718,7 +1764,7 @@ export interface components {
             is_builtin: boolean;
             /**
              * Kind
-             * @description Вид документа: invoice, offer, contract или other
+             * @description Вид документа: invoice, offer, contract, act или other
              */
             kind: string;
             /**
@@ -2578,6 +2624,64 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_act: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3775,6 +3879,182 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_organization_mark: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: number;
+                kind: "signature" | "stamp";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    set_organization_mark: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: number;
+                kind: "signature" | "stamp";
+            };
+            cookie?: never;
+        };
+        /** @description Фото на белом листе: JPG, PNG, WEBP */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+                "image/jpeg": string;
+                "image/png": string;
+                "image/webp": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_organization_mark: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: number;
+                kind: "signature" | "stamp";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSchema"];
                 };
             };
             /** @description Unauthorized */

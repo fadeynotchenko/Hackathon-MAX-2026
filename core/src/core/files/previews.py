@@ -43,8 +43,10 @@ class PreviewPage:
     pages: int
 
 
-async def pdf_to_jpeg(pdf: bytes, *, width: int, timeout_seconds: int) -> list[bytes]:
-    """Все страницы PDF — JPEG заданной ширины, по порядку."""
+async def pdf_to_jpeg(
+    pdf: bytes, *, width: int, timeout_seconds: int, last_page: int | None = None
+) -> list[bytes]:
+    """Страницы PDF — JPEG заданной ширины, по порядку; ``last_page`` — до какой."""
     if shutil.which(PDFTOPPM_BIN) is None:
         raise PdfUnavailableError(f"растеризатор {PDFTOPPM_BIN!r} не найден")
     with TemporaryDirectory(prefix="maxapp-pages-") as tmp:
@@ -61,6 +63,7 @@ async def pdf_to_jpeg(pdf: bytes, *, width: int, timeout_seconds: int) -> list[b
                 str(width),
                 "-scale-to-y",
                 "-1",
+                *(("-l", str(last_page)) if last_page else ()),
                 str(source),
                 str(work / "page"),
                 stdout=asyncio.subprocess.PIPE,

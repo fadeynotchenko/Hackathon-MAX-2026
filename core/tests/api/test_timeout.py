@@ -53,7 +53,9 @@ async def test_upload_waits_for_the_model(slow_client: AsyncClient, path: str) -
 def test_upload_paths_are_exactly_the_routes_with_a_file(app: FastAPI) -> None:
     """Новая ручка с файлом без долгого срока снова упиралась бы в общий таймаут."""
     paths = {
-        path.replace("{document_id}", "1"): operations
+        path.replace("{document_id}", "1")
+        .replace("{organization_id}", "1")
+        .replace("{kind}", "signature"): operations
         for path, operations in app.openapi()["paths"].items()
     }
     with_file = {

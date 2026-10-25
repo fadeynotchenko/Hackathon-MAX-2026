@@ -85,7 +85,6 @@ export function useSuggestions(source: SuggestSource | undefined) {
         'aria-controls': listId,
         ...(shown && active >= 0 ? { 'aria-activedescendant': `${listId}-${active}` } : {}),
         onKeyDown,
-        onBlur: close,
       }
     : {};
 
@@ -152,5 +151,7 @@ export function useSuggestions(source: SuggestSource | undefined) {
     </div>
   ) : null;
 
-  return { inputProps, onType, list };
+  // Закрытие списка на blur отдаётся отдельно: поле само решает, что ещё делать
+  // при уходе с него (проверка реквизита).
+  return { inputProps, onType, list, close: source ? close : undefined };
 }

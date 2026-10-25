@@ -21,3 +21,7 @@ class InboundFileTooLargeError(InboundFileError):
 
 class TemplateFileError(RuntimeError):
     """Файл-образец шаблона не читается: битый DOCX или PDF без текста."""
+
+
+class ScannedPdfError(TemplateFileError):
+    """PDF открылся, но текстового слоя в нём нет: это скан, текст только на картинке."""

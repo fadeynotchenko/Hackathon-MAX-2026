@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from core.db.models import Document
+from core.db.models import Document, Template
 
 
 class DocumentRepository:
@@ -32,6 +32,29 @@ class DocumentRepository:
             .limit(limit)
         )
         return list((await self._session.execute(stmt)).scalars())
+
+    async def recent_numbers(
+        self, user_id: int, *, organization_id: int | None, template_kind: str, limit: int
+    ) -> list[str]:
+        """Номера последних документов того же вида от той же организации, новые первыми."""
+        owner = (
+            Document.organization_id.is_(None)
+            if organization_id is None
+            else Document.organization_id == organization_id
+        )
+        stmt = (
+            select(Document.values)
+            .join(Template, Template.id == Document.template_id)
+            .where(Document.user_id == user_id, owner, Template.kind == template_kind)
+            .order_by(Document.created_at.desc(), Document.id.desc())
+            .limit(limit)
+        )
+        numbers: list[str] = []
+        for values in (await self._session.execute(stmt)).scalars():
+            number = (values or {}).get("number")
+            if isinstance(number, dict) and str(number.get("value") or "").strip():
+                numbers.append(str(number["value"]).strip())
+        return numbers
 
     async def create(
         self,

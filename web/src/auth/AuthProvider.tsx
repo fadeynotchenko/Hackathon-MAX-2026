@@ -65,17 +65,21 @@ export function AuthProvider({ children, api: injectedApi }: AuthProviderProps) 
     let cancelled = false;
     const initData = getInitData();
     if (!loginInFlight.current) {
-      // Сначала живая refresh-cookie (без новой семьи токенов при каждом
-      // открытии), и только если её нет — вход по initData.
-      const source = initData
-        ? Promise.resolve(initData)
-        : api.devInitData().then((response) => response.init_data);
-      loginInFlight.current = api
-        .refreshSession()
-        .catch(() => source.then((data) => api.loginMax(data)))
-        .finally(() => {
-          loginInFlight.current = null;
-        });
+      // Лениво: при живой cookie dev-ручку незачем звать вовсе.
+      const source = () =>
+        initData
+          ? Promise.resolve(initData)
+          : api.devInitData().then((response) => response.init_data);
+      // Внутри MAX — сразу вход по initData: клиент не доносит refresh-cookie до
+      // следующего запуска (на проде 122 из 123 открытий начинались с 401 на
+      // /auth/refresh), и проба только задерживала первый экран. В браузере
+      // сначала живая cookie — без новой семьи токенов при каждом открытии.
+      const login = () => source().then((data) => api.loginMax(data));
+      loginInFlight.current = (
+        mode === 'max' ? login() : api.refreshSession().catch(login)
+      ).finally(() => {
+        loginInFlight.current = null;
+      });
     }
     loginInFlight.current
       .then((session) => {
@@ -97,7 +101,7 @@ export function AuthProvider({ children, api: injectedApi }: AuthProviderProps) 
     return () => {
       cancelled = true;
     };
-  }, [api, status]);
+  }, [api, mode, status]);
 
   const retry = useCallback(() => {
     setError(null);

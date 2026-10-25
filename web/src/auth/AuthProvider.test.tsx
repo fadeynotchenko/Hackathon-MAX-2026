@@ -96,8 +96,19 @@ describe('AuthProvider', () => {
     expect(dev).not.toHaveBeenCalled();
   });
 
-  it('reuses a live refresh cookie instead of logging in again', async () => {
+  it('skips the refresh probe inside MAX: the client does not keep the cookie', async () => {
     window.WebApp = { initData: 'auth_date=1&hash=h', initDataUnsafe: {} };
+    const api = new ApiClient({ baseUrl: '' });
+    const refresh = vi.spyOn(api, 'refreshSession').mockResolvedValue(session);
+    vi.spyOn(api, 'loginMax').mockResolvedValue(session);
+    renderWith(api);
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('ready'));
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('reuses a live refresh cookie in the browser instead of logging in again', async () => {
+    vi.stubEnv('VITE_DEV_INIT_DATA', '');
+    vi.stubEnv('DEV', true);
     const api = new ApiClient({ baseUrl: '' });
     vi.spyOn(api, 'refreshSession').mockResolvedValue(session);
     const login = vi.spyOn(api, 'loginMax');

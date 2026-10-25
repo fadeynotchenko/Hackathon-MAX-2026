@@ -159,7 +159,7 @@ async def test_caption_asking_for_new_document_is_not_put_into_the_active_one(
     )
 
     reply = (await _replies(redis))[-1]
-    assert reply.text.startswith("🤝 <b>Договор оказания услуг</b>")
+    assert reply.text.startswith("🤝 <b>Договор оказания услуг № 1</b>")
     assert await _active(session) != invoice_id
 
 

@@ -168,10 +168,13 @@ export const KIND_STYLE: Record<TemplateKind, KindStyle> = {
   invoice: { short: 'Счёт', plural: 'Счета', section: 'Счета' },
   offer: { short: 'КП', plural: 'КП', section: 'Коммерческие предложения' },
   contract: { short: 'Договор', plural: 'Договоры', section: 'Договоры' },
+  act: { short: 'Акт', plural: 'Акты', section: 'Акты' },
   other: { short: 'Другое', plural: 'Другие', section: 'Другие документы' },
 };
 
-export const KIND_ORDER: TemplateKind[] = ['invoice', 'offer', 'contract', 'other'];
+export const KIND_ORDER: TemplateKind[] = ['invoice', 'offer', 'contract', 'act', 'other'];
+// Из каких документов делается акт выполненных работ (core.usecases.documents.acts).
+export const ACT_SOURCES: readonly string[] = ['invoice', 'contract', 'offer'];
 
 export function asKind(kind: string | undefined): TemplateKind {
   return (KIND_ORDER as string[]).includes(kind ?? '') ? (kind as TemplateKind) : 'other';

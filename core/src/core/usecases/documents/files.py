@@ -31,6 +31,7 @@ from core.events import DocumentReady, EventBus
 from core.files import (
     DocumentStorage,
     FilesConfig,
+    Marks,
     PdfUnavailableError,
     TemplateFileError,
     build_docx,
@@ -40,6 +41,7 @@ from core.files import (
 )
 from core.usecases.documents.drafts import DocumentView, document_name, get_document
 from core.usecases.documents.journal import Fact, record
+from core.usecases.documents.organizations import document_marks
 from core.usecases.documents.templates import TemplateView
 
 DOCX = "docx"
@@ -64,8 +66,17 @@ class DocumentFileView:
     updated_at: datetime
 
 
-def source_hash(document: DocumentView) -> str:
-    return hashlib.sha256(f"{document.title}\n{document.preview}".encode()).hexdigest()
+def source_hash(document: DocumentView, marks_key: str = "") -> str:
+    """Смысл файла: текст документа и редакция подписи и печати организации —
+    новая печать делает прежний файл устаревшим, как правка значения."""
+    raw = f"{document.title}\n{document.preview}" + (f"\n{marks_key}" if marks_key else "")
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+async def _marks_of(
+    session: AsyncSession, user_id: int, document: DocumentView
+) -> tuple[Marks | None, str]:
+    return await document_marks(session, user_id=user_id, organization_id=document.organization_id)
 
 
 def to_view(row: DocumentFile, *, current_source: str) -> DocumentFileView:
@@ -98,7 +109,8 @@ async def list_document_files(
     session: AsyncSession, *, user_id: int, document_id: int
 ) -> list[DocumentFileView]:
     document = await get_document(session, user_id=user_id, document_id=document_id)
-    current = source_hash(document)
+    _, marks_key = await _marks_of(session, user_id, document)
+    current = source_hash(document, marks_key)
     rows = await DocumentFileRepository(session).list_for_document(document_id)
     return [to_view(row, current_source=current) for row in rows]
 
@@ -110,10 +122,14 @@ async def template_docx(
     *,
     title: str,
     text: str,
+    marks: Marks | None = None,
+    marks_key: str = "",
 ) -> bytes:
     """DOCX по шаблону. У образца-PDF DOCX в его оформлении не собрать —
     тогда DOCX текстовый, а оформление остаётся за PDF."""
-    source = await template_source(session, template, values, title=title, text=text)
+    source = await template_source(
+        session, template, values, title=title, text=text, marks=marks, marks_key=marks_key
+    )
     return build_docx(title, text) if source.is_pdf else source.data
 
 
@@ -147,10 +163,13 @@ async def template_source(
     *,
     title: str,
     text: str,
+    marks: Marks | None = None,
+    marks_key: str = "",
 ) -> SourceFile:
     """Файл документа в оформлении образца: из текста шаблона или копии
     DOCX-образца — DOCX, из PDF-образца — сам PDF с новыми значениями на листе.
-    Без значений — пустой бланк, как в каталоге."""
+    Без значений — пустой бланк, как в каталоге. Подпись и печать (``marks``)
+    встают только в DOCX-бланк со строкой подписи продавца."""
     if template.file is None:
         return SourceFile(build_docx(title, text), False, _source_key("text", title, text))
     source = await TemplateFileRepository(session).data(template.file.id)
@@ -172,9 +191,9 @@ async def template_source(
                 _source_key("pdf", sample, template.places, filled),
             )
         return SourceFile(
-            fill_docx(source, places=template.places, context=context, blank=BLANK),
+            fill_docx(source, places=template.places, context=context, blank=BLANK, marks=marks),
             False,
-            _source_key("docx", sample, template.places, context),
+            _source_key("docx", sample, template.places, context, marks_key),
         )
     except TemplateFileError as exc:
         raise AppError(
@@ -199,12 +218,15 @@ async def render_document(
         )
 
     started = time.monotonic()
+    marks, marks_key = await _marks_of(session, user_id, document)
     source = await template_source(
         session,
         document.template,
         document.values,
         title=document.title,
         text=document.preview,
+        marks=marks,
+        marks_key=marks_key,
     )
     if source.is_pdf:
         data = source.data if fmt == PDF else build_docx(document.title, document.preview)
@@ -236,7 +258,7 @@ async def render_document(
         path=stored.relative_path,
         size=stored.size,
         sha256=stored.sha256,
-        source_sha256=source_hash(document),
+        source_sha256=source_hash(document, marks_key),
     )
     await record(
         session,
@@ -247,7 +269,7 @@ async def render_document(
         fmt=fmt,
         duration_ms=elapsed_ms,
     )
-    return to_view(file, current_source=source_hash(document))
+    return to_view(file, current_source=source_hash(document, marks_key))
 
 
 async def load_document_file(
@@ -258,7 +280,8 @@ async def load_document_file(
     storage = DocumentStorage(cfg.documents_dir)
     if row is None or not storage.exists(row.path):
         raise NotFoundError("Файл не собран", code="document.file_not_found")
-    return to_view(row, current_source=source_hash(document)), storage.read(row.path)
+    _, marks_key = await _marks_of(session, user_id, document)
+    return to_view(row, current_source=source_hash(document, marks_key)), storage.read(row.path)
 
 
 async def send_document_to_chat(
@@ -288,7 +311,8 @@ async def send_document_to_chat(
             "Документ ещё не готов: есть ошибки или непроверенные значения",
             code="document.not_ready",
         )
-    current = source_hash(document)
+    _, marks_key = await _marks_of(session, user_id, document)
+    current = source_hash(document, marks_key)
     row = await DocumentFileRepository(session).get(document_id, fmt)
     fresh = (
         row is not None

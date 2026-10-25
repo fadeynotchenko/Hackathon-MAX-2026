@@ -33,6 +33,7 @@ export type DocumentFact = components['schemas']['DocumentFactSchema'];
 export type DocumentFile = components['schemas']['DocumentFileSchema'];
 export type DocumentParties = components['schemas']['DocumentPartiesRequest'];
 export type Organization = components['schemas']['OrganizationSchema'];
+export type MarkKind = 'signature' | 'stamp';
 export type OrganizationRequest = components['schemas']['OrganizationRequest'];
 export type Counterparty = components['schemas']['CounterpartySchema'];
 export type CounterpartyRequest = components['schemas']['CounterpartyRequest'];
@@ -376,6 +377,10 @@ export class ApiClient {
     });
   }
 
+  createAct(documentId: number): Promise<DocumentView> {
+    return this.request<DocumentView>(`/api/v1/documents/${documentId}/act`, { method: 'POST' });
+  }
+
   copyDocument(documentId: number): Promise<DocumentView> {
     return this.request<DocumentView>(`/api/v1/documents/${documentId}/copy`, {
       method: 'POST',
@@ -409,6 +414,30 @@ export class ApiClient {
 
   deleteOrganization(organizationId: number): Promise<void> {
     return this.request<void>(`/api/v1/organizations/${organizationId}`, { method: 'DELETE' });
+  }
+
+  // Подпись или печать организации картинкой: встаёт в строку подписи её документов.
+  setOrganizationMark(organizationId: number, kind: MarkKind, file: Blob): Promise<Organization> {
+    return this.request<Organization>(`/api/v1/organizations/${organizationId}/marks/${kind}`, {
+      method: 'PUT',
+      file,
+    });
+  }
+
+  deleteOrganizationMark(organizationId: number, kind: MarkKind): Promise<Organization> {
+    return this.request<Organization>(`/api/v1/organizations/${organizationId}/marks/${kind}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Картинка с Bearer: <img src> напрямую не годится, отдаём Blob.
+  async organizationMark(organizationId: number, kind: MarkKind): Promise<Blob> {
+    const response = await this.send(
+      `/api/v1/organizations/${organizationId}/marks/${kind}`,
+      {},
+      'image/png',
+    );
+    return response.blob();
   }
 
   counterparties(): Promise<Counterparty[]> {

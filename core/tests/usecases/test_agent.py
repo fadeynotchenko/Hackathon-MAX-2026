@@ -207,8 +207,7 @@ async def test_repeated_profile_values_stay_confirmed_and_list_goes_in_order(
     prompt = llm.calls[0][1][0].content
     waiting = prompt.split("Ещё не заполнено:\n", 1)[1]
     assert waiting.startswith(
-        "1. client_name: Название клиента\n2. number: Номер счёта\n"
-        "3. items: Позиции\n4. seller_bank: Банк"
+        "1. client_name: Название клиента\n2. items: Позиции\n3. seller_bank: Банк"
     ), "клиент и условия — первыми, свои реквизиты — в конце"
     assert "Ещё нужно: название клиента, позиции, банк" in (result.reply), (
         "ответ столбиком модель разносит по тому же порядку, что видит человек"

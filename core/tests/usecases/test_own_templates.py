@@ -88,7 +88,7 @@ async def test_own_template_is_saved_and_fills_like_a_builtin(session: AsyncSess
     assert document.values["seller_inn"].source is ValueSource.PROFILE
     assert document.values["client_inn"].value == "500100732259"
     assert document.values["date"].source is ValueSource.DEFAULT
-    assert set(document.missing) == {"number", "works", "total"}
+    assert set(document.missing) == {"works", "total"}, "номер ставится сам"
 
     bad = await set_fields(
         session,
@@ -241,8 +241,9 @@ async def test_own_template_takes_the_chosen_kind(session: AsyncSession) -> None
         (("Договор оказания услуг",), "contract"),
         (("Фирменный КП", "КП.docx"), "offer"),
         (("Бланк", "blank.docx", "КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ"), "offer"),
-        (("Акт сверки", "Расчётный счёт в банке"), "other"),
-        (("Акт выполненных работ",), "other"),
+        (("Акт сверки", "Расчётный счёт в банке"), "act"),
+        (("Акт выполненных работ",), "act"),
+        (("Контактный лист",), "other"),
         (("Счет_45", "Счет_45.docx"), "invoice"),
         (("Бланк", "b.docx", "ООО «Мастер», р/с 40702810", "Выставлен счёт № 17"), "invoice"),
     ],

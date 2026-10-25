@@ -15,7 +15,7 @@ from core.domain.exceptions import AppError, NotFoundError, ValidationError
 from core.domain.places import Place
 from core.files import FilesConfig, docx_lines
 from core.llm import LLMUnavailableError
-from core.usecases.agent import import_template_file
+from core.usecases.agent import import_template_file, template_import
 from core.usecases.agent.template_import import chunks, suggest_places
 from core.usecases.documents import (
     DOCX,
@@ -409,3 +409,69 @@ async def test_fragment_missed_by_the_assistant_is_asked_again() -> None:
     assert (found.proposed, found.repaired) == (1, 1)
     (_, repair, _) = llm.calls[1]
     assert "ООО Альфа" in repair[1].content
+
+
+async def test_scan_is_read_from_page_pictures(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Скан без текстового слоя не отклоняется: помощник читает текст страниц,
+    шаблон из него текстовый — файл образцом не хранится."""
+    pages: list[int | None] = []
+
+    async def pictures(pdf: bytes, *, width: int, timeout_seconds: int, last_page: int | None):
+        pages.append(last_page)
+        return [b"\xff\xd8\xff page-1", b"\xff\xd8\xff page-2"]
+
+    monkeypatch.setattr(template_import, "pdf_to_jpeg", pictures)
+    user_id = await make_user(session)
+    llm = FakeLLM(
+        json_replies=[
+            {"lines": ["Счёт на оплату № 5", "Покупатель: ООО «Вега»"]},
+            {"lines": ["Итого: 9 000 руб."]},
+            {
+                "title": "Счёт на оплату",
+                "kind": "invoice",
+                "places": [
+                    {
+                        "text": "ООО «Вега»",
+                        "before": "",
+                        "label": "Клиент",
+                        "type": "text",
+                        "key": "",
+                    }
+                ],
+            },
+        ]
+    )
+
+    draft = await import_template_file(
+        session, user_id=user_id, data=text_pdf([]), filename="scan.pdf", llm=llm, max_bytes=LIMIT
+    )
+
+    assert draft.file_id is None, "скан — текстовый шаблон, не образец"
+    assert draft.text == "Счёт на оплату № 5\nПокупатель: ООО «Вега»\nИтого: 9 000 руб."
+    assert [f.label for f in draft.fields] == ["Клиент"]
+    assert draft.notice is not None and draft.notice.startswith("Это скан")
+    assert pages == [template_import.SCAN_PAGES]
+    (photo,) = llm.calls[0][1][1].attachments
+    assert photo.media_type == "image/jpeg"
+
+
+async def test_unreadable_scan_is_explained(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def pictures(pdf: bytes, **_: object) -> list[bytes]:
+        return [b"\xff\xd8\xff page"]
+
+    monkeypatch.setattr(template_import, "pdf_to_jpeg", pictures)
+    user_id = await make_user(session)
+    with pytest.raises(AppError) as error:
+        await import_template_file(
+            session,
+            user_id=user_id,
+            data=text_pdf([]),
+            filename="scan.pdf",
+            llm=FakeLLM(json_reply={"lines": []}),
+            max_bytes=LIMIT,
+        )
+    assert error.value.code == "template.scan_unreadable"
