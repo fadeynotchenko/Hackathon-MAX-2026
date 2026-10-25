@@ -1,6 +1,8 @@
 # Образ gateway: собирает мини-апп (web/) и отдаёт его статикой + проксирует /api/ и вебхук бота.
 # В прод уезжает только dist/ поверх nginx:alpine; Node в финальном образе нет.
-FROM node:24-alpine AS web-build
+# Базовые образы — с зеркала Docker Hub от Google: анонимный лимит самого Docker Hub
+# по IP сервера ронял выкатку на 429 после нескольких сборок подряд (2026-10-25).
+FROM mirror.gcr.io/library/node:24-alpine AS web-build
 WORKDIR /repo
 RUN npm install -g pnpm@12.4.2 --silent
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json tsconfig.json ./
@@ -13,7 +15,7 @@ ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 RUN pnpm --filter @maxapp/web build
 
-FROM nginx:1.27-alpine
+FROM mirror.gcr.io/library/nginx:1.27-alpine
 # Шаблон рендерится штатным entrypoint'ом образа: ${DOMAIN} и прочие
 # переменные подставляются envsubst при старте контейнера, а не на сборке.
 COPY gateway/templates/ /etc/nginx/templates/

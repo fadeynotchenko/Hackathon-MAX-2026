@@ -1,6 +1,8 @@
 # Образ бота (Node). Собирается из корня репозитория: pnpm-lock общий на воркспейсы.
 #   docker build -f bot/Dockerfile -t maxapp-bot .
-FROM node:24-alpine AS build
+# Базовые образы — с зеркала Docker Hub от Google: анонимный лимит самого Docker Hub
+# по IP сервера ронял выкатку на 429 после нескольких сборок подряд (2026-10-25).
+FROM mirror.gcr.io/library/node:24-alpine AS build
 WORKDIR /repo
 RUN npm install -g pnpm@12.4.2 --silent
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json tsconfig.json ./
@@ -11,7 +13,7 @@ COPY bot/ bot/
 RUN pnpm --filter @maxapp/bot build \
     && pnpm --filter @maxapp/bot --prod deploy --legacy /out
 
-FROM node:24-alpine
+FROM mirror.gcr.io/library/node:24-alpine
 ENV NODE_ENV=production
 # Bot API MAX работает под корнем Минцифры, которого нет в хранилище Node
 # (см. bot/certs/README.md): без него любой запрос к platform-api2.max.ru падает.

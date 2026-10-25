@@ -6,7 +6,9 @@
 # Зависимости ставит uv по uv.lock (--frozen: lock не пересчитывается); пакет
 # core ставится editable из /app/src, поэтому dev-compose может подменить
 # исходники bind-mount'ом без пересборки.
-FROM python:3.14-slim AS base
+# Базовые образы — с зеркала Docker Hub от Google: анонимный лимит самого Docker Hub
+# по IP сервера ронял выкатку на 429 после нескольких сборок подряд (2026-10-25).
+FROM mirror.gcr.io/library/python:3.14-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
